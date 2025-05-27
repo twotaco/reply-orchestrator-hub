@@ -89,14 +89,14 @@ export function Dashboard() {
     }
   };
 
-  const getStatusBadge = (status: string) => {
-    const variants = {
-      replied: 'default',
-      failed: 'destructive',
-      processing: 'secondary',
-      received: 'outline'
-    };
-    return variants[status as keyof typeof variants] || 'outline';
+  const getStatusBadge = (status: string): "default" | "destructive" | "outline" | "secondary" => {
+    switch (status) {
+      case 'replied': return 'default';
+      case 'failed': return 'destructive';
+      case 'processing': return 'secondary';
+      case 'received': return 'outline';
+      default: return 'outline';
+    }
   };
 
   if (loading) {
