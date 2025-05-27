@@ -54,8 +54,7 @@ interface AgentMCPMapping {
   active: boolean;
 }
 
-const KNOWREPLY_BASE_URL = 'https://schhqmadbetntdrhowgg.supabase.co/functions/v1';
-const KNOWREPLY_GET_AGENTS_URL = `${KNOWREPLY_BASE_URL}/knowreply-get-agents`;
+const KNOWREPLY_GET_AGENTS_URL = 'https://schhqmadbetntdrhowgg.supabase.co/functions/v1/get-agents';
 
 export function KnowReplySetup() {
   const { user } = useAuth();
@@ -162,47 +161,28 @@ export function KnowReplySetup() {
     console.log('Using API token:', config.knowreply_api_token?.substring(0, 10) + '...');
 
     try {
-      const requestBody = {
-        api_token: config.knowreply_api_token
-      };
-      
-      console.log('Request body:', requestBody);
-
-      const response = await fetch(KNOWREPLY_GET_AGENTS_URL, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Accept': 'application/json',
-        },
-        body: JSON.stringify(requestBody)
+      const { data, error } = await supabase.functions.invoke('get-agents', {
+        body: { api_token: config.knowreply_api_token }
       });
 
-      console.log('Response status:', response.status);
-      console.log('Response headers:', response.headers);
+      console.log('Supabase function response:', { data, error });
 
-      if (!response.ok) {
-        const errorText = await response.text();
-        console.error('Response error text:', errorText);
-        throw new Error(`HTTP ${response.status}: ${errorText || 'Failed to fetch agents'}`);
+      if (error) {
+        console.error('Supabase function error:', error);
+        throw new Error(error.message || 'Failed to fetch agents');
       }
 
-      const result = await response.json();
-      console.log('Response data:', result);
-
-      if (result.success && result.agents) {
-        setAgents(result.agents);
-        console.log('Successfully loaded agents:', result.agents);
+      if (data?.success && data?.agents) {
+        setAgents(data.agents);
+        console.log('Successfully loaded agents:', data.agents);
       } else {
-        throw new Error(result.error || 'No agents returned from API');
+        throw new Error(data?.error || 'No agents returned from API');
       }
     } catch (error) {
       console.error('Detailed fetch error:', error);
       
       let errorMessage = 'Failed to fetch agents';
-      if (error instanceof TypeError && error.message === 'Failed to fetch') {
-        errorMessage = 'Network error: Unable to connect to KnowReply API. This could be due to CORS, network issues, or the API being unavailable.';
-        setFetchError('Network connection failed. Please check your internet connection and try again.');
-      } else if (error instanceof Error) {
+      if (error instanceof Error) {
         errorMessage = error.message;
         setFetchError(error.message);
       }
