@@ -7,7 +7,6 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/hooks/use-toast';
 import { 
@@ -26,14 +25,12 @@ import {
   ExternalLink,
   Loader2,
   Brain,
-  Plus,
-  Trash2
+  AlertCircle
 } from 'lucide-react';
 
 interface KnowReplyConfig {
   knowreply_api_token: string | null;
   knowreply_agent_id: string | null;
-  knowreply_persona: string | null;
 }
 
 interface Agent {
@@ -65,8 +62,7 @@ export function KnowReplySetup() {
   const { toast } = useToast();
   const [config, setConfig] = useState<KnowReplyConfig>({
     knowreply_api_token: '',
-    knowreply_agent_id: '',
-    knowreply_persona: 'professional'
+    knowreply_agent_id: ''
   });
   const [agents, setAgents] = useState<Agent[]>([]);
   const [mcpEndpoints, setMCPEndpoints] = useState<MCPEndpoint[]>([]);
@@ -75,6 +71,7 @@ export function KnowReplySetup() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [loadingAgents, setLoadingAgents] = useState(false);
+  const [fetchError, setFetchError] = useState<string | null>(null);
 
   useEffect(() => {
     if (user) {
@@ -99,7 +96,7 @@ export function KnowReplySetup() {
     try {
       const { data, error } = await supabase
         .from('workspace_configs')
-        .select('knowreply_api_token, knowreply_agent_id, knowreply_persona')
+        .select('knowreply_api_token, knowreply_agent_id')
         .eq('user_id', user?.id)
         .single();
 
@@ -159,32 +156,60 @@ export function KnowReplySetup() {
     if (!config.knowreply_api_token) return;
 
     setLoadingAgents(true);
+    setFetchError(null);
+    
+    console.log('Attempting to fetch agents from:', KNOWREPLY_GET_AGENTS_URL);
+    console.log('Using API token:', config.knowreply_api_token?.substring(0, 10) + '...');
+
     try {
+      const requestBody = {
+        api_token: config.knowreply_api_token
+      };
+      
+      console.log('Request body:', requestBody);
+
       const response = await fetch(KNOWREPLY_GET_AGENTS_URL, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          'Accept': 'application/json',
         },
-        body: JSON.stringify({
-          api_token: config.knowreply_api_token
-        })
+        body: JSON.stringify(requestBody)
       });
 
+      console.log('Response status:', response.status);
+      console.log('Response headers:', response.headers);
+
       if (!response.ok) {
-        throw new Error(`Failed to fetch agents: ${response.status}`);
+        const errorText = await response.text();
+        console.error('Response error text:', errorText);
+        throw new Error(`HTTP ${response.status}: ${errorText || 'Failed to fetch agents'}`);
       }
 
       const result = await response.json();
+      console.log('Response data:', result);
+
       if (result.success && result.agents) {
         setAgents(result.agents);
+        console.log('Successfully loaded agents:', result.agents);
       } else {
-        throw new Error(result.error || 'Failed to fetch agents');
+        throw new Error(result.error || 'No agents returned from API');
       }
     } catch (error) {
-      console.error('Error fetching agents:', error);
+      console.error('Detailed fetch error:', error);
+      
+      let errorMessage = 'Failed to fetch agents';
+      if (error instanceof TypeError && error.message === 'Failed to fetch') {
+        errorMessage = 'Network error: Unable to connect to KnowReply API. This could be due to CORS, network issues, or the API being unavailable.';
+        setFetchError('Network connection failed. Please check your internet connection and try again.');
+      } else if (error instanceof Error) {
+        errorMessage = error.message;
+        setFetchError(error.message);
+      }
+
       toast({
         title: "Error",
-        description: "Failed to fetch agents. Please check your API token.",
+        description: errorMessage,
         variant: "destructive",
       });
       setAgents([]);
@@ -204,7 +229,6 @@ export function KnowReplySetup() {
           user_id: user.id,
           knowreply_api_token: config.knowreply_api_token,
           knowreply_agent_id: selectedAgent,
-          knowreply_persona: config.knowreply_persona,
           updated_at: new Date().toISOString()
         });
 
@@ -332,20 +356,6 @@ export function KnowReplySetup() {
             </p>
           </div>
 
-          <div>
-            <Label htmlFor="persona">AI Persona</Label>
-            <Textarea
-              id="persona"
-              placeholder="professional"
-              value={config.knowreply_persona || ''}
-              onChange={(e) => setConfig({ ...config, knowreply_persona: e.target.value })}
-              rows={3}
-            />
-            <p className="text-sm text-gray-500 mt-1">
-              Define the personality and tone for AI responses
-            </p>
-          </div>
-
           <Button onClick={saveConfig} disabled={saving}>
             {saving ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
             Save Configuration
@@ -370,6 +380,18 @@ export function KnowReplySetup() {
               <div className="flex items-center justify-center py-8">
                 <Loader2 className="h-6 w-6 animate-spin mr-2" />
                 <span>Loading agents...</span>
+              </div>
+            ) : fetchError ? (
+              <div className="text-center py-8">
+                <AlertCircle className="h-12 w-12 mx-auto mb-4 text-red-500" />
+                <p className="text-red-600 mb-4">{fetchError}</p>
+                <Button 
+                  variant="outline" 
+                  onClick={fetchAgents}
+                  className="mt-2"
+                >
+                  Retry Connection
+                </Button>
               </div>
             ) : agents.length > 0 ? (
               <div>
