@@ -1,4 +1,3 @@
-
 import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { supabase } from '@/integrations/supabase/client';
@@ -54,8 +53,8 @@ interface AgentMCPMapping {
   active: boolean;
 }
 
-const KNOWREPLY_BASE_URL = 'https://schhqmadbetntdrhowgg.supabase.co/functions/v1';
-const KNOWREPLY_GET_AGENTS_URL = `${KNOWREPLY_BASE_URL}/knowreply-get-agents`;
+// Use the correct KnowReply API endpoints
+const KNOWREPLY_GET_AGENTS_URL = 'https://api.knowreply.com/agents';
 
 export function KnowReplySetup() {
   const { user } = useAuth();
@@ -158,7 +157,7 @@ export function KnowReplySetup() {
     setLoadingAgents(true);
     setFetchError(null);
     
-    console.log('Attempting to fetch agents from:', KNOWREPLY_GET_AGENTS_URL);
+    console.log('Attempting to fetch agents from KnowReply API:', KNOWREPLY_GET_AGENTS_URL);
     console.log('Using API token:', config.knowreply_api_token?.substring(0, 10) + '...');
 
     try {
@@ -169,16 +168,16 @@ export function KnowReplySetup() {
       console.log('Request body:', requestBody);
 
       const response = await fetch(KNOWREPLY_GET_AGENTS_URL, {
-        method: 'POST',
+        method: 'GET',
         headers: {
           'Content-Type': 'application/json',
           'Accept': 'application/json',
-        },
-        body: JSON.stringify(requestBody)
+          'Authorization': `Bearer ${config.knowreply_api_token}`,
+        }
       });
 
       console.log('Response status:', response.status);
-      console.log('Response headers:', response.headers);
+      console.log('Response headers:', Object.fromEntries(response.headers.entries()));
 
       if (!response.ok) {
         const errorText = await response.text();
@@ -189,19 +188,22 @@ export function KnowReplySetup() {
       const result = await response.json();
       console.log('Response data:', result);
 
-      if (result.success && result.agents) {
+      if (result && Array.isArray(result)) {
+        setAgents(result);
+        console.log('Successfully loaded agents:', result);
+      } else if (result.agents && Array.isArray(result.agents)) {
         setAgents(result.agents);
         console.log('Successfully loaded agents:', result.agents);
       } else {
-        throw new Error(result.error || 'No agents returned from API');
+        throw new Error('Invalid response format: expected array of agents');
       }
     } catch (error) {
       console.error('Detailed fetch error:', error);
       
-      let errorMessage = 'Failed to fetch agents';
+      let errorMessage = 'Failed to fetch agents from KnowReply API';
       if (error instanceof TypeError && error.message === 'Failed to fetch') {
-        errorMessage = 'Network error: Unable to connect to KnowReply API. This could be due to CORS, network issues, or the API being unavailable.';
-        setFetchError('Network connection failed. Please check your internet connection and try again.');
+        errorMessage = 'Network error: Unable to connect to KnowReply API. Please check your internet connection and API token.';
+        setFetchError('Network connection failed. Please verify your API token and try again.');
       } else if (error instanceof Error) {
         errorMessage = error.message;
         setFetchError(error.message);
@@ -379,7 +381,7 @@ export function KnowReplySetup() {
             {loadingAgents ? (
               <div className="flex items-center justify-center py-8">
                 <Loader2 className="h-6 w-6 animate-spin mr-2" />
-                <span>Loading agents...</span>
+                <span>Loading agents from KnowReply...</span>
               </div>
             ) : fetchError ? (
               <div className="text-center py-8">
