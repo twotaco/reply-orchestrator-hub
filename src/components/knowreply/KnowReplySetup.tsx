@@ -9,28 +9,21 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/hooks/use-toast';
-import { 
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
 import { Checkbox } from '@/components/ui/checkbox';
 import { 
   Bot, 
   Settings, 
   CheckCircle2, 
-  Copy,
   ExternalLink,
   Loader2,
   Brain,
-  AlertCircle
+  AlertCircle,
+  Trash2,
+  Plus
 } from 'lucide-react';
 
 interface KnowReplyConfig {
   knowreply_api_token: string | null;
-  knowreply_agent_id: string | null;
 }
 
 interface Agent {
@@ -48,11 +41,12 @@ interface MCPEndpoint {
   instructions?: string;
 }
 
-interface AgentMCPMapping {
-  id: string;
+interface AgentConfig {
   agent_id: string;
-  mcp_endpoint_id: string;
-  active: boolean;
+  agent_name: string;
+  agent_role?: string;
+  enabled: boolean;
+  mcp_endpoints: string[];
 }
 
 const KNOWREPLY_GET_AGENTS_URL = 'https://schhqmadbetntdrhowgg.supabase.co/functions/v1/get-agents';
@@ -61,13 +55,12 @@ export function KnowReplySetup() {
   const { user } = useAuth();
   const { toast } = useToast();
   const [config, setConfig] = useState<KnowReplyConfig>({
-    knowreply_api_token: '',
-    knowreply_agent_id: ''
+    knowreply_api_token: ''
   });
-  const [agents, setAgents] = useState<Agent[]>([]);
+  const [availableAgents, setAvailableAgents] = useState<Agent[]>([]);
   const [mcpEndpoints, setMCPEndpoints] = useState<MCPEndpoint[]>([]);
-  const [agentMappings, setAgentMappings] = useState<AgentMCPMapping[]>([]);
-  const [selectedAgent, setSelectedAgent] = useState<string>('');
+  const [agentConfigs, setAgentConfigs] = useState<AgentConfig[]>([]);
+  
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [loadingAgents, setLoadingAgents] = useState(false);
@@ -86,17 +79,11 @@ export function KnowReplySetup() {
     }
   }, [config.knowreply_api_token]);
 
-  useEffect(() => {
-    if (selectedAgent) {
-      loadAgentMappings();
-    }
-  }, [selectedAgent]);
-
   const loadConfig = async () => {
     try {
       const { data, error } = await supabase
         .from('workspace_configs')
-        .select('knowreply_api_token, knowreply_agent_id')
+        .select('knowreply_api_token')
         .eq('user_id', user?.id)
         .single();
 
@@ -106,10 +93,10 @@ export function KnowReplySetup() {
 
       if (data) {
         setConfig(data);
-        if (data.knowreply_agent_id) {
-          setSelectedAgent(data.knowreply_agent_id);
-        }
       }
+
+      // Load existing agent configurations
+      await loadAgentConfigs();
     } catch (error) {
       console.error('Error loading config:', error);
       toast({
@@ -137,18 +124,36 @@ export function KnowReplySetup() {
     }
   };
 
-  const loadAgentMappings = async () => {
+  const loadAgentConfigs = async () => {
     try {
       const { data, error } = await supabase
         .from('knowreply_agent_mcp_mappings')
         .select('*')
-        .eq('user_id', user?.id)
-        .eq('agent_id', selectedAgent);
+        .eq('user_id', user?.id);
 
       if (error) throw error;
-      setAgentMappings(data || []);
+
+      // Group mappings by agent_id
+      const configMap = new Map<string, AgentConfig>();
+      
+      data?.forEach(mapping => {
+        if (!configMap.has(mapping.agent_id)) {
+          configMap.set(mapping.agent_id, {
+            agent_id: mapping.agent_id,
+            agent_name: '', // Will be filled when agents are loaded
+            enabled: true,
+            mcp_endpoints: []
+          });
+        }
+        
+        if (mapping.active) {
+          configMap.get(mapping.agent_id)!.mcp_endpoints.push(mapping.mcp_endpoint_id);
+        }
+      });
+
+      setAgentConfigs(Array.from(configMap.values()));
     } catch (error) {
-      console.error('Error loading agent mappings:', error);
+      console.error('Error loading agent configs:', error);
     }
   };
 
@@ -158,9 +163,6 @@ export function KnowReplySetup() {
     setLoadingAgents(true);
     setFetchError(null);
     
-    console.log('Attempting to fetch agents from:', KNOWREPLY_GET_AGENTS_URL);
-    console.log('Using API token:', config.knowreply_api_token?.substring(0, 10) + '...');
-
     try {
       const response = await fetch(KNOWREPLY_GET_AGENTS_URL, {
         method: 'GET',
@@ -170,12 +172,9 @@ export function KnowReplySetup() {
           'Content-Type': 'application/json'
         }
       });
-
-      console.log('Response status:', response.status);
       
       if (!response.ok) {
         const errorText = await response.text();
-        console.error('Response error:', errorText);
         let errorMessage = `HTTP ${response.status}`;
         
         try {
@@ -189,10 +188,19 @@ export function KnowReplySetup() {
       }
 
       const agents = await response.json();
-      console.log('Successfully loaded agents:', agents);
       
       if (Array.isArray(agents)) {
-        setAgents(agents);
+        setAvailableAgents(agents);
+        
+        // Update agent names in existing configs
+        setAgentConfigs(prev => prev.map(config => {
+          const agent = agents.find(a => a.id === config.agent_id);
+          return {
+            ...config,
+            agent_name: agent?.name || config.agent_name,
+            agent_role: agent?.role
+          };
+        }));
       } else {
         throw new Error('Invalid response format - expected array of agents');
       }
@@ -210,27 +218,104 @@ export function KnowReplySetup() {
         description: errorMessage,
         variant: "destructive",
       });
-      setAgents([]);
+      setAvailableAgents([]);
     } finally {
       setLoadingAgents(false);
     }
   };
 
-  const saveConfig = async () => {
+  const addAgent = (agent: Agent) => {
+    const exists = agentConfigs.find(config => config.agent_id === agent.id);
+    if (exists) {
+      toast({
+        title: "Agent Already Added",
+        description: `${agent.name} is already configured`,
+        variant: "destructive",
+      });
+      return;
+    }
+
+    const newConfig: AgentConfig = {
+      agent_id: agent.id,
+      agent_name: agent.name,
+      agent_role: agent.role,
+      enabled: true,
+      mcp_endpoints: []
+    };
+
+    setAgentConfigs(prev => [...prev, newConfig]);
+  };
+
+  const removeAgent = (agentId: string) => {
+    setAgentConfigs(prev => prev.filter(config => config.agent_id !== agentId));
+  };
+
+  const toggleAgentEnabled = (agentId: string) => {
+    setAgentConfigs(prev => prev.map(config => 
+      config.agent_id === agentId 
+        ? { ...config, enabled: !config.enabled }
+        : config
+    ));
+  };
+
+  const toggleMCPForAgent = (agentId: string, mcpEndpointId: string) => {
+    setAgentConfigs(prev => prev.map(config => {
+      if (config.agent_id !== agentId) return config;
+      
+      const endpoints = config.mcp_endpoints.includes(mcpEndpointId)
+        ? config.mcp_endpoints.filter(id => id !== mcpEndpointId)
+        : [...config.mcp_endpoints, mcpEndpointId];
+      
+      return { ...config, mcp_endpoints: endpoints };
+    }));
+  };
+
+  const saveConfiguration = async () => {
     if (!user) return;
 
     setSaving(true);
     try {
-      const { error } = await supabase
+      // Save API token
+      const { error: configError } = await supabase
         .from('workspace_configs')
         .upsert({
           user_id: user.id,
           knowreply_api_token: config.knowreply_api_token,
-          knowreply_agent_id: selectedAgent,
           updated_at: new Date().toISOString()
         });
 
-      if (error) throw error;
+      if (configError) throw configError;
+
+      // Clear existing mappings
+      const { error: deleteError } = await supabase
+        .from('knowreply_agent_mcp_mappings')
+        .delete()
+        .eq('user_id', user.id);
+
+      if (deleteError) throw deleteError;
+
+      // Insert new mappings
+      const mappings = [];
+      for (const agentConfig of agentConfigs) {
+        if (!agentConfig.enabled) continue;
+        
+        for (const mcpEndpointId of agentConfig.mcp_endpoints) {
+          mappings.push({
+            user_id: user.id,
+            agent_id: agentConfig.agent_id,
+            mcp_endpoint_id: mcpEndpointId,
+            active: true
+          });
+        }
+      }
+
+      if (mappings.length > 0) {
+        const { error: insertError } = await supabase
+          .from('knowreply_agent_mcp_mappings')
+          .insert(mappings);
+
+        if (insertError) throw insertError;
+      }
 
       toast({
         title: "Success",
@@ -248,65 +333,6 @@ export function KnowReplySetup() {
     }
   };
 
-  const toggleMCPMapping = async (mcpEndpointId: string, enabled: boolean) => {
-    if (!user || !selectedAgent) return;
-
-    try {
-      if (enabled) {
-        // Add mapping
-        const { error } = await supabase
-          .from('knowreply_agent_mcp_mappings')
-          .upsert({
-            user_id: user.id,
-            agent_id: selectedAgent,
-            mcp_endpoint_id: mcpEndpointId,
-            active: true
-          });
-
-        if (error) throw error;
-      } else {
-        // Remove mapping
-        const { error } = await supabase
-          .from('knowreply_agent_mcp_mappings')
-          .delete()
-          .eq('user_id', user.id)
-          .eq('agent_id', selectedAgent)
-          .eq('mcp_endpoint_id', mcpEndpointId);
-
-        if (error) throw error;
-      }
-
-      // Reload mappings
-      await loadAgentMappings();
-
-      toast({
-        title: "Success",
-        description: enabled ? "MCP endpoint enabled for agent" : "MCP endpoint disabled for agent",
-      });
-    } catch (error) {
-      console.error('Error updating MCP mapping:', error);
-      toast({
-        title: "Error",
-        description: "Failed to update MCP endpoint mapping",
-        variant: "destructive",
-      });
-    }
-  };
-
-  const copyToClipboard = (text: string) => {
-    navigator.clipboard.writeText(text);
-    toast({
-      title: "Copied",
-      description: "Copied to clipboard",
-    });
-  };
-
-  const isMCPMapped = (mcpEndpointId: string) => {
-    return agentMappings.some(mapping => 
-      mapping.mcp_endpoint_id === mcpEndpointId && mapping.active
-    );
-  };
-
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -314,6 +340,10 @@ export function KnowReplySetup() {
       </div>
     );
   }
+
+  const availableAgentsToAdd = availableAgents.filter(
+    agent => !agentConfigs.find(config => config.agent_id === agent.id)
+  );
 
   return (
     <motion.div
@@ -324,7 +354,7 @@ export function KnowReplySetup() {
       <div>
         <h1 className="text-3xl font-bold text-gray-900">KnowReply Setup</h1>
         <p className="text-gray-600 mt-2">
-          Configure KnowReply AI agents to handle intelligent email responses
+          Configure multiple KnowReply AI agents with individual MCP endpoint access
         </p>
       </div>
 
@@ -349,31 +379,23 @@ export function KnowReplySetup() {
               value={config.knowreply_api_token || ''}
               onChange={(e) => setConfig({ ...config, knowreply_api_token: e.target.value })}
             />
-            <p className="text-sm text-gray-500 mt-1">
-              Your API token from the KnowReply dashboard
-            </p>
           </div>
-
-          <Button onClick={saveConfig} disabled={saving}>
-            {saving ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
-            Save Configuration
-          </Button>
         </CardContent>
       </Card>
 
-      {/* Agent Selection */}
+      {/* Agent Configuration */}
       {config.knowreply_api_token && (
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <Brain className="h-5 w-5" />
-              Agent Selection
+              Agent Configuration
             </CardTitle>
             <CardDescription>
-              Choose which KnowReply agent will handle your email responses
+              Add agents and configure which MCP endpoints each can access
             </CardDescription>
           </CardHeader>
-          <CardContent className="space-y-4">
+          <CardContent className="space-y-6">
             {loadingAgents ? (
               <div className="flex items-center justify-center py-8">
                 <Loader2 className="h-6 w-6 animate-spin mr-2" />
@@ -383,154 +405,123 @@ export function KnowReplySetup() {
               <div className="text-center py-8">
                 <AlertCircle className="h-12 w-12 mx-auto mb-4 text-red-500" />
                 <p className="text-red-600 mb-4">{fetchError}</p>
-                <Button 
-                  variant="outline" 
-                  onClick={fetchAgents}
-                  className="mt-2"
-                >
+                <Button variant="outline" onClick={fetchAgents}>
                   Retry Connection
                 </Button>
               </div>
-            ) : agents.length > 0 ? (
-              <div>
-                <Label htmlFor="agent-select">Select Agent</Label>
-                <Select value={selectedAgent} onValueChange={setSelectedAgent}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Choose an agent" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {agents.map((agent) => (
-                      <SelectItem key={agent.id} value={agent.id}>
-                        <div className="flex flex-col">
-                          <span>{agent.name}</span>
-                          {agent.role && (
-                            <span className="text-xs text-gray-500">{agent.role}</span>
-                          )}
+            ) : (
+              <>
+                {/* Add New Agent */}
+                {availableAgentsToAdd.length > 0 && (
+                  <div>
+                    <Label className="text-sm font-medium mb-3 block">Add Agents</Label>
+                    <div className="grid gap-3">
+                      {availableAgentsToAdd.map((agent) => (
+                        <div key={agent.id} className="flex items-center justify-between p-3 border rounded-lg">
+                          <div>
+                            <div className="font-medium">{agent.name}</div>
+                            {agent.role && (
+                              <div className="text-sm text-gray-500">{agent.role}</div>
+                            )}
+                          </div>
+                          <Button size="sm" onClick={() => addAgent(agent)}>
+                            <Plus className="h-4 w-4 mr-1" />
+                            Add Agent
+                          </Button>
                         </div>
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                
-                {selectedAgent && (
-                  <div className="mt-2 p-3 bg-blue-50 rounded-lg">
-                    {(() => {
-                      const agent = agents.find(a => a.id === selectedAgent);
-                      return agent ? (
-                        <div>
-                          <p className="text-sm font-medium">{agent.name}</p>
-                          {agent.role && (
-                            <p className="text-xs text-gray-600">Role: {agent.role}</p>
-                          )}
-                          {agent.persona && (
-                            <p className="text-xs text-gray-600 mt-1">Persona: {agent.persona}</p>
-                          )}
-                        </div>
-                      ) : null;
-                    })()}
+                      ))}
+                    </div>
                   </div>
                 )}
-              </div>
-            ) : (
-              <div className="text-center py-8 text-gray-500">
-                <Bot className="h-12 w-12 mx-auto mb-4 opacity-50" />
-                <p>No agents found. Please check your API token.</p>
-                <Button 
-                  variant="outline" 
-                  onClick={fetchAgents}
-                  className="mt-2"
-                >
-                  Retry
-                </Button>
-              </div>
+
+                {/* Configured Agents */}
+                {agentConfigs.length > 0 && (
+                  <div>
+                    <Label className="text-sm font-medium mb-3 block">Configured Agents</Label>
+                    <div className="space-y-4">
+                      {agentConfigs.map((agentConfig) => (
+                        <Card key={agentConfig.agent_id} className="p-4">
+                          <div className="space-y-4">
+                            {/* Agent Header */}
+                            <div className="flex items-center justify-between">
+                              <div className="flex items-center gap-3">
+                                <Checkbox
+                                  checked={agentConfig.enabled}
+                                  onCheckedChange={() => toggleAgentEnabled(agentConfig.agent_id)}
+                                />
+                                <div>
+                                  <div className="font-medium">{agentConfig.agent_name}</div>
+                                  {agentConfig.agent_role && (
+                                    <div className="text-sm text-gray-500">{agentConfig.agent_role}</div>
+                                  )}
+                                </div>
+                              </div>
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => removeAgent(agentConfig.agent_id)}
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </Button>
+                            </div>
+
+                            {/* MCP Endpoints */}
+                            {agentConfig.enabled && mcpEndpoints.length > 0 && (
+                              <div>
+                                <Label className="text-sm font-medium mb-2 block">MCP Endpoints</Label>
+                                <div className="grid gap-2">
+                                  {mcpEndpoints.map((endpoint) => (
+                                    <div key={endpoint.id} className="flex items-center space-x-3 p-2 border rounded">
+                                      <Checkbox
+                                        checked={agentConfig.mcp_endpoints.includes(endpoint.id)}
+                                        onCheckedChange={() => toggleMCPForAgent(agentConfig.agent_id, endpoint.id)}
+                                      />
+                                      <div className="flex-1">
+                                        <div className="flex items-center gap-2">
+                                          <span className="text-sm font-medium">{endpoint.name}</span>
+                                          <Badge variant="outline" className="text-xs">{endpoint.category}</Badge>
+                                        </div>
+                                        {endpoint.instructions && (
+                                          <p className="text-xs text-gray-500 mt-1">{endpoint.instructions}</p>
+                                        )}
+                                      </div>
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+                            )}
+
+                            {agentConfig.enabled && mcpEndpoints.length === 0 && (
+                              <div className="text-sm text-gray-500 p-3 bg-gray-50 rounded">
+                                No MCP endpoints configured. Set up MCP endpoints first to connect them to agents.
+                              </div>
+                            )}
+                          </div>
+                        </Card>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {agentConfigs.length === 0 && availableAgents.length > 0 && (
+                  <div className="text-center py-8 text-gray-500">
+                    <Brain className="h-12 w-12 mx-auto mb-4 opacity-50" />
+                    <p>No agents configured yet. Add agents above to get started.</p>
+                  </div>
+                )}
+              </>
             )}
           </CardContent>
         </Card>
       )}
 
-      {/* MCP Endpoint Configuration */}
-      {selectedAgent && mcpEndpoints.length > 0 && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Settings className="h-5 w-5" />
-              MCP Endpoint Configuration
-            </CardTitle>
-            <CardDescription>
-              Configure which MCP endpoints this agent can use to interact with external systems
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            {mcpEndpoints.map((endpoint) => (
-              <div key={endpoint.id} className="flex items-center space-x-3 p-3 border rounded-lg">
-                <Checkbox
-                  checked={isMCPMapped(endpoint.id)}
-                  onCheckedChange={(checked) => 
-                    toggleMCPMapping(endpoint.id, checked as boolean)
-                  }
-                />
-                <div className="flex-1">
-                  <div className="flex items-center gap-2">
-                    <span className="font-medium">{endpoint.name}</span>
-                    <Badge variant="outline">{endpoint.category}</Badge>
-                  </div>
-                  {endpoint.instructions && (
-                    <p className="text-sm text-gray-500 mt-1">{endpoint.instructions}</p>
-                  )}
-                </div>
-              </div>
-            ))}
-          </CardContent>
-        </Card>
-      )}
-
-      {/* Selected Agent Status */}
-      {selectedAgent && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <CheckCircle2 className="h-5 w-5 text-green-600" />
-              Active Agent Configuration
-            </CardTitle>
-            <CardDescription>
-              Your selected agent is ready to handle email responses
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-3">
-              <div className="flex items-center gap-2">
-                <Badge variant="outline" className="text-lg px-3 py-2">
-                  <Brain className="h-4 w-4 mr-2" />
-                  Agent ID: {selectedAgent}
-                </Badge>
-                <Button 
-                  variant="outline" 
-                  size="icon"
-                  onClick={() => copyToClipboard(selectedAgent)}
-                >
-                  <Copy className="h-4 w-4" />
-                </Button>
-              </div>
-              
-              {agentMappings.length > 0 && (
-                <div>
-                  <p className="text-sm font-medium mb-2">Connected MCP Endpoints:</p>
-                  <div className="flex flex-wrap gap-2">
-                    {agentMappings.map((mapping) => {
-                      const endpoint = mcpEndpoints.find(e => e.id === mapping.mcp_endpoint_id);
-                      return endpoint ? (
-                        <Badge key={mapping.id} variant="secondary">
-                          {endpoint.name}
-                        </Badge>
-                      ) : null;
-                    })}
-                  </div>
-                </div>
-              )}
-            </div>
-          </CardContent>
-        </Card>
-      )}
+      {/* Save Configuration */}
+      <div className="flex justify-end">
+        <Button onClick={saveConfiguration} disabled={saving} size="lg">
+          {saving ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
+          Save Configuration
+        </Button>
+      </div>
 
       {/* Setup Instructions */}
       <Card>
@@ -542,13 +533,13 @@ export function KnowReplySetup() {
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-            <h4 className="font-medium text-blue-900 mb-2">Getting Started:</h4>
+            <h4 className="font-medium text-blue-900 mb-2">Multi-Agent Configuration:</h4>
             <ol className="text-sm text-blue-800 space-y-1 list-decimal list-inside">
-              <li>Enter your KnowReply API token above</li>
-              <li>Select the agent you want to use for email responses</li>
-              <li>Configure which MCP endpoints the agent can access</li>
-              <li>Set up your email routing with Postmark integration</li>
-              <li>Test the configuration with sample emails</li>
+              <li>Enter your KnowReply API token</li>
+              <li>Add the agents you want to use for email processing</li>
+              <li>Configure which MCP endpoints each agent can access</li>
+              <li>Enable/disable agents as needed</li>
+              <li>Save your configuration</li>
             </ol>
           </div>
 
@@ -556,12 +547,6 @@ export function KnowReplySetup() {
             <Button variant="outline" className="w-full justify-between" asChild>
               <a href="https://knowreply.com/dashboard" target="_blank" rel="noopener noreferrer">
                 KnowReply Dashboard
-                <ExternalLink className="h-4 w-4" />
-              </a>
-            </Button>
-            <Button variant="outline" className="w-full justify-between" asChild>
-              <a href="https://docs.knowreply.com" target="_blank" rel="noopener noreferrer">
-                KnowReply Documentation
                 <ExternalLink className="h-4 w-4" />
               </a>
             </Button>
