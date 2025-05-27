@@ -20,6 +20,7 @@ interface MCPEndpoint {
   post_url: string;
   auth_token?: string;
   expected_format?: any;
+  instructions?: string;
   active: boolean;
   created_at: string;
   updated_at: string;
@@ -31,6 +32,7 @@ interface MCPForm {
   post_url: string;
   auth_token: string;
   expected_format: string;
+  instructions: string;
   active: boolean;
 }
 
@@ -54,6 +56,7 @@ export function MCPManagement() {
     post_url: '',
     auth_token: '',
     expected_format: '{\n  "example": "json format"\n}',
+    instructions: '',
     active: true
   });
 
@@ -92,6 +95,7 @@ export function MCPManagement() {
       post_url: '',
       auth_token: '',
       expected_format: '{\n  "example": "json format"\n}',
+      instructions: '',
       active: true
     });
     setEditingId(null);
@@ -127,6 +131,7 @@ export function MCPManagement() {
         post_url: formData.post_url,
         auth_token: formData.auth_token || null,
         expected_format: expectedFormat,
+        instructions: formData.instructions || null,
         active: formData.active,
         user_id: user?.id
       };
@@ -173,6 +178,7 @@ export function MCPManagement() {
       post_url: endpoint.post_url,
       auth_token: endpoint.auth_token || '',
       expected_format: JSON.stringify(endpoint.expected_format || {}, null, 2),
+      instructions: endpoint.instructions || '',
       active: endpoint.active
     });
     setEditingId(endpoint.id);
@@ -339,6 +345,20 @@ export function MCPManagement() {
             </div>
 
             <div>
+              <Label htmlFor="instructions">Instructions for AI Agent</Label>
+              <Textarea
+                id="instructions"
+                value={formData.instructions}
+                onChange={(e) => setFormData({ ...formData, instructions: e.target.value })}
+                rows={3}
+                placeholder="Describe what this endpoint does and how the AI agent should use it..."
+              />
+              <p className="text-sm text-gray-500 mt-1">
+                These instructions help the AI agent understand when and how to use this endpoint
+              </p>
+            </div>
+
+            <div>
               <Label htmlFor="expected_format">Expected JSON Format</Label>
               <Textarea
                 id="expected_format"
@@ -392,6 +412,7 @@ export function MCPManagement() {
                   <TableHead>Name</TableHead>
                   <TableHead>Category</TableHead>
                   <TableHead>URL</TableHead>
+                  <TableHead>Instructions</TableHead>
                   <TableHead>Status</TableHead>
                   <TableHead className="text-right">Actions</TableHead>
                 </TableRow>
@@ -409,6 +430,16 @@ export function MCPManagement() {
                       <code className="text-sm bg-gray-100 px-2 py-1 rounded">
                         {endpoint.post_url}
                       </code>
+                    </TableCell>
+                    <TableCell>
+                      {endpoint.instructions ? (
+                        <span className="text-sm text-gray-600 truncate max-w-xs block">
+                          {endpoint.instructions.substring(0, 50)}
+                          {endpoint.instructions.length > 50 ? '...' : ''}
+                        </span>
+                      ) : (
+                        <span className="text-sm text-gray-400">No instructions</span>
+                      )}
                     </TableCell>
                     <TableCell>
                       <Switch

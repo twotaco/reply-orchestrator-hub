@@ -5,6 +5,7 @@ import { AuthPage } from '@/components/auth/AuthPage';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { Dashboard } from '@/components/dashboard/Dashboard';
 import { PostmarkSetup } from '@/components/postmark/PostmarkSetup';
+import { KnowReplySetup } from '@/components/knowreply/KnowReplySetup';
 import { MCPManagement } from '@/components/mcp/MCPManagement';
 
 function AppContent() {
@@ -30,7 +31,7 @@ function AppContent() {
       case 'postmark':
         return <PostmarkSetup />;
       case 'knowreply':
-        return <div>KnowReply Setup - Coming Soon</div>;
+        return <KnowReplySetup />;
       case 'mcps':
         return <MCPManagement />;
       case 'logs':

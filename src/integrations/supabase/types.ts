@@ -53,6 +53,9 @@ export type Database = {
           from_email: string
           id: string
           intent: string | null
+          knowreply_agent_used: string | null
+          knowreply_intent: string | null
+          knowreply_mcp_results: Json | null
           knowreply_request: Json | null
           knowreply_response: Json | null
           mcp_result: Json | null
@@ -73,6 +76,9 @@ export type Database = {
           from_email: string
           id?: string
           intent?: string | null
+          knowreply_agent_used?: string | null
+          knowreply_intent?: string | null
+          knowreply_mcp_results?: Json | null
           knowreply_request?: Json | null
           knowreply_response?: Json | null
           mcp_result?: Json | null
@@ -93,6 +99,9 @@ export type Database = {
           from_email?: string
           id?: string
           intent?: string | null
+          knowreply_agent_used?: string | null
+          knowreply_intent?: string | null
+          knowreply_mcp_results?: Json | null
           knowreply_request?: Json | null
           knowreply_response?: Json | null
           mcp_result?: Json | null
@@ -110,6 +119,44 @@ export type Database = {
         }
         Relationships: []
       }
+      knowreply_agent_mcp_mappings: {
+        Row: {
+          active: boolean | null
+          agent_id: string
+          created_at: string
+          id: string
+          mcp_endpoint_id: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          active?: boolean | null
+          agent_id: string
+          created_at?: string
+          id?: string
+          mcp_endpoint_id: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          active?: boolean | null
+          agent_id?: string
+          created_at?: string
+          id?: string
+          mcp_endpoint_id?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "knowreply_agent_mcp_mappings_mcp_endpoint_id_fkey"
+            columns: ["mcp_endpoint_id"]
+            isOneToOne: false
+            referencedRelation: "mcp_endpoints"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       mcp_endpoints: {
         Row: {
           active: boolean | null
@@ -118,6 +165,7 @@ export type Database = {
           created_at: string
           expected_format: Json | null
           id: string
+          instructions: string | null
           name: string
           post_url: string
           updated_at: string
@@ -130,6 +178,7 @@ export type Database = {
           created_at?: string
           expected_format?: Json | null
           id?: string
+          instructions?: string | null
           name: string
           post_url: string
           updated_at?: string
@@ -142,6 +191,7 @@ export type Database = {
           created_at?: string
           expected_format?: Json | null
           id?: string
+          instructions?: string | null
           name?: string
           post_url?: string
           updated_at?: string
@@ -250,6 +300,8 @@ export type Database = {
           created_at: string
           id: string
           knowreply_agent_id: string | null
+          knowreply_api_token: string | null
+          knowreply_base_url: string | null
           knowreply_persona: string | null
           knowreply_webhook_url: string | null
           postmark_active: boolean | null
@@ -264,6 +316,8 @@ export type Database = {
           created_at?: string
           id?: string
           knowreply_agent_id?: string | null
+          knowreply_api_token?: string | null
+          knowreply_base_url?: string | null
           knowreply_persona?: string | null
           knowreply_webhook_url?: string | null
           postmark_active?: boolean | null
@@ -278,6 +332,8 @@ export type Database = {
           created_at?: string
           id?: string
           knowreply_agent_id?: string | null
+          knowreply_api_token?: string | null
+          knowreply_base_url?: string | null
           knowreply_persona?: string | null
           knowreply_webhook_url?: string | null
           postmark_active?: boolean | null
