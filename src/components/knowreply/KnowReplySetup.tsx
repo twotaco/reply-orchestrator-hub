@@ -1,4 +1,3 @@
-
 import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { supabase } from '@/integrations/supabase/client';
@@ -275,16 +274,36 @@ export function KnowReplySetup() {
 
     setSaving(true);
     try {
-      // Save API token
-      const { error: configError } = await supabase
+      // Check if workspace config exists first
+      const { data: existingConfig } = await supabase
         .from('workspace_configs')
-        .upsert({
-          user_id: user.id,
-          knowreply_api_token: config.knowreply_api_token,
-          updated_at: new Date().toISOString()
-        });
+        .select('id')
+        .eq('user_id', user.id)
+        .single();
 
-      if (configError) throw configError;
+      if (existingConfig) {
+        // Update existing record
+        const { error: configError } = await supabase
+          .from('workspace_configs')
+          .update({
+            knowreply_api_token: config.knowreply_api_token,
+            updated_at: new Date().toISOString()
+          })
+          .eq('user_id', user.id);
+
+        if (configError) throw configError;
+      } else {
+        // Insert new record
+        const { error: configError } = await supabase
+          .from('workspace_configs')
+          .insert({
+            user_id: user.id,
+            knowreply_api_token: config.knowreply_api_token,
+            updated_at: new Date().toISOString()
+          });
+
+        if (configError) throw configError;
+      }
 
       // Clear existing mappings
       const { error: deleteError } = await supabase
