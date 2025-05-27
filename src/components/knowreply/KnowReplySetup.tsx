@@ -11,21 +11,54 @@ import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/hooks/use-toast';
 import { 
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import { Checkbox } from '@/components/ui/checkbox';
+import { 
   Bot, 
   Settings, 
   CheckCircle2, 
   Copy,
   ExternalLink,
   Loader2,
-  Brain
+  Brain,
+  Plus,
+  Trash2
 } from 'lucide-react';
 
 interface KnowReplyConfig {
   knowreply_api_token: string | null;
   knowreply_agent_id: string | null;
-  knowreply_base_url: string | null;
   knowreply_persona: string | null;
 }
+
+interface Agent {
+  id: string;
+  name: string;
+  description?: string;
+}
+
+interface MCPEndpoint {
+  id: string;
+  name: string;
+  category: string;
+  post_url: string;
+  instructions?: string;
+}
+
+interface AgentMCPMapping {
+  id: string;
+  agent_id: string;
+  mcp_endpoint_id: string;
+  active: boolean;
+}
+
+const KNOWREPLY_BASE_URL = 'https://schhqmadbetntdrhowgg.supabase.co/functions/v1';
+const KNOWREPLY_GET_AGENTS_URL = `${KNOWREPLY_BASE_URL}/knowreply-get-agents`;
 
 export function KnowReplySetup() {
   const { user } = useAuth();
@@ -33,24 +66,40 @@ export function KnowReplySetup() {
   const [config, setConfig] = useState<KnowReplyConfig>({
     knowreply_api_token: '',
     knowreply_agent_id: '',
-    knowreply_base_url: 'https://schhqmadbetntdrhowgg.supabase.co/functions/v1',
     knowreply_persona: 'professional'
   });
+  const [agents, setAgents] = useState<Agent[]>([]);
+  const [mcpEndpoints, setMCPEndpoints] = useState<MCPEndpoint[]>([]);
+  const [agentMappings, setAgentMappings] = useState<AgentMCPMapping[]>([]);
+  const [selectedAgent, setSelectedAgent] = useState<string>('');
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [testing, setTesting] = useState(false);
+  const [loadingAgents, setLoadingAgents] = useState(false);
 
   useEffect(() => {
     if (user) {
       loadConfig();
+      loadMCPEndpoints();
     }
   }, [user]);
+
+  useEffect(() => {
+    if (config.knowreply_api_token) {
+      fetchAgents();
+    }
+  }, [config.knowreply_api_token]);
+
+  useEffect(() => {
+    if (selectedAgent) {
+      loadAgentMappings();
+    }
+  }, [selectedAgent]);
 
   const loadConfig = async () => {
     try {
       const { data, error } = await supabase
         .from('workspace_configs')
-        .select('knowreply_api_token, knowreply_agent_id, knowreply_base_url, knowreply_persona')
+        .select('knowreply_api_token, knowreply_agent_id, knowreply_persona')
         .eq('user_id', user?.id)
         .single();
 
@@ -60,6 +109,9 @@ export function KnowReplySetup() {
 
       if (data) {
         setConfig(data);
+        if (data.knowreply_agent_id) {
+          setSelectedAgent(data.knowreply_agent_id);
+        }
       }
     } catch (error) {
       console.error('Error loading config:', error);
@@ -73,6 +125,74 @@ export function KnowReplySetup() {
     }
   };
 
+  const loadMCPEndpoints = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('mcp_endpoints')
+        .select('*')
+        .eq('user_id', user?.id)
+        .eq('active', true);
+
+      if (error) throw error;
+      setMCPEndpoints(data || []);
+    } catch (error) {
+      console.error('Error loading MCP endpoints:', error);
+    }
+  };
+
+  const loadAgentMappings = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('knowreply_agent_mcp_mappings')
+        .select('*')
+        .eq('user_id', user?.id)
+        .eq('agent_id', selectedAgent);
+
+      if (error) throw error;
+      setAgentMappings(data || []);
+    } catch (error) {
+      console.error('Error loading agent mappings:', error);
+    }
+  };
+
+  const fetchAgents = async () => {
+    if (!config.knowreply_api_token) return;
+
+    setLoadingAgents(true);
+    try {
+      const response = await fetch(KNOWREPLY_GET_AGENTS_URL, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          api_token: config.knowreply_api_token
+        })
+      });
+
+      if (!response.ok) {
+        throw new Error(`Failed to fetch agents: ${response.status}`);
+      }
+
+      const result = await response.json();
+      if (result.success && result.agents) {
+        setAgents(result.agents);
+      } else {
+        throw new Error(result.error || 'Failed to fetch agents');
+      }
+    } catch (error) {
+      console.error('Error fetching agents:', error);
+      toast({
+        title: "Error",
+        description: "Failed to fetch agents. Please check your API token.",
+        variant: "destructive",
+      });
+      setAgents([]);
+    } finally {
+      setLoadingAgents(false);
+    }
+  };
+
   const saveConfig = async () => {
     if (!user) return;
 
@@ -83,8 +203,7 @@ export function KnowReplySetup() {
         .upsert({
           user_id: user.id,
           knowreply_api_token: config.knowreply_api_token,
-          knowreply_agent_id: config.knowreply_agent_id,
-          knowreply_base_url: config.knowreply_base_url,
+          knowreply_agent_id: selectedAgent,
           knowreply_persona: config.knowreply_persona,
           updated_at: new Date().toISOString()
         });
@@ -107,43 +226,48 @@ export function KnowReplySetup() {
     }
   };
 
-  const testConnection = async () => {
-    if (!config.knowreply_api_token || !config.knowreply_base_url) {
+  const toggleMCPMapping = async (mcpEndpointId: string, enabled: boolean) => {
+    if (!user || !selectedAgent) return;
+
+    try {
+      if (enabled) {
+        // Add mapping
+        const { error } = await supabase
+          .from('knowreply_agent_mcp_mappings')
+          .upsert({
+            user_id: user.id,
+            agent_id: selectedAgent,
+            mcp_endpoint_id: mcpEndpointId,
+            active: true
+          });
+
+        if (error) throw error;
+      } else {
+        // Remove mapping
+        const { error } = await supabase
+          .from('knowreply_agent_mcp_mappings')
+          .delete()
+          .eq('user_id', user.id)
+          .eq('agent_id', selectedAgent)
+          .eq('mcp_endpoint_id', mcpEndpointId);
+
+        if (error) throw error;
+      }
+
+      // Reload mappings
+      await loadAgentMappings();
+
+      toast({
+        title: "Success",
+        description: enabled ? "MCP endpoint enabled for agent" : "MCP endpoint disabled for agent",
+      });
+    } catch (error) {
+      console.error('Error updating MCP mapping:', error);
       toast({
         title: "Error",
-        description: "Please enter your KnowReply API token and base URL first",
+        description: "Failed to update MCP endpoint mapping",
         variant: "destructive",
       });
-      return;
-    }
-
-    setTesting(true);
-    try {
-      // Test the KnowReply API by making a health check or simple request
-      const response = await fetch(`${config.knowreply_base_url}/health`, {
-        headers: {
-          'Authorization': `Bearer ${config.knowreply_api_token}`,
-          'Content-Type': 'application/json'
-        }
-      });
-
-      if (response.ok) {
-        toast({
-          title: "Success",
-          description: "KnowReply API connection successful!",
-        });
-      } else {
-        throw new Error(`API returned ${response.status}`);
-      }
-    } catch (error) {
-      console.error('Error testing connection:', error);
-      toast({
-        title: "Warning",
-        description: "Could not verify KnowReply connection. The API might still work correctly.",
-        variant: "destructive",
-      });
-    } finally {
-      setTesting(false);
     }
   };
 
@@ -153,6 +277,12 @@ export function KnowReplySetup() {
       title: "Copied",
       description: "Copied to clipboard",
     });
+  };
+
+  const isMCPMapped = (mcpEndpointId: string) => {
+    return agentMappings.some(mapping => 
+      mapping.mcp_endpoint_id === mcpEndpointId && mapping.active
+    );
   };
 
   if (loading) {
@@ -172,7 +302,7 @@ export function KnowReplySetup() {
       <div>
         <h1 className="text-3xl font-bold text-gray-900">KnowReply Setup</h1>
         <p className="text-gray-600 mt-2">
-          Configure KnowReply AI agent to handle intelligent email responses
+          Configure KnowReply AI agents to handle intelligent email responses
         </p>
       </div>
 
@@ -184,7 +314,7 @@ export function KnowReplySetup() {
             API Configuration
           </CardTitle>
           <CardDescription>
-            Enter your KnowReply API credentials and agent settings
+            Enter your KnowReply API token to access your agents
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -203,32 +333,6 @@ export function KnowReplySetup() {
           </div>
 
           <div>
-            <Label htmlFor="agent-id">Agent ID</Label>
-            <Input
-              id="agent-id"
-              placeholder="Enter your KnowReply Agent ID"
-              value={config.knowreply_agent_id || ''}
-              onChange={(e) => setConfig({ ...config, knowreply_agent_id: e.target.value })}
-            />
-            <p className="text-sm text-gray-500 mt-1">
-              The ID of the agent that will handle email responses
-            </p>
-          </div>
-
-          <div>
-            <Label htmlFor="base-url">Base URL</Label>
-            <Input
-              id="base-url"
-              placeholder="KnowReply API base URL"
-              value={config.knowreply_base_url || ''}
-              onChange={(e) => setConfig({ ...config, knowreply_base_url: e.target.value })}
-            />
-            <p className="text-sm text-gray-500 mt-1">
-              The base URL for the KnowReply API
-            </p>
-          </div>
-
-          <div>
             <Label htmlFor="persona">AI Persona</Label>
             <Textarea
               id="persona"
@@ -242,48 +346,147 @@ export function KnowReplySetup() {
             </p>
           </div>
 
-          <div className="flex gap-2">
-            <Button onClick={testConnection} disabled={testing} variant="outline">
-              {testing ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
-              Test Connection
-            </Button>
-            <Button onClick={saveConfig} disabled={saving}>
-              {saving ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
-              Save Configuration
-            </Button>
-          </div>
+          <Button onClick={saveConfig} disabled={saving}>
+            {saving ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
+            Save Configuration
+          </Button>
         </CardContent>
       </Card>
 
-      {/* Agent Status */}
-      {config.knowreply_agent_id && (
+      {/* Agent Selection */}
+      {config.knowreply_api_token && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Brain className="h-5 w-5" />
+              Agent Selection
+            </CardTitle>
+            <CardDescription>
+              Choose which KnowReply agent will handle your email responses
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {loadingAgents ? (
+              <div className="flex items-center justify-center py-8">
+                <Loader2 className="h-6 w-6 animate-spin mr-2" />
+                <span>Loading agents...</span>
+              </div>
+            ) : agents.length > 0 ? (
+              <div>
+                <Label htmlFor="agent-select">Select Agent</Label>
+                <Select value={selectedAgent} onValueChange={setSelectedAgent}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Choose an agent" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {agents.map((agent) => (
+                      <SelectItem key={agent.id} value={agent.id}>
+                        {agent.name}
+                        {agent.description && (
+                          <span className="text-gray-500 text-sm"> - {agent.description}</span>
+                        )}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            ) : (
+              <div className="text-center py-8 text-gray-500">
+                <Bot className="h-12 w-12 mx-auto mb-4 opacity-50" />
+                <p>No agents found. Please check your API token.</p>
+                <Button 
+                  variant="outline" 
+                  onClick={fetchAgents}
+                  className="mt-2"
+                >
+                  Retry
+                </Button>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
+      {/* MCP Endpoint Configuration */}
+      {selectedAgent && mcpEndpoints.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Settings className="h-5 w-5" />
+              MCP Endpoint Configuration
+            </CardTitle>
+            <CardDescription>
+              Configure which MCP endpoints this agent can use to interact with external systems
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {mcpEndpoints.map((endpoint) => (
+              <div key={endpoint.id} className="flex items-center space-x-3 p-3 border rounded-lg">
+                <Checkbox
+                  checked={isMCPMapped(endpoint.id)}
+                  onCheckedChange={(checked) => 
+                    toggleMCPMapping(endpoint.id, checked as boolean)
+                  }
+                />
+                <div className="flex-1">
+                  <div className="flex items-center gap-2">
+                    <span className="font-medium">{endpoint.name}</span>
+                    <Badge variant="outline">{endpoint.category}</Badge>
+                  </div>
+                  {endpoint.instructions && (
+                    <p className="text-sm text-gray-500 mt-1">{endpoint.instructions}</p>
+                  )}
+                </div>
+              </div>
+            ))}
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Selected Agent Status */}
+      {selectedAgent && (
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <CheckCircle2 className="h-5 w-5 text-green-600" />
-              Agent Configuration
+              Active Agent Configuration
             </CardTitle>
             <CardDescription>
-              Your KnowReply agent is configured and ready to respond
+              Your selected agent is ready to handle email responses
             </CardDescription>
           </CardHeader>
           <CardContent>
-            <div className="flex items-center gap-2">
-              <Badge variant="outline" className="text-lg px-3 py-2">
-                <Brain className="h-4 w-4 mr-2" />
-                Agent ID: {config.knowreply_agent_id}
-              </Badge>
-              <Button 
-                variant="outline" 
-                size="icon"
-                onClick={() => copyToClipboard(config.knowreply_agent_id || '')}
-              >
-                <Copy className="h-4 w-4" />
-              </Button>
+            <div className="space-y-3">
+              <div className="flex items-center gap-2">
+                <Badge variant="outline" className="text-lg px-3 py-2">
+                  <Brain className="h-4 w-4 mr-2" />
+                  Agent ID: {selectedAgent}
+                </Badge>
+                <Button 
+                  variant="outline" 
+                  size="icon"
+                  onClick={() => copyToClipboard(selectedAgent)}
+                >
+                  <Copy className="h-4 w-4" />
+                </Button>
+              </div>
+              
+              {agentMappings.length > 0 && (
+                <div>
+                  <p className="text-sm font-medium mb-2">Connected MCP Endpoints:</p>
+                  <div className="flex flex-wrap gap-2">
+                    {agentMappings.map((mapping) => {
+                      const endpoint = mcpEndpoints.find(e => e.id === mapping.mcp_endpoint_id);
+                      return endpoint ? (
+                        <Badge key={mapping.id} variant="secondary">
+                          {endpoint.name}
+                        </Badge>
+                      ) : null;
+                    })}
+                  </div>
+                </div>
+              )}
             </div>
-            <p className="text-sm text-gray-500 mt-2">
-              This agent will handle intelligent responses to incoming emails
-            </p>
           </CardContent>
         </Card>
       )}
@@ -300,10 +503,10 @@ export function KnowReplySetup() {
           <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
             <h4 className="font-medium text-blue-900 mb-2">Getting Started:</h4>
             <ol className="text-sm text-blue-800 space-y-1 list-decimal list-inside">
-              <li>Obtain your API token from the KnowReply dashboard</li>
-              <li>Create or identify your agent ID in KnowReply</li>
-              <li>Configure your agent's persona and response style</li>
-              <li>Set up MCP endpoints for external system integration</li>
+              <li>Enter your KnowReply API token above</li>
+              <li>Select the agent you want to use for email responses</li>
+              <li>Configure which MCP endpoints the agent can access</li>
+              <li>Set up your email routing with Postmark integration</li>
               <li>Test the configuration with sample emails</li>
             </ol>
           </div>
