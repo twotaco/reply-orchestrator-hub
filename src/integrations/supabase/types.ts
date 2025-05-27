@@ -9,7 +9,209 @@ export type Json =
 export type Database = {
   public: {
     Tables: {
-      [_ in never]: never
+      activity_logs: {
+        Row: {
+          action: string
+          created_at: string
+          details: Json | null
+          email_interaction_id: string | null
+          id: string
+          status: string | null
+          user_id: string
+        }
+        Insert: {
+          action: string
+          created_at?: string
+          details?: Json | null
+          email_interaction_id?: string | null
+          id?: string
+          status?: string | null
+          user_id: string
+        }
+        Update: {
+          action?: string
+          created_at?: string
+          details?: Json | null
+          email_interaction_id?: string | null
+          id?: string
+          status?: string | null
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "activity_logs_email_interaction_id_fkey"
+            columns: ["email_interaction_id"]
+            isOneToOne: false
+            referencedRelation: "email_interactions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      email_interactions: {
+        Row: {
+          created_at: string
+          from_email: string
+          id: string
+          intent: string | null
+          knowreply_request: Json | null
+          knowreply_response: Json | null
+          mcp_result: Json | null
+          mcp_used: string | null
+          message_id: string
+          original_content: string | null
+          postmark_request: Json | null
+          postmark_response: Json | null
+          reply_content: string | null
+          status: string | null
+          subject: string | null
+          to_email: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          from_email: string
+          id?: string
+          intent?: string | null
+          knowreply_request?: Json | null
+          knowreply_response?: Json | null
+          mcp_result?: Json | null
+          mcp_used?: string | null
+          message_id: string
+          original_content?: string | null
+          postmark_request?: Json | null
+          postmark_response?: Json | null
+          reply_content?: string | null
+          status?: string | null
+          subject?: string | null
+          to_email: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          from_email?: string
+          id?: string
+          intent?: string | null
+          knowreply_request?: Json | null
+          knowreply_response?: Json | null
+          mcp_result?: Json | null
+          mcp_used?: string | null
+          message_id?: string
+          original_content?: string | null
+          postmark_request?: Json | null
+          postmark_response?: Json | null
+          reply_content?: string | null
+          status?: string | null
+          subject?: string | null
+          to_email?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      mcp_endpoints: {
+        Row: {
+          active: boolean | null
+          auth_token: string | null
+          category: string
+          created_at: string
+          expected_format: Json | null
+          id: string
+          name: string
+          post_url: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          active?: boolean | null
+          auth_token?: string | null
+          category: string
+          created_at?: string
+          expected_format?: Json | null
+          id?: string
+          name: string
+          post_url: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          active?: boolean | null
+          auth_token?: string | null
+          category?: string
+          created_at?: string
+          expected_format?: Json | null
+          id?: string
+          name?: string
+          post_url?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      profiles: {
+        Row: {
+          created_at: string
+          email: string
+          id: string
+          updated_at: string
+          workspace_name: string | null
+        }
+        Insert: {
+          created_at?: string
+          email: string
+          id: string
+          updated_at?: string
+          workspace_name?: string | null
+        }
+        Update: {
+          created_at?: string
+          email?: string
+          id?: string
+          updated_at?: string
+          workspace_name?: string | null
+        }
+        Relationships: []
+      }
+      workspace_configs: {
+        Row: {
+          created_at: string
+          id: string
+          knowreply_agent_id: string | null
+          knowreply_persona: string | null
+          knowreply_webhook_url: string | null
+          postmark_active: boolean | null
+          postmark_api_token: string | null
+          postmark_webhook_url: string | null
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          knowreply_agent_id?: string | null
+          knowreply_persona?: string | null
+          knowreply_webhook_url?: string | null
+          postmark_active?: boolean | null
+          postmark_api_token?: string | null
+          postmark_webhook_url?: string | null
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          knowreply_agent_id?: string | null
+          knowreply_persona?: string | null
+          knowreply_webhook_url?: string | null
+          postmark_active?: boolean | null
+          postmark_api_token?: string | null
+          postmark_webhook_url?: string | null
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never

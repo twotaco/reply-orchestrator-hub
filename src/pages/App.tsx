@@ -1,0 +1,56 @@
+
+import { useState } from 'react';
+import { AuthProvider, useAuth } from '@/hooks/useAuth';
+import { AuthPage } from '@/components/auth/AuthPage';
+import { AppLayout } from '@/components/layout/AppLayout';
+import { Dashboard } from '@/components/dashboard/Dashboard';
+
+function AppContent() {
+  const { user, loading } = useAuth();
+  const [currentPage, setCurrentPage] = useState('dashboard');
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-blue-600"></div>
+      </div>
+    );
+  }
+
+  if (!user) {
+    return <AuthPage />;
+  }
+
+  const renderPage = () => {
+    switch (currentPage) {
+      case 'dashboard':
+        return <Dashboard />;
+      case 'postmark':
+        return <div>Postmark Setup - Coming Soon</div>;
+      case 'knowreply':
+        return <div>KnowReply Setup - Coming Soon</div>;
+      case 'mcps':
+        return <div>MCP Management - Coming Soon</div>;
+      case 'logs':
+        return <div>Activity Logs - Coming Soon</div>;
+      default:
+        return <Dashboard />;
+    }
+  };
+
+  return (
+    <AppLayout currentPage={currentPage} onPageChange={setCurrentPage}>
+      {renderPage()}
+    </AppLayout>
+  );
+}
+
+function App() {
+  return (
+    <AuthProvider>
+      <AppContent />
+    </AuthProvider>
+  );
+}
+
+export default App;
