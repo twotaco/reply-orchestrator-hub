@@ -149,6 +149,78 @@ export type Database = {
         }
         Relationships: []
       }
+      postmark_inbound_emails: {
+        Row: {
+          attachments: Json | null
+          bcc_email: string | null
+          cc_email: string | null
+          created_at: string
+          from_email: string
+          from_name: string | null
+          headers: Json | null
+          html_body: string | null
+          id: string
+          mailbox_hash: string | null
+          message_id: string
+          processed: boolean | null
+          raw_webhook_data: Json
+          spam_score: number | null
+          spam_status: string | null
+          stripped_text_reply: string | null
+          subject: string | null
+          text_body: string | null
+          to_email: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          attachments?: Json | null
+          bcc_email?: string | null
+          cc_email?: string | null
+          created_at?: string
+          from_email: string
+          from_name?: string | null
+          headers?: Json | null
+          html_body?: string | null
+          id?: string
+          mailbox_hash?: string | null
+          message_id: string
+          processed?: boolean | null
+          raw_webhook_data: Json
+          spam_score?: number | null
+          spam_status?: string | null
+          stripped_text_reply?: string | null
+          subject?: string | null
+          text_body?: string | null
+          to_email: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          attachments?: Json | null
+          bcc_email?: string | null
+          cc_email?: string | null
+          created_at?: string
+          from_email?: string
+          from_name?: string | null
+          headers?: Json | null
+          html_body?: string | null
+          id?: string
+          mailbox_hash?: string | null
+          message_id?: string
+          processed?: boolean | null
+          raw_webhook_data?: Json
+          spam_score?: number | null
+          spam_status?: string | null
+          stripped_text_reply?: string | null
+          subject?: string | null
+          text_body?: string | null
+          to_email?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       profiles: {
         Row: {
           created_at: string
@@ -182,6 +254,8 @@ export type Database = {
           knowreply_webhook_url: string | null
           postmark_active: boolean | null
           postmark_api_token: string | null
+          postmark_inbound_hash: string | null
+          postmark_server_id: string | null
           postmark_webhook_url: string | null
           updated_at: string
           user_id: string
@@ -194,6 +268,8 @@ export type Database = {
           knowreply_webhook_url?: string | null
           postmark_active?: boolean | null
           postmark_api_token?: string | null
+          postmark_inbound_hash?: string | null
+          postmark_server_id?: string | null
           postmark_webhook_url?: string | null
           updated_at?: string
           user_id: string
@@ -206,6 +282,8 @@ export type Database = {
           knowreply_webhook_url?: string | null
           postmark_active?: boolean | null
           postmark_api_token?: string | null
+          postmark_inbound_hash?: string | null
+          postmark_server_id?: string | null
           postmark_webhook_url?: string | null
           updated_at?: string
           user_id?: string

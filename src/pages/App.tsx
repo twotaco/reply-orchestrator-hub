@@ -4,6 +4,7 @@ import { AuthProvider, useAuth } from '@/hooks/useAuth';
 import { AuthPage } from '@/components/auth/AuthPage';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { Dashboard } from '@/components/dashboard/Dashboard';
+import { PostmarkSetup } from '@/components/postmark/PostmarkSetup';
 
 function AppContent() {
   const { user, loading } = useAuth();
@@ -26,7 +27,7 @@ function AppContent() {
       case 'dashboard':
         return <Dashboard />;
       case 'postmark':
-        return <div>Postmark Setup - Coming Soon</div>;
+        return <PostmarkSetup />;
       case 'knowreply':
         return <div>KnowReply Setup - Coming Soon</div>;
       case 'mcps':
