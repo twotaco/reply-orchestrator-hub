@@ -1,4 +1,3 @@
-
 import { useState, useEffect } from 'react';
 import { useAuth } from '@/hooks/useAuth';
 import { supabase } from '@/integrations/supabase/client';
@@ -12,6 +11,7 @@ import { Switch } from '@/components/ui/switch';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { toast } from '@/hooks/use-toast';
 import { Plus, Edit, Trash2, TestTube, Save, X } from 'lucide-react';
+import { Checkbox } from '@/components/ui/checkbox';
 
 interface MCPEndpoint {
   id: string;
@@ -34,6 +34,8 @@ interface MCPForm {
   expected_format: string;
   instructions: string;
   active: boolean;
+  stripe_tools?: string[];
+  server_type?: 'local' | 'remote';
 }
 
 const categories = [
@@ -41,6 +43,21 @@ const categories = [
   'Supabase',
   'Shopify',
   'Custom'
+];
+
+const stripeTools = [
+  'create_customer',
+  'retrieve_customer',
+  'update_customer',
+  'list_customers',
+  'create_payment_intent',
+  'retrieve_payment_intent',
+  'create_subscription',
+  'retrieve_subscription',
+  'create_product',
+  'create_price',
+  'create_checkout_session',
+  'search_knowledge_base'
 ];
 
 export function MCPManagement() {
@@ -57,7 +74,9 @@ export function MCPManagement() {
     auth_token: '',
     expected_format: '{\n  "example": "json format"\n}',
     instructions: '',
-    active: true
+    active: true,
+    stripe_tools: [],
+    server_type: 'remote'
   });
 
   useEffect(() => {
@@ -96,20 +115,92 @@ export function MCPManagement() {
       auth_token: '',
       expected_format: '{\n  "example": "json format"\n}',
       instructions: '',
-      active: true
+      active: true,
+      stripe_tools: [],
+      server_type: 'remote'
     });
     setEditingId(null);
     setShowAddForm(false);
   };
 
+  const handleCategoryChange = (category: string) => {
+    const newFormData = { ...formData, category };
+    
+    if (category === 'Stripe') {
+      newFormData.post_url = formData.server_type === 'remote' ? 'https://mcp.stripe.com' : '';
+      newFormData.expected_format = JSON.stringify({
+        "jsonrpc": "2.0",
+        "method": "tools/call",
+        "params": {
+          "name": "create_customer",
+          "arguments": {"name": "Jenny Rosen", "email": "jenny.rosen@example.com"}
+        },
+        "id": 1
+      }, null, 2);
+      newFormData.instructions = 'Use this MCP server to interact with Stripe API. Supports customer management, payments, subscriptions, and knowledge base search.';
+      newFormData.stripe_tools = ['create_customer', 'retrieve_customer', 'create_payment_intent'];
+    }
+    
+    setFormData(newFormData);
+  };
+
+  const handleServerTypeChange = (serverType: 'local' | 'remote') => {
+    const newFormData = { ...formData, server_type: serverType };
+    
+    if (formData.category === 'Stripe') {
+      newFormData.post_url = serverType === 'remote' ? 'https://mcp.stripe.com' : '';
+    }
+    
+    setFormData(newFormData);
+  };
+
+  const handleStripeToolToggle = (tool: string, checked: boolean) => {
+    const currentTools = formData.stripe_tools || [];
+    if (checked) {
+      setFormData({ ...formData, stripe_tools: [...currentTools, tool] });
+    } else {
+      setFormData({ ...formData, stripe_tools: currentTools.filter(t => t !== tool) });
+    }
+  };
+
   const handleSave = async () => {
-    if (!formData.name || !formData.category || !formData.post_url) {
+    if (!formData.name || !formData.category) {
       toast({
         title: "Validation Error",
-        description: "Please fill in all required fields",
+        description: "Please fill in name and category",
         variant: "destructive"
       });
       return;
+    }
+
+    // Validate Stripe-specific fields
+    if (formData.category === 'Stripe') {
+      if (!formData.auth_token) {
+        toast({
+          title: "Validation Error",
+          description: "Stripe Secret Key is required for Stripe MCP",
+          variant: "destructive"
+        });
+        return;
+      }
+      if (formData.server_type === 'local' && !formData.post_url) {
+        toast({
+          title: "Validation Error",
+          description: "Local server URL is required when using local server type",
+          variant: "destructive"
+        });
+        return;
+      }
+    } else {
+      // For non-Stripe categories, require POST URL
+      if (!formData.post_url) {
+        toast({
+          title: "Validation Error",
+          description: "POST URL is required",
+          variant: "destructive"
+        });
+        return;
+      }
     }
 
     let expectedFormat;
@@ -130,7 +221,13 @@ export function MCPManagement() {
         category: formData.category,
         post_url: formData.post_url,
         auth_token: formData.auth_token || null,
-        expected_format: expectedFormat,
+        expected_format: {
+          ...expectedFormat,
+          ...(formData.category === 'Stripe' && {
+            stripe_tools: formData.stripe_tools,
+            server_type: formData.server_type
+          })
+        },
         instructions: formData.instructions || null,
         active: formData.active,
         user_id: user?.id
@@ -172,6 +269,11 @@ export function MCPManagement() {
   };
 
   const handleEdit = (endpoint: MCPEndpoint) => {
+    const stripeConfig = endpoint.expected_format?.stripe_tools ? {
+      stripe_tools: endpoint.expected_format.stripe_tools,
+      server_type: endpoint.expected_format.server_type || 'remote'
+    } : { stripe_tools: [], server_type: 'remote' };
+
     setFormData({
       name: endpoint.name,
       category: endpoint.category,
@@ -179,7 +281,8 @@ export function MCPManagement() {
       auth_token: endpoint.auth_token || '',
       expected_format: JSON.stringify(endpoint.expected_format || {}, null, 2),
       instructions: endpoint.instructions || '',
-      active: endpoint.active
+      active: endpoint.active,
+      ...stripeConfig
     });
     setEditingId(endpoint.id);
     setShowAddForm(true);
@@ -308,7 +411,7 @@ export function MCPManagement() {
               </div>
               <div>
                 <Label htmlFor="category">Category *</Label>
-                <Select value={formData.category} onValueChange={(value) => setFormData({ ...formData, category: value })}>
+                <Select value={formData.category} onValueChange={handleCategoryChange}>
                   <SelectTrigger>
                     <SelectValue placeholder="Select category" />
                   </SelectTrigger>
@@ -323,26 +426,105 @@ export function MCPManagement() {
               </div>
             </div>
 
-            <div>
-              <Label htmlFor="post_url">POST URL *</Label>
-              <Input
-                id="post_url"
-                value={formData.post_url}
-                onChange={(e) => setFormData({ ...formData, post_url: e.target.value })}
-                placeholder="https://api.example.com/webhook"
-              />
-            </div>
+            {formData.category === 'Stripe' && (
+              <div className="space-y-4 p-4 bg-blue-50 rounded-lg border">
+                <h3 className="font-semibold text-blue-900">Stripe MCP Configuration</h3>
+                
+                <div>
+                  <Label htmlFor="server_type">Server Type</Label>
+                  <Select 
+                    value={formData.server_type} 
+                    onValueChange={(value: 'local' | 'remote') => handleServerTypeChange(value)}
+                  >
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="remote">Remote (https://mcp.stripe.com)</SelectItem>
+                      <SelectItem value="local">Local Server</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <p className="text-sm text-gray-600 mt-1">
+                    Remote server is hosted by Stripe. Local server requires running npx @stripe/mcp locally.
+                  </p>
+                </div>
 
-            <div>
-              <Label htmlFor="auth_token">Auth Token</Label>
-              <Input
-                id="auth_token"
-                type="password"
-                value={formData.auth_token}
-                onChange={(e) => setFormData({ ...formData, auth_token: e.target.value })}
-                placeholder="Bearer token for authentication"
-              />
-            </div>
+                <div>
+                  <Label htmlFor="stripe_secret_key">Stripe Secret Key *</Label>
+                  <Input
+                    id="stripe_secret_key"
+                    type="password"
+                    value={formData.auth_token}
+                    onChange={(e) => setFormData({ ...formData, auth_token: e.target.value })}
+                    placeholder="sk_test_..."
+                  />
+                  <p className="text-sm text-gray-600 mt-1">
+                    Use restricted API keys to limit access to required functionality only.
+                  </p>
+                </div>
+
+                <div>
+                  <Label>Available Tools</Label>
+                  <div className="grid grid-cols-2 gap-2 mt-2 max-h-40 overflow-y-auto">
+                    {stripeTools.map((tool) => (
+                      <div key={tool} className="flex items-center space-x-2">
+                        <Checkbox
+                          id={tool}
+                          checked={formData.stripe_tools?.includes(tool) || false}
+                          onCheckedChange={(checked) => handleStripeToolToggle(tool, checked as boolean)}
+                        />
+                        <Label htmlFor={tool} className="text-sm">
+                          {tool}
+                        </Label>
+                      </div>
+                    ))}
+                  </div>
+                  <p className="text-sm text-gray-600 mt-1">
+                    Select which Stripe tools the agent can access.
+                  </p>
+                </div>
+              </div>
+            )}
+
+            {formData.category === 'Stripe' && formData.server_type === 'local' && (
+              <div>
+                <Label htmlFor="post_url">Local Server URL *</Label>
+                <Input
+                  id="post_url"
+                  value={formData.post_url}
+                  onChange={(e) => setFormData({ ...formData, post_url: e.target.value })}
+                  placeholder="http://localhost:8000"
+                />
+                <p className="text-sm text-gray-600 mt-1">
+                  URL where your local Stripe MCP server is running.
+                </p>
+              </div>
+            )}
+
+            {formData.category !== 'Stripe' && (
+              <div>
+                <Label htmlFor="post_url">POST URL *</Label>
+                <Input
+                  id="post_url"
+                  value={formData.post_url}
+                  onChange={(e) => setFormData({ ...formData, post_url: e.target.value })}
+                  placeholder="https://api.example.com/webhook"
+                />
+              </div>
+            )}
+
+            {formData.category !== 'Stripe' && (
+              <div>
+                <Label htmlFor="auth_token">Auth Token</Label>
+                <Input
+                  id="auth_token"
+                  type="password"
+                  value={formData.auth_token}
+                  onChange={(e) => setFormData({ ...formData, auth_token: e.target.value })}
+                  placeholder="Bearer token for authentication"
+                />
+              </div>
+            )}
 
             <div>
               <Label htmlFor="instructions">Instructions for AI Agent</Label>
@@ -428,7 +610,7 @@ export function MCPManagement() {
                     </TableCell>
                     <TableCell>
                       <code className="text-sm bg-gray-100 px-2 py-1 rounded">
-                        {endpoint.post_url}
+                        {endpoint.post_url || (endpoint.category === 'Stripe' ? 'https://mcp.stripe.com' : 'Not configured')}
                       </code>
                     </TableCell>
                     <TableCell>
