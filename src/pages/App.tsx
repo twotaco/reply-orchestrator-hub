@@ -5,6 +5,7 @@ import { AuthPage } from '@/components/auth/AuthPage';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { Dashboard } from '@/components/dashboard/Dashboard';
 import { PostmarkSetup } from '@/components/postmark/PostmarkSetup';
+import { MCPManagement } from '@/components/mcp/MCPManagement';
 
 function AppContent() {
   const { user, loading } = useAuth();
@@ -31,7 +32,7 @@ function AppContent() {
       case 'knowreply':
         return <div>KnowReply Setup - Coming Soon</div>;
       case 'mcps':
-        return <div>MCP Management - Coming Soon</div>;
+        return <MCPManagement />;
       case 'logs':
         return <div>Activity Logs - Coming Soon</div>;
       default:
