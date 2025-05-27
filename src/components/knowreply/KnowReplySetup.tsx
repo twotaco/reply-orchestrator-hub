@@ -36,7 +36,8 @@ interface KnowReplyConfig {
 interface Agent {
   id: string;
   name: string;
-  description?: string;
+  persona?: string;
+  role?: string;
 }
 
 interface MCPEndpoint {
@@ -161,22 +162,39 @@ export function KnowReplySetup() {
     console.log('Using API token:', config.knowreply_api_token?.substring(0, 10) + '...');
 
     try {
-      const { data, error } = await supabase.functions.invoke('get-agents', {
-        body: { api_token: config.knowreply_api_token }
+      const response = await fetch(KNOWREPLY_GET_AGENTS_URL, {
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${config.knowreply_api_token}`,
+          'Accept': 'application/json',
+          'Content-Type': 'application/json'
+        }
       });
 
-      console.log('Supabase function response:', { data, error });
-
-      if (error) {
-        console.error('Supabase function error:', error);
-        throw new Error(error.message || 'Failed to fetch agents');
+      console.log('Response status:', response.status);
+      
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error('Response error:', errorText);
+        let errorMessage = `HTTP ${response.status}`;
+        
+        try {
+          const errorJson = JSON.parse(errorText);
+          errorMessage = errorJson.error || errorMessage;
+        } catch {
+          errorMessage = errorText || errorMessage;
+        }
+        
+        throw new Error(errorMessage);
       }
 
-      if (data?.success && data?.agents) {
-        setAgents(data.agents);
-        console.log('Successfully loaded agents:', data.agents);
+      const agents = await response.json();
+      console.log('Successfully loaded agents:', agents);
+      
+      if (Array.isArray(agents)) {
+        setAgents(agents);
       } else {
-        throw new Error(data?.error || 'No agents returned from API');
+        throw new Error('Invalid response format - expected array of agents');
       }
     } catch (error) {
       console.error('Detailed fetch error:', error);
@@ -383,14 +401,35 @@ export function KnowReplySetup() {
                   <SelectContent>
                     {agents.map((agent) => (
                       <SelectItem key={agent.id} value={agent.id}>
-                        {agent.name}
-                        {agent.description && (
-                          <span className="text-gray-500 text-sm"> - {agent.description}</span>
-                        )}
+                        <div className="flex flex-col">
+                          <span>{agent.name}</span>
+                          {agent.role && (
+                            <span className="text-xs text-gray-500">{agent.role}</span>
+                          )}
+                        </div>
                       </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
+                
+                {selectedAgent && (
+                  <div className="mt-2 p-3 bg-blue-50 rounded-lg">
+                    {(() => {
+                      const agent = agents.find(a => a.id === selectedAgent);
+                      return agent ? (
+                        <div>
+                          <p className="text-sm font-medium">{agent.name}</p>
+                          {agent.role && (
+                            <p className="text-xs text-gray-600">Role: {agent.role}</p>
+                          )}
+                          {agent.persona && (
+                            <p className="text-xs text-gray-600 mt-1">Persona: {agent.persona}</p>
+                          )}
+                        </div>
+                      ) : null;
+                    })()}
+                  </div>
+                )}
               </div>
             ) : (
               <div className="text-center py-8 text-gray-500">
