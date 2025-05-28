@@ -1,4 +1,5 @@
-import { useState } from 'react';
+
+import { useState, useEffect } from 'react';
 import { useMutation } from '@tanstack/react-query';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -23,8 +24,41 @@ interface TestCaseFormProps {
 export function TestCaseForm({ testCase, onClose }: TestCaseFormProps) {
   const { user } = useAuth();
   const { toast } = useToast();
+  const [inboundHash, setInboundHash] = useState<string>('');
   
-  const exampleJson = `{
+  // Load user's inbound hash
+  useEffect(() => {
+    const loadInboundHash = async () => {
+      if (!user) return;
+      
+      try {
+        const { data, error } = await supabase
+          .from('workspace_configs')
+          .select('postmark_inbound_hash')
+          .eq('user_id', user.id)
+          .single();
+
+        if (error && error.code !== 'PGRST116') {
+          console.error('Error loading inbound hash:', error);
+          return;
+        }
+
+        if (data?.postmark_inbound_hash) {
+          setInboundHash(data.postmark_inbound_hash);
+        }
+      } catch (error) {
+        console.error('Error loading workspace config:', error);
+      }
+    };
+
+    loadInboundHash();
+  }, [user]);
+
+  const generateExampleJson = (hash: string) => {
+    const inboundEmail = hash ? `${hash}@inbound.postmarkapp.com` : 'yourhash@inbound.postmarkapp.com';
+    const toEmailWithHash = hash ? `${hash}+SampleHash@inbound.postmarkapp.com` : 'yourhash+SampleHash@inbound.postmarkapp.com';
+    
+    return `{
   "FromName": "John Doe",
   "MessageStream": "inbound",
   "From": "john@example.com",
@@ -33,33 +67,65 @@ export function TestCaseForm({ testCase, onClose }: TestCaseFormProps) {
     "Name": "John Doe",
     "MailboxHash": ""
   },
-  "To": "support@yourapp.com",
+  "To": "${toEmailWithHash}",
   "ToFull": [
     {
-      "Email": "support@yourapp.com",
+      "Email": "${toEmailWithHash}",
       "Name": "Support Team",
-      "MailboxHash": ""
+      "MailboxHash": "SampleHash"
     }
   ],
+  "Cc": "",
+  "CcFull": [],
+  "Bcc": "",
+  "BccFull": [],
+  "OriginalRecipient": "${toEmailWithHash}",
   "Subject": "Test Email Subject",
   "MessageID": "12345-abcde-67890",
+  "ReplyTo": "john@example.com",
+  "MailboxHash": "SampleHash",
   "Date": "Mon, 28 May 2025 10:00:00 +0000",
   "TextBody": "This is a test email body.",
   "HtmlBody": "<p>This is a test email body.</p>",
+  "StrippedTextReply": "This is the reply text",
+  "Tag": "",
   "Headers": [
     {
       "Name": "X-Spam-Status",
       "Value": "No"
+    },
+    {
+      "Name": "X-Spam-Score",
+      "Value": "-0.1"
+    },
+    {
+      "Name": "X-Spam-Tests",
+      "Value": "DKIM_SIGNED,DKIM_VALID,DKIM_VALID_AU,SPF_PASS"
     }
   ],
   "Attachments": []
 }`;
+  };
 
   const [title, setTitle] = useState(testCase?.title || '');
   const [description, setDescription] = useState(testCase?.description || '');
   const [incomingJson, setIncomingJson] = useState(
-    testCase?.incoming_json ? JSON.stringify(testCase.incoming_json, null, 2) : exampleJson
+    testCase?.incoming_json ? JSON.stringify(testCase.incoming_json, null, 2) : ''
   );
+
+  // Update the JSON when inbound hash is loaded or when creating a new test case
+  useEffect(() => {
+    if (!testCase && inboundHash) {
+      setIncomingJson(generateExampleJson(inboundHash));
+    }
+  }, [inboundHash, testCase]);
+
+  // Set default JSON for new test cases if no inbound hash is available yet
+  useEffect(() => {
+    if (!testCase && !incomingJson) {
+      setIncomingJson(generateExampleJson(''));
+    }
+  }, [testCase, incomingJson]);
 
   const saveMutation = useMutation({
     mutationFn: async (data: { title: string; description: string; incoming_json: string }) => {
@@ -163,7 +229,10 @@ export function TestCaseForm({ testCase, onClose }: TestCaseFormProps) {
           rows={20}
         />
         <p className="text-sm text-gray-600 mt-1">
-          This is the JSON payload that Postmark would send to your webhook. Modify the example above or paste your own JSON.
+          This is the JSON payload that Postmark would send to your webhook. 
+          {inboundHash && (
+            <span> The example uses your configured inbound hash: <code className="bg-gray-100 px-1 rounded">{inboundHash}</code></span>
+          )}
         </p>
       </div>
 
