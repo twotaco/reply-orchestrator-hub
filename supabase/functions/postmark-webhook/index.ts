@@ -1,3 +1,4 @@
+
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 
@@ -81,12 +82,12 @@ async function processEmailWithKnowReply(
     // Get user's KnowReply configuration
     const { data: workspaceConfig, error: configError } = await supabase
       .from('workspace_configs')
-      .select('knowreply_api_token, knowreply_base_url')
+      .select('knowreply_base_url')
       .eq('user_id', userId)
       .single()
 
-    if (configError || !workspaceConfig?.knowreply_api_token) {
-      const error = 'No KnowReply configuration found for user. Please configure KnowReply API settings first.'
+    if (configError || !workspaceConfig?.knowreply_base_url) {
+      const error = 'No KnowReply base URL found for user. Please configure KnowReply settings first.'
       console.log('❌', error)
       errors.push(error)
       return { success: false, warnings, errors }
@@ -248,7 +249,7 @@ async function processWithAgent(
 ) {
   console.log(`📨 Processing email with agent ${agentConfig.agent_id}`)
 
-  // Prepare the KnowReply request
+  // Prepare the KnowReply request (NO JWT/Authorization header)
   const knowReplyRequest = {
     agent_id: agentConfig.agent_id,
     message: payload.StrippedTextReply || payload.TextBody || payload.HtmlBody,
@@ -265,20 +266,20 @@ async function processWithAgent(
     }))
   }
 
-  console.log('📤 Sending request to KnowReply:', {
+  console.log('📤 Sending request to KnowReply (no auth):', {
     agent_id: agentConfig.agent_id,
     mcp_count: agentConfig.mcp_endpoints.length,
     base_url: workspaceConfig.knowreply_base_url
   })
 
-  // Make the KnowReply API call
+  // Make the KnowReply API call WITHOUT Authorization header
   const knowReplyUrl = `${workspaceConfig.knowreply_base_url}/process-email`
   
   const response = await fetch(knowReplyUrl, {
     method: 'POST',
     headers: {
-      'Authorization': `Bearer ${workspaceConfig.knowreply_api_token}`,
       'Content-Type': 'application/json'
+      // NO Authorization header
     },
     body: JSON.stringify(knowReplyRequest)
   })
