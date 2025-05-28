@@ -31,6 +31,37 @@ export function TestCaseForm({ testCase, onClose }: TestCaseFormProps) {
     testCase?.incoming_json ? JSON.stringify(testCase.incoming_json, null, 2) : ''
   );
 
+  const exampleJson = `{
+  "FromName": "John Doe",
+  "MessageStream": "inbound",
+  "From": "john@example.com",
+  "FromFull": {
+    "Email": "john@example.com",
+    "Name": "John Doe",
+    "MailboxHash": ""
+  },
+  "To": "support@yourapp.com",
+  "ToFull": [
+    {
+      "Email": "support@yourapp.com",
+      "Name": "Support Team",
+      "MailboxHash": ""
+    }
+  ],
+  "Subject": "Test Email Subject",
+  "MessageID": "12345-abcde-67890",
+  "Date": "Mon, 28 May 2025 10:00:00 +0000",
+  "TextBody": "This is a test email body.",
+  "HtmlBody": "<p>This is a test email body.</p>",
+  "Headers": [
+    {
+      "Name": "X-Spam-Status",
+      "Value": "No"
+    }
+  ],
+  "Attachments": []
+}`;
+
   const saveMutation = useMutation({
     mutationFn: async (data: { title: string; description: string; incoming_json: string }) => {
       let parsedJson;
@@ -129,12 +160,12 @@ export function TestCaseForm({ testCase, onClose }: TestCaseFormProps) {
           id="json"
           value={incomingJson}
           onChange={(e) => setIncomingJson(e.target.value)}
-          placeholder="Paste your Postmark webhook JSON here..."
+          placeholder={exampleJson}
           className="font-mono text-sm"
-          rows={12}
+          rows={20}
         />
         <p className="text-sm text-gray-600 mt-1">
-          This should be the JSON payload that Postmark would send to your webhook
+          This should be the JSON payload that Postmark would send to your webhook. You can modify the example above or paste your own JSON.
         </p>
       </div>
 
