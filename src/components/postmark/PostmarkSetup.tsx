@@ -1,4 +1,3 @@
-
 import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { supabase } from '@/integrations/supabase/client';
@@ -89,6 +88,8 @@ export function PostmarkSetup() {
           postmark_inbound_hash: config.postmark_inbound_hash,
           postmark_server_id: config.postmark_server_id,
           updated_at: new Date().toISOString()
+        }, {
+          onConflict: 'user_id'
         });
 
       if (error) throw error;
