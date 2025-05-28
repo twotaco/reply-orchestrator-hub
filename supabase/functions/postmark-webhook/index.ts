@@ -88,18 +88,12 @@ async function processEmailWithKnowReply(
       return
     }
 
-    // Get active agent-MCP mappings for the user
-    const { data: mappings, error: mappingsError } = await supabase
+    console.log('✅ Found KnowReply config, checking for agent mappings...')
+
+    // Get active agent mappings for the user (without JOIN first)
+    const { data: agentMappings, error: mappingsError } = await supabase
       .from('knowreply_agent_mcp_mappings')
-      .select(`
-        agent_id,
-        mcp_endpoints:mcp_endpoint_id (
-          id,
-          name,
-          post_url,
-          auth_token
-        )
-      `)
+      .select('agent_id, mcp_endpoint_id')
       .eq('user_id', userId)
       .eq('active', true)
 
@@ -108,32 +102,66 @@ async function processEmailWithKnowReply(
       return
     }
 
-    if (!mappings || mappings.length === 0) {
-      console.log('⚠️ No active agent configurations found')
+    if (!agentMappings || agentMappings.length === 0) {
+      console.log('⚠️ No active agent configurations found for user:', userId)
+      console.log('💡 Make sure you have configured agents in the KnowReply Setup page')
       return
     }
+
+    console.log(`🎯 Found ${agentMappings.length} agent mapping(s)`)
+
+    // Get unique agent IDs
+    const uniqueAgentIds = [...new Set(agentMappings.map(mapping => mapping.agent_id))]
+    console.log('🤖 Unique agents found:', uniqueAgentIds)
+
+    // Get MCP endpoints for these mappings (if any)
+    const mcpEndpointIds = agentMappings
+      .map(mapping => mapping.mcp_endpoint_id)
+      .filter(Boolean) // Remove null/undefined values
+
+    let mcpEndpoints = []
+    if (mcpEndpointIds.length > 0) {
+      const { data: endpoints, error: endpointsError } = await supabase
+        .from('mcp_endpoints')
+        .select('id, name, post_url, auth_token')
+        .in('id', mcpEndpointIds)
+        .eq('active', true)
+
+      if (endpointsError) {
+        console.error('❌ Error fetching MCP endpoints:', endpointsError)
+      } else {
+        mcpEndpoints = endpoints || []
+      }
+    }
+
+    console.log(`🔗 Found ${mcpEndpoints.length} MCP endpoint(s)`)
 
     // Group MCP endpoints by agent_id
     const agentConfigs: Record<string, KnowReplyAgentConfig> = {}
     
-    mappings.forEach(mapping => {
-      if (!agentConfigs[mapping.agent_id]) {
-        agentConfigs[mapping.agent_id] = {
-          agent_id: mapping.agent_id,
-          mcp_endpoints: []
-        }
-      }
-      
-      if (mapping.mcp_endpoints) {
-        agentConfigs[mapping.agent_id].mcp_endpoints.push(mapping.mcp_endpoints)
+    // Initialize all agents (even those without MCP endpoints)
+    uniqueAgentIds.forEach(agentId => {
+      agentConfigs[agentId] = {
+        agent_id: agentId,
+        mcp_endpoints: []
       }
     })
 
-    console.log('🎯 Found agent configurations:', Object.keys(agentConfigs))
+    // Add MCP endpoints to the appropriate agents
+    agentMappings.forEach(mapping => {
+      if (mapping.mcp_endpoint_id) {
+        const endpoint = mcpEndpoints.find(ep => ep.id === mapping.mcp_endpoint_id)
+        if (endpoint && agentConfigs[mapping.agent_id]) {
+          agentConfigs[mapping.agent_id].mcp_endpoints.push(endpoint)
+        }
+      }
+    })
+
+    console.log('🎯 Final agent configurations:', Object.keys(agentConfigs))
 
     // Process with each configured agent
     for (const [agentId, agentConfig] of Object.entries(agentConfigs)) {
-      console.log(`🚀 Processing with agent: ${agentId}`)
+      console.log(`🚀 Processing with agent: ${agentId} (${agentConfig.mcp_endpoints.length} MCP endpoints)`)
       
       try {
         await processWithAgent(
@@ -208,7 +236,8 @@ async function processWithAgent(
 
   console.log('📤 Sending request to KnowReply:', {
     agent_id: agentConfig.agent_id,
-    mcp_count: agentConfig.mcp_endpoints.length
+    mcp_count: agentConfig.mcp_endpoints.length,
+    base_url: workspaceConfig.knowreply_base_url
   })
 
   // Make the KnowReply API call
