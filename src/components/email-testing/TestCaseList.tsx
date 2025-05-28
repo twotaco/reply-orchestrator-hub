@@ -1,4 +1,3 @@
-
 import { useState } from 'react';
 import { useQuery, useMutation } from '@tanstack/react-query';
 import { Button } from '@/components/ui/button';
@@ -53,19 +52,11 @@ export function TestCaseList({ testCases, onEdit, onRefresh }: TestCaseListProps
 
   const runTestMutation = useMutation({
     mutationFn: async (testCase: any) => {
-      // Get the webhook URL from workspace config
-      const { data: config } = await supabase
-        .from('workspace_configs')
-        .select('postmark_webhook_url')
-        .eq('user_id', user?.id)
-        .single();
-
-      if (!config?.postmark_webhook_url) {
-        throw new Error('No Postmark webhook URL configured');
-      }
+      // Use the actual webhook endpoint that Postmark would call
+      const webhookUrl = `https://gfabrnzppzorywipiwcm.supabase.co/functions/v1/postmark-webhook`;
 
       // Send the test data to the webhook
-      const response = await fetch(config.postmark_webhook_url, {
+      const response = await fetch(webhookUrl, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'
