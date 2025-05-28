@@ -9,8 +9,15 @@ import { useToast } from '@/hooks/use-toast';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
 
+interface TestCase {
+  id: string;
+  title: string;
+  description?: string;
+  incoming_json: any;
+}
+
 interface TestCaseFormProps {
-  testCase?: any;
+  testCase?: TestCase | null;
   onClose: () => void;
 }
 
@@ -25,7 +32,7 @@ export function TestCaseForm({ testCase, onClose }: TestCaseFormProps) {
   );
 
   const saveMutation = useMutation({
-    mutationFn: async (data) => {
+    mutationFn: async (data: { title: string; description: string; incoming_json: string }) => {
       let parsedJson;
       try {
         parsedJson = JSON.parse(data.incoming_json);
@@ -74,7 +81,7 @@ export function TestCaseForm({ testCase, onClose }: TestCaseFormProps) {
     }
   });
 
-  const handleSubmit = (e) => {
+  const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!title.trim()) {
       toast({
