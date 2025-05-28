@@ -193,7 +193,7 @@ export type Database = {
           agent_id: string
           created_at: string
           id: string
-          mcp_endpoint_id: string | null
+          mcp_endpoint_id: string
           updated_at: string
           user_id: string
         }
@@ -202,7 +202,7 @@ export type Database = {
           agent_id: string
           created_at?: string
           id?: string
-          mcp_endpoint_id?: string | null
+          mcp_endpoint_id: string
           updated_at?: string
           user_id: string
         }
@@ -211,7 +211,7 @@ export type Database = {
           agent_id?: string
           created_at?: string
           id?: string
-          mcp_endpoint_id?: string | null
+          mcp_endpoint_id?: string
           updated_at?: string
           user_id?: string
         }

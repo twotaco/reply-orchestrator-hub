@@ -85,7 +85,7 @@ async function processEmailWithKnowReply(
       .eq('user_id', userId)
       .single()
 
-    if (configError || !workspaceConfig?.knowreply_base_url) {
+    if (configError || !workspaceConfig?.knowreply_api_token) {
       const error = 'No KnowReply configuration found for user. Please configure KnowReply API settings first.'
       console.log('❌', error)
       errors.push(error)
@@ -271,24 +271,15 @@ async function processWithAgent(
     base_url: workspaceConfig.knowreply_base_url
   })
 
-  // Prepare headers - only include Authorization if we have an API token
-  const headers: Record<string, string> = {
-    'Content-Type': 'application/json'
-  }
-  
-  if (workspaceConfig.knowreply_api_token) {
-    headers['Authorization'] = `Bearer ${workspaceConfig.knowreply_api_token}`
-    console.log('🔑 Using API token for authentication')
-  } else {
-    console.log('🔓 No API token provided - calling endpoint without authentication')
-  }
-  
   // Make the KnowReply API call
   const knowReplyUrl = `${workspaceConfig.knowreply_base_url}/process-email`
   
   const response = await fetch(knowReplyUrl, {
     method: 'POST',
-    headers,
+    headers: {
+      'Authorization': `Bearer ${workspaceConfig.knowreply_api_token}`,
+      'Content-Type': 'application/json'
+    },
     body: JSON.stringify(knowReplyRequest)
   })
 
