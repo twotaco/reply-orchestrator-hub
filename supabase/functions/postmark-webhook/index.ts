@@ -100,9 +100,14 @@ serve(async (req) => {
     // Find the user based on the inbound email address
     // We'll match the To email with the postmark_inbound_hash in workspace_configs
     const toEmail = payload.ToFull?.[0]?.Email || payload.To
-    const inboundHash = toEmail.split('@')[0] // Extract hash from email
+    
+    // Extract the base inbound hash (everything before the '@' and before any '+')
+    const emailPart = toEmail.split('@')[0] // Get part before @
+    const inboundHash = emailPart.split('+')[0] // Get part before + (base hash)
 
     console.log('🔍 Looking for user with inbound hash:', inboundHash)
+    console.log('   Original email:', toEmail)
+    console.log('   Email part:', emailPart)
 
     const { data: workspaceConfig, error: configError } = await supabase
       .from('workspace_configs')
