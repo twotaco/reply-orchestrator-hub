@@ -1,3 +1,4 @@
+
 import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { supabase } from '@/integrations/supabase/client';
@@ -122,30 +123,34 @@ export function PostmarkSetup() {
 
     setTesting(true);
     try {
-      // Test the Postmark API by getting server details
-      const response = await fetch(`https://api.postmarkapp.com/servers`, {
-        headers: {
-          'Accept': 'application/json',
-          'X-Postmark-Account-Token': config.postmark_api_token
+      console.log('Testing Postmark connection via edge function...');
+      
+      const { data, error } = await supabase.functions.invoke('test-postmark-connection', {
+        body: {
+          apiToken: config.postmark_api_token
         }
       });
 
-      if (!response.ok) {
-        throw new Error('Invalid API token or server error');
+      if (error) {
+        console.error('Edge function error:', error);
+        throw new Error(error.message || 'Failed to test connection');
       }
 
-      const data = await response.json();
-      console.log('Postmark servers:', data);
+      if (data?.error) {
+        throw new Error(data.error);
+      }
 
+      console.log('Connection test successful:', data);
+      
       toast({
         title: "Success",
-        description: "Postmark API connection successful!",
+        description: `Postmark API connection successful! Found ${data.serversCount || 0} servers.`,
       });
     } catch (error) {
       console.error('Error testing connection:', error);
       toast({
         title: "Error",
-        description: "Failed to connect to Postmark API. Please check your API token.",
+        description: `Failed to connect to Postmark API: ${error.message}`,
         variant: "destructive",
       });
     } finally {
@@ -325,7 +330,6 @@ export function PostmarkSetup() {
         </Card>
       )}
 
-      {/* Quick Links */}
       <Card>
         <CardHeader>
           <CardTitle>Quick Links</CardTitle>
