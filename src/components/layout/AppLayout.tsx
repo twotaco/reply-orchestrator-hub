@@ -12,7 +12,8 @@ import {
   Settings,
   LogOut,
   Menu,
-  X
+  X,
+  TestTube
 } from 'lucide-react';
 
 interface AppLayoutProps {
@@ -26,6 +27,7 @@ const navigation = [
   { id: 'postmark', name: 'Postmark Setup', icon: Mail },
   { id: 'knowreply', name: 'KnowReply Setup', icon: Zap },
   { id: 'mcps', name: 'MCP Management', icon: Terminal },
+  { id: 'email-testing', name: 'Email Testing', icon: TestTube },
   { id: 'logs', name: 'Activity Logs', icon: Activity },
 ];
 

@@ -7,6 +7,7 @@ import { Dashboard } from '@/components/dashboard/Dashboard';
 import { PostmarkSetup } from '@/components/postmark/PostmarkSetup';
 import { KnowReplySetup } from '@/components/knowreply/KnowReplySetup';
 import { MCPManagement } from '@/components/mcp/MCPManagement';
+import { EmailTesting } from '@/components/email-testing/EmailTesting';
 
 function AppContent() {
   const { user, loading } = useAuth();
@@ -34,6 +35,8 @@ function AppContent() {
         return <KnowReplySetup />;
       case 'mcps':
         return <MCPManagement />;
+      case 'email-testing':
+        return <EmailTesting />;
       case 'logs':
         return <div>Activity Logs - Coming Soon</div>;
       default:

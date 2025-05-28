@@ -119,6 +119,74 @@ export type Database = {
         }
         Relationships: []
       }
+      email_test_cases: {
+        Row: {
+          created_at: string
+          description: string | null
+          id: string
+          incoming_json: Json
+          title: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          description?: string | null
+          id?: string
+          incoming_json: Json
+          title: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          description?: string | null
+          id?: string
+          incoming_json?: Json
+          title?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      email_test_runs: {
+        Row: {
+          error_message: string | null
+          executed_at: string
+          id: string
+          response_data: Json | null
+          success: boolean
+          test_case_id: string
+          user_id: string
+        }
+        Insert: {
+          error_message?: string | null
+          executed_at?: string
+          id?: string
+          response_data?: Json | null
+          success: boolean
+          test_case_id: string
+          user_id: string
+        }
+        Update: {
+          error_message?: string | null
+          executed_at?: string
+          id?: string
+          response_data?: Json | null
+          success?: boolean
+          test_case_id?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "email_test_runs_test_case_id_fkey"
+            columns: ["test_case_id"]
+            isOneToOne: false
+            referencedRelation: "email_test_cases"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       knowreply_agent_mcp_mappings: {
         Row: {
           active: boolean | null
