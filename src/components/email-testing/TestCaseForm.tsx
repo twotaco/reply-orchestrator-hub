@@ -1,3 +1,4 @@
+
 import { useState, useEffect } from 'react';
 import { useMutation } from '@tanstack/react-query';
 import { Button } from '@/components/ui/button';
@@ -53,17 +54,9 @@ export function TestCaseForm({ testCase, onClose }: TestCaseFormProps) {
     loadInboundHash();
   }, [user]);
 
-  const generateUniqueMessageId = () => {
-    const timestamp = Date.now();
-    const random = Math.random().toString(36).substring(2, 15);
-    return `${timestamp}-${random}`;
-  };
-
   const generateExampleJson = (hash: string) => {
     const inboundEmail = hash ? `${hash}@inbound.postmarkapp.com` : 'yourhash@inbound.postmarkapp.com';
     const toEmailWithHash = hash ? `${hash}+SampleHash@inbound.postmarkapp.com` : 'yourhash+SampleHash@inbound.postmarkapp.com';
-    const uniqueMessageId = generateUniqueMessageId();
-    const currentDate = new Date().toUTCString();
     
     return `{
   "FromName": "John Doe",
@@ -88,10 +81,10 @@ export function TestCaseForm({ testCase, onClose }: TestCaseFormProps) {
   "BccFull": [],
   "OriginalRecipient": "${toEmailWithHash}",
   "Subject": "Test Email Subject",
-  "MessageID": "${uniqueMessageId}",
+  "MessageID": "12345-abcde-67890",
   "ReplyTo": "john@example.com",
   "MailboxHash": "SampleHash",
-  "Date": "${currentDate}",
+  "Date": "Mon, 28 May 2025 10:00:00 +0000",
   "TextBody": "This is a test email body.",
   "HtmlBody": "<p>This is a test email body.</p>",
   "StrippedTextReply": "This is the reply text",
@@ -133,20 +126,6 @@ export function TestCaseForm({ testCase, onClose }: TestCaseFormProps) {
       setIncomingJson(generateExampleJson(''));
     }
   }, [testCase, incomingJson]);
-
-  const generateNewTestData = () => {
-    const currentJson = incomingJson ? JSON.parse(incomingJson) : {};
-    const newMessageId = generateUniqueMessageId();
-    const currentDate = new Date().toUTCString();
-    
-    const updatedJson = {
-      ...currentJson,
-      MessageID: newMessageId,
-      Date: currentDate
-    };
-    
-    setIncomingJson(JSON.stringify(updatedJson, null, 2));
-  };
 
   const saveMutation = useMutation({
     mutationFn: async (data: { title: string; description: string; incoming_json: string }) => {
@@ -241,17 +220,7 @@ export function TestCaseForm({ testCase, onClose }: TestCaseFormProps) {
       </div>
 
       <div>
-        <div className="flex items-center justify-between mb-2">
-          <Label htmlFor="json">Incoming JSON</Label>
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            onClick={generateNewTestData}
-          >
-            Generate New Test Data
-          </Button>
-        </div>
+        <Label htmlFor="json">Incoming JSON</Label>
         <Textarea
           id="json"
           value={incomingJson}
@@ -264,8 +233,6 @@ export function TestCaseForm({ testCase, onClose }: TestCaseFormProps) {
           {inboundHash && (
             <span> The example uses your configured inbound hash: <code className="bg-gray-100 px-1 rounded">{inboundHash}</code></span>
           )}
-          <br />
-          <strong>Tip:</strong> Use "Generate New Test Data" to create unique Message IDs and timestamps for each test run.
         </p>
       </div>
 
