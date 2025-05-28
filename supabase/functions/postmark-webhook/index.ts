@@ -86,9 +86,9 @@ async function processEmailWithKnowReply(
       .single()
 
     if (configError || !workspaceConfig?.knowreply_api_token) {
-      const warning = 'No KnowReply configuration found for user'
-      console.log('⚠️', warning)
-      warnings.push(warning)
+      const error = 'No KnowReply configuration found for user. Please configure KnowReply API settings first.'
+      console.log('❌', error)
+      errors.push(error)
       return { success: false, warnings, errors }
     }
 
@@ -109,9 +109,9 @@ async function processEmailWithKnowReply(
     }
 
     if (!agentMappings || agentMappings.length === 0) {
-      const warning = 'No active agent configurations found for user. Make sure you have configured agents in the KnowReply Setup page'
-      console.log('⚠️', warning)
-      warnings.push(warning)
+      const error = 'No active agent configurations found for user. Please configure at least one agent in the KnowReply Setup page before processing emails.'
+      console.log('❌', error)
+      errors.push(error)
       return { success: false, warnings, errors }
     }
 
@@ -568,20 +568,27 @@ serve(async (req) => {
       responseData.warnings.push(...knowReplyResult.warnings)
       responseData.errors.push(...knowReplyResult.errors)
 
-      if (!knowReplyResult.success && knowReplyResult.errors.length === 0) {
-        // It's a warning situation (like no agents configured)
-        responseData.warnings.push('KnowReply processing completed with warnings')
-      } else if (knowReplyResult.success) {
-        responseData.warnings.push('KnowReply processing completed successfully')
+      if (!knowReplyResult.success) {
+        // If KnowReply processing failed, mark the overall response as error
+        responseData.status = 'error'
+        responseData.message = 'Email received but processing failed'
+        
+        if (knowReplyResult.errors.length === 0) {
+          // This shouldn't happen now, but just in case
+          responseData.errors.push('KnowReply processing failed for unknown reasons')
+        }
       } else {
-        responseData.errors.push('KnowReply processing failed')
+        responseData.warnings.push('KnowReply processing completed successfully')
       }
     }
 
     console.log('🎉 Successfully processed Postmark webhook for user:', workspaceConfig.user_id)
 
+    // Return appropriate status code based on processing results
+    const statusCode = responseData.status === 'error' ? 422 : 200
+
     return new Response(JSON.stringify(responseData), { 
-      status: 200, 
+      status: statusCode, 
       headers: { ...corsHeaders, 'Content-Type': 'application/json' }
     })
 
