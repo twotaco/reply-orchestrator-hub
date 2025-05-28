@@ -160,7 +160,8 @@ export function PostmarkSetup() {
     });
   };
 
-  const webhookUrl = `${window.location.origin.replace('http://', 'https://')}/functions/v1/postmark-webhook`;
+  // Use the correct Supabase webhook URL
+  const webhookUrl = `https://gfabrnzppzorywipiwcm.supabase.co/functions/v1/postmark-webhook`;
 
   if (loading) {
     return (
