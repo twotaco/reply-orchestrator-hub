@@ -1,4 +1,3 @@
-
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 
@@ -72,8 +71,11 @@ async function processEmailWithKnowReply(
   userId: string,
   payload: PostmarkWebhookPayload,
   emailInteractionId: string
-) {
+): Promise<{ success: boolean; warnings: string[]; errors: string[] }> {
   console.log('🤖 Starting KnowReply processing for user:', userId)
+  
+  const warnings: string[] = []
+  const errors: string[] = []
 
   try {
     // Get user's KnowReply configuration
@@ -84,13 +86,15 @@ async function processEmailWithKnowReply(
       .single()
 
     if (configError || !workspaceConfig?.knowreply_api_token) {
-      console.log('⚠️ No KnowReply configuration found for user')
-      return
+      const warning = 'No KnowReply configuration found for user'
+      console.log('⚠️', warning)
+      warnings.push(warning)
+      return { success: false, warnings, errors }
     }
 
     console.log('✅ Found KnowReply config, checking for agent mappings...')
 
-    // Get active agent mappings for the user (without JOIN first)
+    // Get active agent mappings for the user
     const { data: agentMappings, error: mappingsError } = await supabase
       .from('knowreply_agent_mcp_mappings')
       .select('agent_id, mcp_endpoint_id')
@@ -98,14 +102,17 @@ async function processEmailWithKnowReply(
       .eq('active', true)
 
     if (mappingsError) {
-      console.error('❌ Error fetching agent mappings:', mappingsError)
-      return
+      const error = `Error fetching agent mappings: ${mappingsError.message}`
+      console.error('❌', error)
+      errors.push(error)
+      return { success: false, warnings, errors }
     }
 
     if (!agentMappings || agentMappings.length === 0) {
-      console.log('⚠️ No active agent configurations found for user:', userId)
-      console.log('💡 Make sure you have configured agents in the KnowReply Setup page')
-      return
+      const warning = 'No active agent configurations found for user. Make sure you have configured agents in the KnowReply Setup page'
+      console.log('⚠️', warning)
+      warnings.push(warning)
+      return { success: false, warnings, errors }
     }
 
     console.log(`🎯 Found ${agentMappings.length} agent mapping(s)`)
@@ -128,7 +135,9 @@ async function processEmailWithKnowReply(
         .eq('active', true)
 
       if (endpointsError) {
-        console.error('❌ Error fetching MCP endpoints:', endpointsError)
+        const error = `Error fetching MCP endpoints: ${endpointsError.message}`
+        console.error('❌', error)
+        errors.push(error)
       } else {
         mcpEndpoints = endpoints || []
       }
@@ -159,6 +168,9 @@ async function processEmailWithKnowReply(
 
     console.log('🎯 Final agent configurations:', Object.keys(agentConfigs))
 
+    let processedSuccessfully = 0
+    let processingErrors: string[] = []
+
     // Process with each configured agent
     for (const [agentId, agentConfig] of Object.entries(agentConfigs)) {
       console.log(`🚀 Processing with agent: ${agentId} (${agentConfig.mcp_endpoints.length} MCP endpoints)`)
@@ -172,8 +184,11 @@ async function processEmailWithKnowReply(
           userId,
           emailInteractionId
         )
+        processedSuccessfully++
       } catch (error) {
-        console.error(`❌ Error processing with agent ${agentId}:`, error)
+        const errorMsg = `Error processing with agent ${agentId}: ${error.message}`
+        console.error('❌', errorMsg)
+        processingErrors.push(errorMsg)
         
         // Log the error but continue with other agents
         await supabase
@@ -191,8 +206,22 @@ async function processEmailWithKnowReply(
       }
     }
 
+    if (processingErrors.length > 0) {
+      errors.push(...processingErrors)
+    }
+
+    if (processedSuccessfully > 0) {
+      warnings.push(`Successfully processed email with ${processedSuccessfully} agent(s)`)
+      return { success: true, warnings, errors }
+    } else {
+      warnings.push('No agents processed the email successfully')
+      return { success: false, warnings, errors }
+    }
+
   } catch (error) {
-    console.error('💥 Error in KnowReply processing:', error)
+    const errorMsg = `KnowReply processing failed: ${error.message}`
+    console.error('💥', errorMsg)
+    errors.push(errorMsg)
     
     // Log the general processing error
     await supabase
@@ -204,6 +233,8 @@ async function processEmailWithKnowReply(
         status: 'error',
         details: { error: error.message }
       })
+
+    return { success: false, warnings, errors }
   }
 }
 
@@ -304,6 +335,14 @@ serve(async (req) => {
     return new Response(null, { headers: corsHeaders })
   }
 
+  const responseData = {
+    status: 'success',
+    message: 'Email processed successfully',
+    warnings: [] as string[],
+    errors: [] as string[],
+    processed_at: new Date().toISOString()
+  }
+
   try {
     console.log('🔧 Creating Supabase client...')
     const supabase = createClient(
@@ -313,9 +352,12 @@ serve(async (req) => {
 
     if (req.method !== 'POST') {
       console.log('❌ Method not allowed:', req.method)
-      return new Response('Method not allowed', { 
+      responseData.status = 'error'
+      responseData.message = 'Method not allowed'
+      responseData.errors.push('Only POST method is allowed')
+      return new Response(JSON.stringify(responseData), { 
         status: 405, 
-        headers: corsHeaders 
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       })
     }
 
@@ -333,7 +375,6 @@ serve(async (req) => {
     const spamStatus = spamHeaders.find(h => h.Name === 'X-Spam-Status')?.Value
 
     // Find the user based on the inbound email address
-    // We'll match the To email with the postmark_inbound_hash in workspace_configs
     const toEmail = payload.ToFull?.[0]?.Email || payload.To
     
     // Extract the base inbound hash (everything before the '@' and before any '+')
@@ -352,15 +393,19 @@ serve(async (req) => {
 
     if (configError || !workspaceConfig) {
       console.error('❌ Could not find workspace config for inbound hash:', inboundHash, configError)
-      return new Response('Inbound hash not found', { 
+      responseData.status = 'error'
+      responseData.message = 'Inbound hash not found'
+      responseData.errors.push(`No workspace configuration found for inbound hash: ${inboundHash}`)
+      return new Response(JSON.stringify(responseData), { 
         status: 404, 
-        headers: corsHeaders 
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       })
     }
 
     console.log('✅ Found workspace config for user:', workspaceConfig.user_id)
+    responseData.message = `Email processed for user: ${workspaceConfig.user_id}`
 
-    // Check if this message_id already exists
+    // Check if this message_id already exists and handle upsert
     const { data: existingEmail, error: checkError } = await supabase
       .from('postmark_inbound_emails')
       .select('id, message_id')
@@ -370,15 +415,14 @@ serve(async (req) => {
 
     if (checkError && checkError.code !== 'PGRST116') {
       console.error('❌ Error checking for existing email:', checkError)
-      return new Response('Database error', { 
-        status: 500, 
-        headers: corsHeaders 
-      })
+      responseData.errors.push(`Database error checking existing email: ${checkError.message}`)
     }
 
     let emailRecord
     if (existingEmail) {
       console.log('📝 Updating existing email record for message_id:', payload.MessageID)
+      responseData.warnings.push(`Updated existing email record for message_id: ${payload.MessageID}`)
+      
       // Update existing record
       const { data: updatedRecord, error: updateError } = await supabase
         .from('postmark_inbound_emails')
@@ -407,15 +451,14 @@ serve(async (req) => {
 
       if (updateError) {
         console.error('❌ Error updating inbound email:', updateError)
-        return new Response('Database error', { 
-          status: 500, 
-          headers: corsHeaders 
-        })
+        responseData.errors.push(`Database error updating inbound email: ${updateError.message}`)
       }
       emailRecord = updatedRecord
       console.log('✅ Successfully updated existing inbound email')
     } else {
       console.log('💾 Creating new inbound email record...')
+      responseData.warnings.push(`Created new email record for message_id: ${payload.MessageID}`)
+      
       // Insert new record
       const { data: newRecord, error: insertError } = await supabase
         .from('postmark_inbound_emails')
@@ -444,10 +487,7 @@ serve(async (req) => {
 
       if (insertError) {
         console.error('❌ Error inserting inbound email:', insertError)
-        return new Response('Database error', { 
-          status: 500, 
-          headers: corsHeaders 
-        })
+        responseData.errors.push(`Database error inserting inbound email: ${insertError.message}`)
       }
       emailRecord = newRecord
       console.log('✅ Successfully stored new inbound email')
@@ -464,6 +504,8 @@ serve(async (req) => {
     let interactionRecord
     if (existingInteraction) {
       console.log('📝 Updating existing email interaction for message_id:', payload.MessageID)
+      
+      // Update existing interaction
       const { data: updatedInteraction, error: updateInteractionError } = await supabase
         .from('email_interactions')
         .update({
@@ -487,6 +529,8 @@ serve(async (req) => {
       }
     } else {
       console.log('📝 Creating new email interaction record...')
+      
+      // Insert new interaction
       const { data: newInteraction, error: interactionError } = await supabase
         .from('email_interactions')
         .insert({
@@ -510,32 +554,48 @@ serve(async (req) => {
       }
     }
 
-    // Process the email with KnowReply in the background if we have an interaction record
+    // Process the email with KnowReply and collect results
     if (interactionRecord) {
       console.log('🤖 Starting KnowReply processing...')
-      processEmailWithKnowReply(
+      const knowReplyResult = await processEmailWithKnowReply(
         supabase,
         workspaceConfig.user_id,
         payload,
         interactionRecord.id
-      ).catch(error => {
-        console.error('💥 Background KnowReply processing failed:', error)
-      })
+      )
+
+      // Add KnowReply results to response
+      responseData.warnings.push(...knowReplyResult.warnings)
+      responseData.errors.push(...knowReplyResult.errors)
+
+      if (!knowReplyResult.success && knowReplyResult.errors.length === 0) {
+        // It's a warning situation (like no agents configured)
+        responseData.warnings.push('KnowReply processing completed with warnings')
+      } else if (knowReplyResult.success) {
+        responseData.warnings.push('KnowReply processing completed successfully')
+      } else {
+        responseData.errors.push('KnowReply processing failed')
+      }
     }
 
     console.log('🎉 Successfully processed Postmark webhook for user:', workspaceConfig.user_id)
 
-    return new Response('OK', { 
+    return new Response(JSON.stringify(responseData), { 
       status: 200, 
-      headers: corsHeaders 
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' }
     })
 
   } catch (error) {
     console.error('💥 Error processing Postmark webhook:', error)
     console.error('💥 Error stack:', error.stack)
-    return new Response('Internal server error', { 
+    
+    responseData.status = 'error'
+    responseData.message = 'Internal server error'
+    responseData.errors.push(`Processing error: ${error.message}`)
+    
+    return new Response(JSON.stringify(responseData), { 
       status: 500, 
-      headers: corsHeaders 
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' }
     })
   }
 })
