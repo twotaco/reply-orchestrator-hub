@@ -1,4 +1,3 @@
-
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 
@@ -273,7 +272,8 @@ async function processWithAgent(
   })
 
   // Make the KnowReply API call WITHOUT Authorization header
-  const knowReplyUrl = `${workspaceConfig.knowreply_base_url}/process-email`
+  // Use the base URL directly since it's the full edge function URL
+  const knowReplyUrl = workspaceConfig.knowreply_base_url
   
   const response = await fetch(knowReplyUrl, {
     method: 'POST',
