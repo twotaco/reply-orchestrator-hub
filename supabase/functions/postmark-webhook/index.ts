@@ -286,6 +286,8 @@ async function processWithAgent(
     mcp_count: agentConfig.mcp_endpoints.length,
     url: knowReplyUrl
   })
+  
+  console.log('🔑 Using API token:', workspaceConfig.knowreply_api_token ? `${workspaceConfig.knowreply_api_token.substring(0, 10)}...` : 'MISSING')
 
   // Make the KnowReply API call WITH Authorization header
   const response = await fetch(knowReplyUrl, {
