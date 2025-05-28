@@ -57,6 +57,212 @@ interface PostmarkWebhookPayload {
   }>
 }
 
+interface KnowReplyAgentConfig {
+  agent_id: string
+  mcp_endpoints: Array<{
+    id: string
+    name: string
+    post_url: string
+    auth_token: string | null
+  }>
+}
+
+async function processEmailWithKnowReply(
+  supabase: any,
+  userId: string,
+  payload: PostmarkWebhookPayload,
+  emailInteractionId: string
+) {
+  console.log('🤖 Starting KnowReply processing for user:', userId)
+
+  try {
+    // Get user's KnowReply configuration
+    const { data: workspaceConfig, error: configError } = await supabase
+      .from('workspace_configs')
+      .select('knowreply_api_token, knowreply_base_url')
+      .eq('user_id', userId)
+      .single()
+
+    if (configError || !workspaceConfig?.knowreply_api_token) {
+      console.log('⚠️ No KnowReply configuration found for user')
+      return
+    }
+
+    // Get active agent-MCP mappings for the user
+    const { data: mappings, error: mappingsError } = await supabase
+      .from('knowreply_agent_mcp_mappings')
+      .select(`
+        agent_id,
+        mcp_endpoints:mcp_endpoint_id (
+          id,
+          name,
+          post_url,
+          auth_token
+        )
+      `)
+      .eq('user_id', userId)
+      .eq('active', true)
+
+    if (mappingsError) {
+      console.error('❌ Error fetching agent mappings:', mappingsError)
+      return
+    }
+
+    if (!mappings || mappings.length === 0) {
+      console.log('⚠️ No active agent configurations found')
+      return
+    }
+
+    // Group MCP endpoints by agent_id
+    const agentConfigs: Record<string, KnowReplyAgentConfig> = {}
+    
+    mappings.forEach(mapping => {
+      if (!agentConfigs[mapping.agent_id]) {
+        agentConfigs[mapping.agent_id] = {
+          agent_id: mapping.agent_id,
+          mcp_endpoints: []
+        }
+      }
+      
+      if (mapping.mcp_endpoints) {
+        agentConfigs[mapping.agent_id].mcp_endpoints.push(mapping.mcp_endpoints)
+      }
+    })
+
+    console.log('🎯 Found agent configurations:', Object.keys(agentConfigs))
+
+    // Process with each configured agent
+    for (const [agentId, agentConfig] of Object.entries(agentConfigs)) {
+      console.log(`🚀 Processing with agent: ${agentId}`)
+      
+      try {
+        await processWithAgent(
+          workspaceConfig,
+          agentConfig,
+          payload,
+          supabase,
+          userId,
+          emailInteractionId
+        )
+      } catch (error) {
+        console.error(`❌ Error processing with agent ${agentId}:`, error)
+        
+        // Log the error but continue with other agents
+        await supabase
+          .from('activity_logs')
+          .insert({
+            user_id: userId,
+            email_interaction_id: emailInteractionId,
+            action: 'knowreply_processing_error',
+            status: 'error',
+            details: {
+              agent_id: agentId,
+              error: error.message
+            }
+          })
+      }
+    }
+
+  } catch (error) {
+    console.error('💥 Error in KnowReply processing:', error)
+    
+    // Log the general processing error
+    await supabase
+      .from('activity_logs')
+      .insert({
+        user_id: userId,
+        email_interaction_id: emailInteractionId,
+        action: 'knowreply_processing_failed',
+        status: 'error',
+        details: { error: error.message }
+      })
+  }
+}
+
+async function processWithAgent(
+  workspaceConfig: any,
+  agentConfig: KnowReplyAgentConfig,
+  payload: PostmarkWebhookPayload,
+  supabase: any,
+  userId: string,
+  emailInteractionId: string
+) {
+  console.log(`📨 Processing email with agent ${agentConfig.agent_id}`)
+
+  // Prepare the KnowReply request
+  const knowReplyRequest = {
+    agent_id: agentConfig.agent_id,
+    message: payload.StrippedTextReply || payload.TextBody || payload.HtmlBody,
+    context: {
+      from: payload.From,
+      subject: payload.Subject,
+      message_id: payload.MessageID,
+      mailbox_hash: payload.MailboxHash
+    },
+    mcp_endpoints: agentConfig.mcp_endpoints.map(endpoint => ({
+      name: endpoint.name,
+      url: endpoint.post_url,
+      auth_token: endpoint.auth_token
+    }))
+  }
+
+  console.log('📤 Sending request to KnowReply:', {
+    agent_id: agentConfig.agent_id,
+    mcp_count: agentConfig.mcp_endpoints.length
+  })
+
+  // Make the KnowReply API call
+  const knowReplyUrl = `${workspaceConfig.knowreply_base_url}/process-email`
+  
+  const response = await fetch(knowReplyUrl, {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${workspaceConfig.knowreply_api_token}`,
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify(knowReplyRequest)
+  })
+
+  const responseData = await response.json()
+
+  if (!response.ok) {
+    throw new Error(`KnowReply API error: ${response.status} - ${JSON.stringify(responseData)}`)
+  }
+
+  console.log('✅ KnowReply response received for agent:', agentConfig.agent_id)
+
+  // Update the email interaction with KnowReply results
+  await supabase
+    .from('email_interactions')
+    .update({
+      knowreply_agent_used: agentConfig.agent_id,
+      knowreply_request: knowReplyRequest,
+      knowreply_response: responseData,
+      knowreply_mcp_results: responseData.mcp_results || null,
+      intent: responseData.intent || null,
+      status: 'processed',
+      updated_at: new Date().toISOString()
+    })
+    .eq('id', emailInteractionId)
+
+  // Log successful processing
+  await supabase
+    .from('activity_logs')
+    .insert({
+      user_id: userId,
+      email_interaction_id: emailInteractionId,
+      action: 'knowreply_processing_success',
+      status: 'success',
+      details: {
+        agent_id: agentConfig.agent_id,
+        intent: responseData.intent,
+        mcp_endpoints_used: agentConfig.mcp_endpoints.length
+      }
+    })
+
+  console.log(`🎉 Successfully processed email with agent ${agentConfig.agent_id}`)
+}
+
 serve(async (req) => {
   console.log('🚀 Postmark webhook function called!')
   console.log('📝 Request method:', req.method)
@@ -127,7 +333,7 @@ serve(async (req) => {
 
     // Store the inbound email
     console.log('💾 Storing inbound email...')
-    const { error: insertError } = await supabase
+    const { data: emailRecord, error: insertError } = await supabase
       .from('postmark_inbound_emails')
       .insert({
         user_id: workspaceConfig.user_id,
@@ -149,6 +355,8 @@ serve(async (req) => {
         raw_webhook_data: payload,
         processed: false
       })
+      .select()
+      .single()
 
     if (insertError) {
       console.error('❌ Error inserting inbound email:', insertError)
@@ -162,7 +370,7 @@ serve(async (req) => {
 
     // Create an email interaction record
     console.log('📝 Creating email interaction record...')
-    const { error: interactionError } = await supabase
+    const { data: interactionRecord, error: interactionError } = await supabase
       .from('email_interactions')
       .insert({
         user_id: workspaceConfig.user_id,
@@ -174,12 +382,25 @@ serve(async (req) => {
         status: 'received',
         postmark_request: payload
       })
+      .select()
+      .single()
 
     if (interactionError) {
       console.error('⚠️ Error creating email interaction:', interactionError)
       // Don't fail the webhook if this fails, just log it
     } else {
       console.log('✅ Successfully created email interaction')
+      
+      // Process the email with KnowReply in the background
+      console.log('🤖 Starting KnowReply processing...')
+      processEmailWithKnowReply(
+        supabase,
+        workspaceConfig.user_id,
+        payload,
+        interactionRecord.id
+      ).catch(error => {
+        console.error('💥 Background KnowReply processing failed:', error)
+      })
     }
 
     console.log('🎉 Successfully processed Postmark webhook for user:', workspaceConfig.user_id)
