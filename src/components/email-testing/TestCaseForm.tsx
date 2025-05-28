@@ -1,4 +1,3 @@
-
 import { useState } from 'react';
 import { useMutation } from '@tanstack/react-query';
 import { Button } from '@/components/ui/button';
@@ -25,12 +24,6 @@ export function TestCaseForm({ testCase, onClose }: TestCaseFormProps) {
   const { user } = useAuth();
   const { toast } = useToast();
   
-  const [title, setTitle] = useState(testCase?.title || '');
-  const [description, setDescription] = useState(testCase?.description || '');
-  const [incomingJson, setIncomingJson] = useState(
-    testCase?.incoming_json ? JSON.stringify(testCase.incoming_json, null, 2) : ''
-  );
-
   const exampleJson = `{
   "FromName": "John Doe",
   "MessageStream": "inbound",
@@ -61,6 +54,12 @@ export function TestCaseForm({ testCase, onClose }: TestCaseFormProps) {
   ],
   "Attachments": []
 }`;
+
+  const [title, setTitle] = useState(testCase?.title || '');
+  const [description, setDescription] = useState(testCase?.description || '');
+  const [incomingJson, setIncomingJson] = useState(
+    testCase?.incoming_json ? JSON.stringify(testCase.incoming_json, null, 2) : exampleJson
+  );
 
   const saveMutation = useMutation({
     mutationFn: async (data: { title: string; description: string; incoming_json: string }) => {
@@ -160,12 +159,11 @@ export function TestCaseForm({ testCase, onClose }: TestCaseFormProps) {
           id="json"
           value={incomingJson}
           onChange={(e) => setIncomingJson(e.target.value)}
-          placeholder={exampleJson}
           className="font-mono text-sm"
           rows={20}
         />
         <p className="text-sm text-gray-600 mt-1">
-          This should be the JSON payload that Postmark would send to your webhook. You can modify the example above or paste your own JSON.
+          This is the JSON payload that Postmark would send to your webhook. Modify the example above or paste your own JSON.
         </p>
       </div>
 
