@@ -38,8 +38,8 @@ serve(async (req) => {
 
     console.log('🔍 Testing Postmark API connection...')
     
-    // Test the Postmark API by getting servers list
-    const response = await fetch('https://api.postmarkapp.com/servers', {
+    // Test the Postmark API by getting servers list with required offset parameter
+    const response = await fetch('https://api.postmarkapp.com/servers?offset=0&count=10', {
       method: 'GET',
       headers: {
         'Accept': 'application/json',
