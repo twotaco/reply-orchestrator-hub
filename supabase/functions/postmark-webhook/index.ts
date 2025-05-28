@@ -331,67 +331,158 @@ serve(async (req) => {
 
     console.log('✅ Found workspace config for user:', workspaceConfig.user_id)
 
-    // Store the inbound email
-    console.log('💾 Storing inbound email...')
-    const { data: emailRecord, error: insertError } = await supabase
+    // Check if this message_id already exists
+    const { data: existingEmail, error: checkError } = await supabase
       .from('postmark_inbound_emails')
-      .insert({
-        user_id: workspaceConfig.user_id,
-        message_id: payload.MessageID,
-        from_email: payload.From,
-        from_name: payload.FromName,
-        to_email: toEmail,
-        cc_email: payload.Cc || null,
-        bcc_email: payload.Bcc || null,
-        subject: payload.Subject,
-        text_body: payload.TextBody,
-        html_body: payload.HtmlBody,
-        stripped_text_reply: payload.StrippedTextReply,
-        mailbox_hash: payload.MailboxHash,
-        spam_score: spamScore ? parseFloat(spamScore) : null,
-        spam_status: spamStatus,
-        attachments: payload.Attachments,
-        headers: payload.Headers,
-        raw_webhook_data: payload,
-        processed: false
-      })
-      .select()
+      .select('id, message_id')
+      .eq('message_id', payload.MessageID)
+      .eq('user_id', workspaceConfig.user_id)
       .single()
 
-    if (insertError) {
-      console.error('❌ Error inserting inbound email:', insertError)
+    if (checkError && checkError.code !== 'PGRST116') {
+      console.error('❌ Error checking for existing email:', checkError)
       return new Response('Database error', { 
         status: 500, 
         headers: corsHeaders 
       })
     }
 
-    console.log('✅ Successfully stored inbound email')
+    let emailRecord
+    if (existingEmail) {
+      console.log('📝 Updating existing email record for message_id:', payload.MessageID)
+      // Update existing record
+      const { data: updatedRecord, error: updateError } = await supabase
+        .from('postmark_inbound_emails')
+        .update({
+          from_email: payload.From,
+          from_name: payload.FromName,
+          to_email: toEmail,
+          cc_email: payload.Cc || null,
+          bcc_email: payload.Bcc || null,
+          subject: payload.Subject,
+          text_body: payload.TextBody,
+          html_body: payload.HtmlBody,
+          stripped_text_reply: payload.StrippedTextReply,
+          mailbox_hash: payload.MailboxHash,
+          spam_score: spamScore ? parseFloat(spamScore) : null,
+          spam_status: spamStatus,
+          attachments: payload.Attachments,
+          headers: payload.Headers,
+          raw_webhook_data: payload,
+          processed: false,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', existingEmail.id)
+        .select()
+        .single()
 
-    // Create an email interaction record
-    console.log('📝 Creating email interaction record...')
-    const { data: interactionRecord, error: interactionError } = await supabase
+      if (updateError) {
+        console.error('❌ Error updating inbound email:', updateError)
+        return new Response('Database error', { 
+          status: 500, 
+          headers: corsHeaders 
+        })
+      }
+      emailRecord = updatedRecord
+      console.log('✅ Successfully updated existing inbound email')
+    } else {
+      console.log('💾 Creating new inbound email record...')
+      // Insert new record
+      const { data: newRecord, error: insertError } = await supabase
+        .from('postmark_inbound_emails')
+        .insert({
+          user_id: workspaceConfig.user_id,
+          message_id: payload.MessageID,
+          from_email: payload.From,
+          from_name: payload.FromName,
+          to_email: toEmail,
+          cc_email: payload.Cc || null,
+          bcc_email: payload.Bcc || null,
+          subject: payload.Subject,
+          text_body: payload.TextBody,
+          html_body: payload.HtmlBody,
+          stripped_text_reply: payload.StrippedTextReply,
+          mailbox_hash: payload.MailboxHash,
+          spam_score: spamScore ? parseFloat(spamScore) : null,
+          spam_status: spamStatus,
+          attachments: payload.Attachments,
+          headers: payload.Headers,
+          raw_webhook_data: payload,
+          processed: false
+        })
+        .select()
+        .single()
+
+      if (insertError) {
+        console.error('❌ Error inserting inbound email:', insertError)
+        return new Response('Database error', { 
+          status: 500, 
+          headers: corsHeaders 
+        })
+      }
+      emailRecord = newRecord
+      console.log('✅ Successfully stored new inbound email')
+    }
+
+    // Handle email interactions similarly - upsert based on message_id
+    const { data: existingInteraction, error: interactionCheckError } = await supabase
       .from('email_interactions')
-      .insert({
-        user_id: workspaceConfig.user_id,
-        message_id: payload.MessageID,
-        from_email: payload.From,
-        to_email: toEmail,
-        subject: payload.Subject,
-        original_content: payload.TextBody || payload.HtmlBody,
-        status: 'received',
-        postmark_request: payload
-      })
-      .select()
+      .select('id')
+      .eq('message_id', payload.MessageID)
+      .eq('user_id', workspaceConfig.user_id)
       .single()
 
-    if (interactionError) {
-      console.error('⚠️ Error creating email interaction:', interactionError)
-      // Don't fail the webhook if this fails, just log it
+    let interactionRecord
+    if (existingInteraction) {
+      console.log('📝 Updating existing email interaction for message_id:', payload.MessageID)
+      const { data: updatedInteraction, error: updateInteractionError } = await supabase
+        .from('email_interactions')
+        .update({
+          from_email: payload.From,
+          to_email: toEmail,
+          subject: payload.Subject,
+          original_content: payload.TextBody || payload.HtmlBody,
+          status: 'received',
+          postmark_request: payload,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', existingInteraction.id)
+        .select()
+        .single()
+
+      if (updateInteractionError) {
+        console.error('⚠️ Error updating email interaction:', updateInteractionError)
+      } else {
+        interactionRecord = updatedInteraction
+        console.log('✅ Successfully updated email interaction')
+      }
     } else {
-      console.log('✅ Successfully created email interaction')
-      
-      // Process the email with KnowReply in the background
+      console.log('📝 Creating new email interaction record...')
+      const { data: newInteraction, error: interactionError } = await supabase
+        .from('email_interactions')
+        .insert({
+          user_id: workspaceConfig.user_id,
+          message_id: payload.MessageID,
+          from_email: payload.From,
+          to_email: toEmail,
+          subject: payload.Subject,
+          original_content: payload.TextBody || payload.HtmlBody,
+          status: 'received',
+          postmark_request: payload
+        })
+        .select()
+        .single()
+
+      if (interactionError) {
+        console.error('⚠️ Error creating email interaction:', interactionError)
+      } else {
+        interactionRecord = newInteraction
+        console.log('✅ Successfully created email interaction')
+      }
+    }
+
+    // Process the email with KnowReply in the background if we have an interaction record
+    if (interactionRecord) {
       console.log('🤖 Starting KnowReply processing...')
       processEmailWithKnowReply(
         supabase,
