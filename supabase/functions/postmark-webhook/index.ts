@@ -78,21 +78,22 @@ async function processEmailWithKnowReply(
   const errors: string[] = []
 
   try {
-    // Get user's KnowReply configuration
+    // Get user's KnowReply configuration - now including the API token
     const { data: workspaceConfig, error: configError } = await supabase
       .from('workspace_configs')
-      .select('knowreply_webhook_url')
+      .select('knowreply_webhook_url, knowreply_api_token')
       .eq('user_id', userId)
       .single()
 
-    if (configError || !workspaceConfig?.knowreply_webhook_url) {
-      const error = 'No KnowReply webhook URL found for user. Please configure KnowReply settings first.'
+    if (configError || !workspaceConfig?.knowreply_webhook_url || !workspaceConfig?.knowreply_api_token) {
+      const error = 'No KnowReply webhook URL or API token found for user. Please configure KnowReply settings first.'
       console.log('❌', error)
       errors.push(error)
       return { success: false, warnings, errors }
     }
 
     console.log('✅ Found KnowReply config:', workspaceConfig.knowreply_webhook_url)
+    console.log('✅ Found KnowReply API token:', workspaceConfig.knowreply_api_token ? 'Yes' : 'No')
 
     // Get active agent mappings for the user
     const { data: agentMappings, error: mappingsError } = await supabase
@@ -248,20 +249,31 @@ async function processWithAgent(
 ) {
   console.log(`📨 Processing email with agent ${agentConfig.agent_id}`)
 
-  // Prepare the KnowReply request (NO JWT/Authorization header)
+  // Prepare the KnowReply request matching your webhook's expected format
   const knowReplyRequest = {
     agent_id: agentConfig.agent_id,
-    message: payload.StrippedTextReply || payload.TextBody || payload.HtmlBody,
-    context: {
-      from: payload.From,
+    email: {
+      provider: 'postmark',
+      sender: payload.From,
+      recipient: payload.ToFull?.[0]?.Email || payload.To,
       subject: payload.Subject,
-      message_id: payload.MessageID,
-      mailbox_hash: payload.MailboxHash
+      body: payload.StrippedTextReply || payload.TextBody || payload.HtmlBody,
+      headers: payload.Headers ? payload.Headers.reduce((acc, h) => {
+        acc[h.Name] = h.Value;
+        return acc;
+      }, {} as Record<string, string>) : {},
+      authentication: {
+        spf_pass: payload.Headers?.find(h => h.Name === 'Received-SPF')?.Value?.includes('Pass') || false,
+        spam_score: payload.Headers?.find(h => h.Name === 'X-Spam-Score')?.Value ? 
+          parseFloat(payload.Headers.find(h => h.Name === 'X-Spam-Score')!.Value) : undefined
+      },
+      raw: payload
     },
-    mcp_endpoints: agentConfig.mcp_endpoints.map(endpoint => ({
+    mcp_servers: agentConfig.mcp_endpoints.map(endpoint => ({
       name: endpoint.name,
       url: endpoint.post_url,
-      auth_token: endpoint.auth_token
+      auth_token: endpoint.auth_token || '',
+      instructions: endpoint.instructions || ''
     }))
   }
 
@@ -275,12 +287,12 @@ async function processWithAgent(
     url: knowReplyUrl
   })
 
-  // Make the KnowReply API call WITHOUT Authorization header
+  // Make the KnowReply API call WITH Authorization header
   const response = await fetch(knowReplyUrl, {
     method: 'POST',
     headers: {
-      'Content-Type': 'application/json'
-      // NO Authorization header
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${workspaceConfig.knowreply_api_token}`
     },
     body: JSON.stringify(knowReplyRequest)
   })
