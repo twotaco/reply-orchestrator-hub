@@ -58,26 +58,39 @@ interface PostmarkWebhookPayload {
 }
 
 serve(async (req) => {
+  console.log('🚀 Postmark webhook function called!')
+  console.log('📝 Request method:', req.method)
+  console.log('🌐 Request URL:', req.url)
+  console.log('📋 Request headers:', Object.fromEntries(req.headers.entries()))
+
   // Handle CORS preflight requests
   if (req.method === 'OPTIONS') {
+    console.log('✅ Handling CORS preflight request')
     return new Response(null, { headers: corsHeaders })
   }
 
   try {
+    console.log('🔧 Creating Supabase client...')
     const supabase = createClient(
       Deno.env.get('SUPABASE_URL') ?? '',
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
     )
 
     if (req.method !== 'POST') {
+      console.log('❌ Method not allowed:', req.method)
       return new Response('Method not allowed', { 
         status: 405, 
         headers: corsHeaders 
       })
     }
 
+    console.log('📨 Parsing request body...')
     const payload: PostmarkWebhookPayload = await req.json()
-    console.log('Received Postmark webhook:', JSON.stringify(payload, null, 2))
+    console.log('📧 Received Postmark webhook payload:')
+    console.log('   From:', payload.From)
+    console.log('   To:', payload.To)
+    console.log('   Subject:', payload.Subject)
+    console.log('   MessageID:', payload.MessageID)
 
     // Extract spam information from headers
     const spamHeaders = payload.Headers || []
@@ -89,7 +102,7 @@ serve(async (req) => {
     const toEmail = payload.ToFull?.[0]?.Email || payload.To
     const inboundHash = toEmail.split('@')[0] // Extract hash from email
 
-    console.log('Looking for user with inbound hash:', inboundHash)
+    console.log('🔍 Looking for user with inbound hash:', inboundHash)
 
     const { data: workspaceConfig, error: configError } = await supabase
       .from('workspace_configs')
@@ -98,14 +111,17 @@ serve(async (req) => {
       .single()
 
     if (configError || !workspaceConfig) {
-      console.error('Could not find workspace config for inbound hash:', inboundHash, configError)
+      console.error('❌ Could not find workspace config for inbound hash:', inboundHash, configError)
       return new Response('Inbound hash not found', { 
         status: 404, 
         headers: corsHeaders 
       })
     }
 
+    console.log('✅ Found workspace config for user:', workspaceConfig.user_id)
+
     // Store the inbound email
+    console.log('💾 Storing inbound email...')
     const { error: insertError } = await supabase
       .from('postmark_inbound_emails')
       .insert({
@@ -130,14 +146,17 @@ serve(async (req) => {
       })
 
     if (insertError) {
-      console.error('Error inserting inbound email:', insertError)
+      console.error('❌ Error inserting inbound email:', insertError)
       return new Response('Database error', { 
         status: 500, 
         headers: corsHeaders 
       })
     }
 
+    console.log('✅ Successfully stored inbound email')
+
     // Create an email interaction record
+    console.log('📝 Creating email interaction record...')
     const { error: interactionError } = await supabase
       .from('email_interactions')
       .insert({
@@ -152,11 +171,13 @@ serve(async (req) => {
       })
 
     if (interactionError) {
-      console.error('Error creating email interaction:', interactionError)
+      console.error('⚠️ Error creating email interaction:', interactionError)
       // Don't fail the webhook if this fails, just log it
+    } else {
+      console.log('✅ Successfully created email interaction')
     }
 
-    console.log('Successfully processed Postmark webhook for user:', workspaceConfig.user_id)
+    console.log('🎉 Successfully processed Postmark webhook for user:', workspaceConfig.user_id)
 
     return new Response('OK', { 
       status: 200, 
@@ -164,7 +185,8 @@ serve(async (req) => {
     })
 
   } catch (error) {
-    console.error('Error processing Postmark webhook:', error)
+    console.error('💥 Error processing Postmark webhook:', error)
+    console.error('💥 Error stack:', error.stack)
     return new Response('Internal server error', { 
       status: 500, 
       headers: corsHeaders 
