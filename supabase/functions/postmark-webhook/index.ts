@@ -81,18 +81,18 @@ async function processEmailWithKnowReply(
     // Get user's KnowReply configuration
     const { data: workspaceConfig, error: configError } = await supabase
       .from('workspace_configs')
-      .select('knowreply_base_url')
+      .select('knowreply_webhook_url')
       .eq('user_id', userId)
       .single()
 
-    if (configError || !workspaceConfig?.knowreply_base_url) {
-      const error = 'No KnowReply base URL found for user. Please configure KnowReply settings first.'
+    if (configError || !workspaceConfig?.knowreply_webhook_url) {
+      const error = 'No KnowReply webhook URL found for user. Please configure KnowReply settings first.'
       console.log('❌', error)
       errors.push(error)
       return { success: false, warnings, errors }
     }
 
-    console.log('✅ Found KnowReply config:', workspaceConfig.knowreply_base_url)
+    console.log('✅ Found KnowReply config:', workspaceConfig.knowreply_webhook_url)
 
     // Get active agent mappings for the user
     const { data: agentMappings, error: mappingsError } = await supabase
@@ -265,8 +265,8 @@ async function processWithAgent(
     }))
   }
 
-  // Use the base URL directly since it's the full edge function URL
-  const knowReplyUrl = workspaceConfig.knowreply_base_url
+  // Use the webhook URL directly since it's the full edge function URL
+  const knowReplyUrl = workspaceConfig.knowreply_webhook_url
   
   console.log('🔗 KnowReply URL being called:', knowReplyUrl)
   console.log('📤 Sending request to KnowReply:', {
