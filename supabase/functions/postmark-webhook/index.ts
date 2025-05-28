@@ -92,7 +92,7 @@ async function processEmailWithKnowReply(
       return { success: false, warnings, errors }
     }
 
-    console.log('✅ Found KnowReply config, checking for agent mappings...')
+    console.log('✅ Found KnowReply config:', workspaceConfig.knowreply_base_url)
 
     // Get active agent mappings for the user
     const { data: agentMappings, error: mappingsError } = await supabase
@@ -265,16 +265,17 @@ async function processWithAgent(
     }))
   }
 
-  console.log('📤 Sending request to KnowReply (no auth):', {
-    agent_id: agentConfig.agent_id,
-    mcp_count: agentConfig.mcp_endpoints.length,
-    base_url: workspaceConfig.knowreply_base_url
-  })
-
-  // Make the KnowReply API call WITHOUT Authorization header
   // Use the base URL directly since it's the full edge function URL
   const knowReplyUrl = workspaceConfig.knowreply_base_url
   
+  console.log('🔗 KnowReply URL being called:', knowReplyUrl)
+  console.log('📤 Sending request to KnowReply:', {
+    agent_id: agentConfig.agent_id,
+    mcp_count: agentConfig.mcp_endpoints.length,
+    url: knowReplyUrl
+  })
+
+  // Make the KnowReply API call WITHOUT Authorization header
   const response = await fetch(knowReplyUrl, {
     method: 'POST',
     headers: {
@@ -284,9 +285,13 @@ async function processWithAgent(
     body: JSON.stringify(knowReplyRequest)
   })
 
+  console.log('📨 KnowReply response status:', response.status)
+  console.log('📨 KnowReply response headers:', Object.fromEntries(response.headers.entries()))
+
   const responseData = await response.json()
 
   if (!response.ok) {
+    console.error('❌ KnowReply API error response:', responseData)
     throw new Error(`KnowReply API error: ${response.status} - ${JSON.stringify(responseData)}`)
   }
 
