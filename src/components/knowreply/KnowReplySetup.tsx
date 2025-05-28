@@ -1,3 +1,4 @@
+
 import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { supabase } from '@/integrations/supabase/client';
@@ -18,7 +19,8 @@ import {
   Brain,
   AlertCircle,
   Trash2,
-  Plus
+  Plus,
+  Save
 } from 'lucide-react';
 
 interface KnowReplyConfig {
@@ -64,6 +66,7 @@ export function KnowReplySetup() {
   const [saving, setSaving] = useState(false);
   const [loadingAgents, setLoadingAgents] = useState(false);
   const [fetchError, setFetchError] = useState<string | null>(null);
+  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
 
   useEffect(() => {
     if (user) {
@@ -151,6 +154,7 @@ export function KnowReplySetup() {
       });
 
       setAgentConfigs(Array.from(configMap.values()));
+      setHasUnsavedChanges(false);
     } catch (error) {
       console.error('Error loading agent configs:', error);
     }
@@ -243,10 +247,17 @@ export function KnowReplySetup() {
     };
 
     setAgentConfigs(prev => [...prev, newConfig]);
+    setHasUnsavedChanges(true);
+    
+    toast({
+      title: "Agent Added",
+      description: `${agent.name} has been added. Don't forget to save your configuration.`,
+    });
   };
 
   const removeAgent = (agentId: string) => {
     setAgentConfigs(prev => prev.filter(config => config.agent_id !== agentId));
+    setHasUnsavedChanges(true);
   };
 
   const toggleAgentEnabled = (agentId: string) => {
@@ -255,6 +266,7 @@ export function KnowReplySetup() {
         ? { ...config, enabled: !config.enabled }
         : config
     ));
+    setHasUnsavedChanges(true);
   };
 
   const toggleMCPForAgent = (agentId: string, mcpEndpointId: string) => {
@@ -267,6 +279,7 @@ export function KnowReplySetup() {
       
       return { ...config, mcp_endpoints: endpoints };
     }));
+    setHasUnsavedChanges(true);
   };
 
   const saveConfiguration = async () => {
@@ -318,13 +331,24 @@ export function KnowReplySetup() {
       for (const agentConfig of agentConfigs) {
         if (!agentConfig.enabled) continue;
         
-        for (const mcpEndpointId of agentConfig.mcp_endpoints) {
+        if (agentConfig.mcp_endpoints.length === 0) {
+          // Create mapping for agent with no MCP endpoints
           mappings.push({
             user_id: user.id,
             agent_id: agentConfig.agent_id,
-            mcp_endpoint_id: mcpEndpointId,
+            mcp_endpoint_id: null,
             active: true
           });
+        } else {
+          // Create mappings for each MCP endpoint
+          for (const mcpEndpointId of agentConfig.mcp_endpoints) {
+            mappings.push({
+              user_id: user.id,
+              agent_id: agentConfig.agent_id,
+              mcp_endpoint_id: mcpEndpointId,
+              active: true
+            });
+          }
         }
       }
 
@@ -336,6 +360,7 @@ export function KnowReplySetup() {
         if (insertError) throw insertError;
       }
 
+      setHasUnsavedChanges(false);
       toast({
         title: "Success",
         description: "KnowReply configuration saved successfully",
@@ -377,6 +402,27 @@ export function KnowReplySetup() {
         </p>
       </div>
 
+      {/* Unsaved Changes Warning */}
+      {hasUnsavedChanges && (
+        <Card className="border-orange-200 bg-orange-50">
+          <CardContent className="pt-6">
+            <div className="flex items-center gap-2 text-orange-700">
+              <AlertCircle className="h-5 w-5" />
+              <span className="font-medium">You have unsaved changes</span>
+              <Button 
+                onClick={saveConfiguration} 
+                disabled={saving}
+                size="sm"
+                className="ml-auto"
+              >
+                {saving ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Save className="h-4 w-4 mr-2" />}
+                Save Now
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
       {/* API Configuration */}
       <Card>
         <CardHeader>
@@ -396,7 +442,10 @@ export function KnowReplySetup() {
               type="password"
               placeholder="Enter your KnowReply API token"
               value={config.knowreply_api_token || ''}
-              onChange={(e) => setConfig({ ...config, knowreply_api_token: e.target.value })}
+              onChange={(e) => {
+                setConfig({ ...config, knowreply_api_token: e.target.value });
+                setHasUnsavedChanges(true);
+              }}
             />
           </div>
         </CardContent>
@@ -536,9 +585,14 @@ export function KnowReplySetup() {
 
       {/* Save Configuration */}
       <div className="flex justify-end">
-        <Button onClick={saveConfiguration} disabled={saving} size="lg">
-          {saving ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
-          Save Configuration
+        <Button 
+          onClick={saveConfiguration} 
+          disabled={saving || !hasUnsavedChanges} 
+          size="lg"
+          className={hasUnsavedChanges ? 'bg-orange-600 hover:bg-orange-700' : ''}
+        >
+          {saving ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Save className="h-4 w-4 mr-2" />}
+          {hasUnsavedChanges ? 'Save Configuration' : 'Configuration Saved'}
         </Button>
       </div>
 
@@ -556,9 +610,9 @@ export function KnowReplySetup() {
             <ol className="text-sm text-blue-800 space-y-1 list-decimal list-inside">
               <li>Enter your KnowReply API token</li>
               <li>Add the agents you want to use for email processing</li>
-              <li>Configure which MCP endpoints each agent can access</li>
+              <li>Configure which MCP endpoints each agent can access (optional)</li>
               <li>Enable/disable agents as needed</li>
-              <li>Save your configuration</li>
+              <li><strong>Click "Save Configuration" to apply your changes</strong></li>
             </ol>
           </div>
 
