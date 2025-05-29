@@ -1,3 +1,4 @@
+
 import { useState } from 'react';
 import { useQuery, useMutation } from '@tanstack/react-query';
 import { Button } from '@/components/ui/button';
@@ -74,20 +75,46 @@ export function TestCaseList({ testCases, onEdit, onRefresh }: TestCaseListProps
         responseData = responseText;
       }
 
-      // Record the test run
+      // Wait a moment for KnowReply processing to complete
+      await new Promise(resolve => setTimeout(resolve, 2000));
+
+      // Fetch the KnowReply processing results from email_interactions
+      let knowReplyResults = null;
+      if (response.ok && testCase.incoming_json?.MessageID) {
+        const { data: emailInteraction } = await supabase
+          .from('email_interactions')
+          .select('knowreply_response, knowreply_request, knowreply_agent_used, intent, status')
+          .eq('message_id', testCase.incoming_json.MessageID)
+          .eq('user_id', user?.id)
+          .order('updated_at', { ascending: false })
+          .limit(1)
+          .single();
+
+        if (emailInteraction) {
+          knowReplyResults = emailInteraction;
+        }
+      }
+
+      // Combine webhook response with KnowReply results
+      const combinedResponseData = {
+        webhook_response: responseData,
+        knowreply_results: knowReplyResults
+      };
+
+      // Record the test run with combined results
       const { error } = await supabase
         .from('email_test_runs')
         .insert({
           user_id: user?.id,
           test_case_id: testCase.id,
           success: response.ok,
-          response_data: responseData,
+          response_data: combinedResponseData,
           error_message: response.ok ? null : `HTTP ${response.status}: ${responseText}`
         });
 
       if (error) throw error;
 
-      return { success: response.ok, responseData, status: response.status };
+      return { success: response.ok, responseData: combinedResponseData, status: response.status };
     },
     onSuccess: (result, testCase) => {
       toast({
@@ -129,7 +156,7 @@ export function TestCaseList({ testCases, onEdit, onRefresh }: TestCaseListProps
       <CardHeader>
         <CardTitle>Test Cases</CardTitle>
         <CardDescription>
-          Click on a test case to view its details and run history
+          Click on a test case to view its details and run history. Test results now include KnowReply processing outcomes.
         </CardDescription>
       </CardHeader>
       <CardContent>

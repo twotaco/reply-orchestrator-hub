@@ -118,11 +118,65 @@ export function TestRunsList({ testCaseId }: TestRunsListProps) {
             )}
             
             {run.response_data && (
-              <div>
-                <h5 className="text-sm font-medium mb-1">Response:</h5>
-                <pre className="text-xs bg-white p-2 rounded border overflow-x-auto">
-                  {JSON.stringify(run.response_data, null, 2)}
-                </pre>
+              <div className="space-y-3">
+                {/* Webhook Response */}
+                <div>
+                  <h5 className="text-sm font-medium mb-1">Webhook Response:</h5>
+                  <pre className="text-xs bg-white p-2 rounded border overflow-x-auto">
+                    {JSON.stringify(run.response_data.webhook_response || run.response_data, null, 2)}
+                  </pre>
+                </div>
+
+                {/* KnowReply Results */}
+                {run.response_data.knowreply_results && (
+                  <div>
+                    <h5 className="text-sm font-medium mb-1 text-blue-600">KnowReply Processing Results:</h5>
+                    <div className="bg-blue-50 p-3 rounded border">
+                      <div className="grid grid-cols-2 gap-2 mb-2 text-xs">
+                        <div>
+                          <strong>Status:</strong> 
+                          <Badge variant={run.response_data.knowreply_results.status === 'processed' ? 'default' : 'secondary'} className="ml-1">
+                            {run.response_data.knowreply_results.status}
+                          </Badge>
+                        </div>
+                        {run.response_data.knowreply_results.knowreply_agent_used && (
+                          <div>
+                            <strong>Agent:</strong> {run.response_data.knowreply_results.knowreply_agent_used}
+                          </div>
+                        )}
+                        {run.response_data.knowreply_results.intent && (
+                          <div>
+                            <strong>Intent:</strong> 
+                            <Badge variant="outline" className="ml-1">
+                              {run.response_data.knowreply_results.intent}
+                            </Badge>
+                          </div>
+                        )}
+                      </div>
+                      
+                      {run.response_data.knowreply_results.knowreply_response && (
+                        <div className="mt-2">
+                          <h6 className="text-xs font-medium mb-1">KnowReply Response:</h6>
+                          <pre className="text-xs bg-white p-2 rounded border overflow-x-auto max-h-40">
+                            {JSON.stringify(run.response_data.knowreply_results.knowreply_response, null, 2)}
+                          </pre>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {/* Show notice if KnowReply results are missing */}
+                {!run.response_data.knowreply_results && run.success && (
+                  <div className="bg-yellow-50 p-2 rounded border border-yellow-200">
+                    <p className="text-xs text-yellow-700">
+                      ⚠️ KnowReply processing results not found. This might be due to:
+                      <br />• Email processing still in progress
+                      <br />• KnowReply configuration issues
+                      <br />• MessageID not matching between test and processing
+                    </p>
+                  </div>
+                )}
               </div>
             )}
           </div>
