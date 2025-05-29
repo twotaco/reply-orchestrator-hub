@@ -303,7 +303,7 @@ async function processWithAgent(
   console.log('📨 KnowReply response headers:', Object.fromEntries(response.headers.entries()))
 
   const responseData = await response.json()
-
+  console.log('📥 KnowReply response:', responseData);
   if (!response.ok) {
     console.error('❌ KnowReply API error response:', responseData)
     throw new Error(`KnowReply API error: ${response.status} - ${JSON.stringify(responseData)}`)
