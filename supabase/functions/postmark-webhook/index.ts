@@ -257,7 +257,7 @@ async function processWithAgent(
       sender: payload.From,
       recipient: payload.ToFull?.[0]?.Email || payload.To,
       subject: payload.Subject,
-      body: payload.StrippedTextReply || payload.TextBody || payload.HtmlBody,
+      body: payload.TextBody || payload.HtmlBody || payload.StrippedTextReply,
       headers: payload.Headers ? payload.Headers.reduce((acc, h) => {
         acc[h.Name] = h.Value;
         return acc;
