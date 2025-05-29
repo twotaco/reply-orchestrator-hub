@@ -311,8 +311,9 @@ async function processWithAgent(
 
   console.log('✅ KnowReply response received for agent:', agentConfig.agent_id)
   console.log('📊 Updating email_interactions with id:', emailInteractionId);
-  // Update the email interaction with KnowReply results
-  await supabase
+  
+  // Update the email interaction with KnowReply results - with proper error handling
+  const { data: updateResult, error: updateError } = await supabase
     .from('email_interactions')
     .update({
       knowreply_agent_used: agentConfig.agent_id,
@@ -324,6 +325,25 @@ async function processWithAgent(
       updated_at: new Date().toISOString()
     })
     .eq('id', emailInteractionId)
+    .select()
+
+  if (updateError) {
+    console.error('❌ Error updating email_interactions:', updateError)
+    console.error('❌ Update error details:', {
+      message: updateError.message,
+      details: updateError.details,
+      hint: updateError.hint,
+      code: updateError.code
+    })
+    throw new Error(`Failed to update email interaction: ${updateError.message}`)
+  }
+
+  if (!updateResult || updateResult.length === 0) {
+    console.error('❌ No rows were updated - email interaction not found:', emailInteractionId)
+    throw new Error(`Email interaction with ID ${emailInteractionId} not found for update`)
+  }
+
+  console.log('✅ Successfully updated email_interactions record:', updateResult[0])
 
   // check for any warnings or errors in the response and output to console
   if (responseData.warnings && responseData.warnings.length > 0) {
@@ -529,7 +549,7 @@ serve(async (req) => {
       .eq('user_id', workspaceConfig.user_id)
       .single()
 
-    let interactionRecord
+    let interactionRecordId
     if (existingInteraction) {
       console.log('📝 Updating existing email interaction for message_id:', payload.MessageID)
       
@@ -552,7 +572,7 @@ serve(async (req) => {
       if (updateInteractionError) {
         console.error('⚠️ Error updating email interaction:', updateInteractionError)
       } else {
-        interactionRecord = existingInteraction.id
+        interactionRecordId = existingInteraction.id
         console.log('✅ Successfully updated email interaction')
       }
     } else {
@@ -577,19 +597,19 @@ serve(async (req) => {
       if (interactionError) {
         console.error('⚠️ Error creating email interaction:', interactionError)
       } else {
-        interactionRecord = newInteraction.id
-        console.log('✅ Successfully created email interaction')
+        interactionRecordId = newInteraction.id
+        console.log('✅ Successfully created email interaction with ID:', newInteraction.id)
       }
     }
 
     // Process the email with KnowReply and collect results
-    if (interactionRecord) {
+    if (interactionRecordId) {
       console.log('🤖 Starting KnowReply processing...')
       const knowReplyResult = await processEmailWithKnowReply(
         supabase,
         workspaceConfig.user_id,
         payload,
-        interactionRecord
+        interactionRecordId
       )
 
       // Add KnowReply results to response
