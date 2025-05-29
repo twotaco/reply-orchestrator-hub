@@ -185,7 +185,7 @@ export function TestRunsList({ testCaseId }: TestRunsListProps) {
                             <div 
                               className="text-xs bg-white p-2 rounded border overflow-auto max-h-40"
                               dangerouslySetInnerHTML={{ __html: responseData.knowreply_results.knowreply_response.reply.body }}
-                            /> </pre>
+                            /> 
                           </div>
                         )}
                       </div>
