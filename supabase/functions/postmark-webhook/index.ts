@@ -310,7 +310,7 @@ async function processWithAgent(
   }
 
   console.log('✅ KnowReply response received for agent:', agentConfig.agent_id)
-
+  console.log('📊 Updating email_interactions with id:', emailInteractionId);
   // Update the email interaction with KnowReply results
   await supabase
     .from('email_interactions')
@@ -325,6 +325,14 @@ async function processWithAgent(
     })
     .eq('id', emailInteractionId)
 
+  // check for any warnings or errors in the response and output to console
+  if (responseData.warnings && responseData.warnings.length > 0) {
+    console.warn('⚠️ KnowReply warnings:', responseData.warnings)
+  }
+  if (responseData.errors && responseData.errors.length > 0) {
+    console.error('❌ KnowReply errors:', responseData.errors)
+  }
+  
   // Log successful processing
   await supabase
     .from('activity_logs')
@@ -544,7 +552,7 @@ serve(async (req) => {
       if (updateInteractionError) {
         console.error('⚠️ Error updating email interaction:', updateInteractionError)
       } else {
-        interactionRecord = updatedInteraction
+        interactionRecord = existingInteraction.id
         console.log('✅ Successfully updated email interaction')
       }
     } else {
@@ -569,7 +577,7 @@ serve(async (req) => {
       if (interactionError) {
         console.error('⚠️ Error creating email interaction:', interactionError)
       } else {
-        interactionRecord = newInteraction
+        interactionRecord = newInteraction.id
         console.log('✅ Successfully created email interaction')
       }
     }
@@ -581,7 +589,7 @@ serve(async (req) => {
         supabase,
         workspaceConfig.user_id,
         payload,
-        interactionRecord.id
+        interactionRecord
       )
 
       // Add KnowReply results to response
