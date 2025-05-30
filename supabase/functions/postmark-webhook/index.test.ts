@@ -17,11 +17,18 @@ import { generateMCPToolPlan, executeMCPPlan } from './index.ts';
 // --- Mocking Setup ---
 let originalFetch: typeof globalThis.fetch;
 
-// Helper to mock fetch responses
-const mockFetch = (response: any, status: number = 200, ok: boolean = true) => {
-  return stub(globalThis, "fetch", returnsNext([
-    Promise.resolve(new Response(JSON.stringify(response), { status, statusText: ok ? "OK" : "Error" }))
-  ]));
+// Helper to mock fetch responses for OpenAI (legacy, keep if other tests use it)
+// const mockOpenAIFetch = (response: any, status: number = 200, ok: boolean = true) => {
+//   return stub(globalThis, "fetch", returnsNext([
+//     Promise.resolve(new Response(JSON.stringify(response), { status, statusText: ok ? "OK" : "Error" }))
+//   ]));
+// };
+
+// Updated helper to mock fetch for Gemini
+const mockGeminiFetch = (
+  geminiResponseHandler: (url: URL | Request | string, options?: RequestInit) => Promise<Response>
+) => {
+  return stub(globalThis, "fetch", geminiResponseHandler);
 };
 
 
@@ -38,52 +45,76 @@ const mockSupabaseClient = {
   },
 };
 
-Deno.test("[generateMCPToolPlan] should generate a plan successfully", async () => {
-  const fetchStub = mockFetch({ choices: [{ message: { content: JSON.stringify([{ tool: "mcp:test.tool", args: { param: "value" } }]) } }] });
+Deno.test("[generateMCPToolPlan with Gemini] should generate a plan successfully", async () => {
+  const mockApiKey = "test-gemini-key";
+  const expectedPlan = [{ tool: "mcp:test.tool", args: { param: "value" } }];
+  const geminiResponse = {
+    candidates: [{
+      content: { parts: [{ text: JSON.stringify(expectedPlan) }], role: "model" },
+      finishReason: "STOP"
+    }]
+  };
+
+  const fetchStub = mockGeminiFetch(async (url, options) => {
+    assert(url.toString().startsWith(`https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key=${mockApiKey}`), "Gemini API URL is incorrect");
+    assert(options?.method === "POST", "HTTP method should be POST");
+    const body = JSON.parse(options!.body!.toString());
+    assertExists(body.contents, "Gemini request body should have 'contents'");
+    assertEquals(body.generationConfig?.response_mime_type, "application/json", "response_mime_type should be application/json");
+    return Promise.resolve(new Response(JSON.stringify(geminiResponse), { status: 200 }));
+  });
   const insertSpy = spy(mockSupabaseClient.from("llm_logs"), "insert");
 
   try {
     const plan = await generateMCPToolPlan(
       "Test email body",
       [{ name: "mcp:test.tool", instructions: "Test tool instructions" }],
-      "test-openai-key",
+      mockApiKey,
       mockSupabaseClient,
       "test-user-id",
       "test-email-interaction-id"
     );
 
-    assertEquals(plan, [{ tool: "mcp:test.tool", args: { param: "value" } }]);
-    assert(fetchStub.calls.length > 0, "Fetch was not called");
-    assertEquals(fetchStub.calls[0].args[0], "https://api.openai.com/v1/chat/completions");
+    assertEquals(plan, expectedPlan);
+    assertEquals(fetchStub.calls.length, 1, "Fetch was not called exactly once");
     
-    assert(insertSpy.calls.length > 0, "Supabase insert for llm_logs was not called");
+    assertEquals(insertSpy.calls.length, 1, "Supabase insert for llm_logs was not called");
     const logData = insertSpy.calls[0].args[0][0];
     assertEquals(logData.user_id, "test-user-id");
-    assertEquals(logData.tool_plan_generated[0].tool, "mcp:test.tool");
+    assertEquals(logData.model_used, "gemini-pro");
+    assertEquals(logData.tool_plan_generated, expectedPlan);
+    assertExists(logData.prompt_messages[0].parts[0].text, "Prompt text not logged correctly for Gemini");
 
   } finally {
-    fetchStub.restore();
+    fetchStub.restore(); // Restore original fetch
     insertSpy.restore();
   }
 });
 
-Deno.test("[generateMCPToolPlan] should handle OpenAI API error", async () => {
-  const fetchStub = mockFetch({ error: { message: "OpenAI API Error" } }, 500, false);
+Deno.test("[generateMCPToolPlan with Gemini] should handle Gemini API error", async () => {
+  const mockApiKey = "test-gemini-key";
+  const geminiErrorResponse = { error: { code: 500, message: "Gemini Internal Server Error" } };
+
+  const fetchStub = mockGeminiFetch(async (url) => {
+    assert(url.toString().includes(mockApiKey), "Gemini API key not in URL");
+    return Promise.resolve(new Response(JSON.stringify(geminiErrorResponse), { status: 500, statusText: "Internal Server Error" }));
+  });
   const insertSpy = spy(mockSupabaseClient.from("llm_logs"), "insert");
 
   try {
     const plan = await generateMCPToolPlan(
       "Test email body",
       [{ name: "mcp:test.tool", instructions: "Test tool" }],
-      "test-openai-key",
+      mockApiKey,
       mockSupabaseClient,
       "test-user-id",
       "test-email-interaction-id"
     );
     assertEquals(plan, null, "Plan should be null on API error");
-    assert(insertSpy.calls.length > 0, "Supabase insert for llm_logs was not called even on error");
+    assertEquals(insertSpy.calls.length, 1, "Supabase insert for llm_logs was not called even on error");
     const logData = insertSpy.calls[0].args[0][0];
     assertExists(logData.error_message, "Error message should be logged");
+    assert(logData.error_message!.includes("Gemini API error"), "Error message should specify Gemini");
 
   } finally {
     fetchStub.restore();
@@ -91,18 +122,28 @@ Deno.test("[generateMCPToolPlan] should handle OpenAI API error", async () => {
   }
 });
 
-Deno.test("[generateMCPToolPlan] should return empty array if no tools needed", async () => {
-    const fetchStub = mockFetch({ choices: [{ message: { content: JSON.stringify([]) } }] });
+Deno.test("[generateMCPToolPlan with Gemini] should return empty array if no tools needed", async () => {
+    const mockApiKey = "test-gemini-key";
+    const geminiResponseNoTools = {
+        candidates: [{
+            content: { parts: [{ text: JSON.stringify([]) }], role: "model" },
+            finishReason: "STOP"
+        }]
+    };
+    const fetchStub = mockGeminiFetch(async () => {
+        return Promise.resolve(new Response(JSON.stringify(geminiResponseNoTools), { status: 200 }));
+    });
     const insertSpy = spy(mockSupabaseClient.from("llm_logs"), "insert");
+
     try {
         const plan = await generateMCPToolPlan(
             "Thank you email",
             [{ name: "mcp:test.tool", instructions: "Test tool" }],
-            "test-openai-key",
+            mockApiKey,
             mockSupabaseClient, "user1", "email1"
         );
         assertEquals(plan, []);
-        assert(insertSpy.calls.length > 0, "llm_log insert should be called");
+        assertEquals(insertSpy.calls.length, 1, "llm_log insert should be called");
         assertEquals(insertSpy.calls[0].args[0][0].tool_plan_generated, []);
     } finally {
         fetchStub.restore();
@@ -110,35 +151,84 @@ Deno.test("[generateMCPToolPlan] should return empty array if no tools needed", 
     }
 });
 
-Deno.test("[generateMCPToolPlan] should handle invalid JSON response from OpenAI", async () => {
-    originalFetch = globalThis.fetch;
-    globalThis.fetch = async (_url, _options) => {
-        return Promise.resolve(new Response("invalid json", { status: 200 }));
+Deno.test("[generateMCPToolPlan with Gemini] should handle invalid JSON string in Gemini response text part", async () => {
+    const mockApiKey = "test-gemini-key";
+    const geminiResponseInvalidJsonText = {
+        candidates: [{
+            content: { parts: [{ text: "This is not JSON" }], role: "model" },
+            finishReason: "STOP"
+        }]
     };
+    // originalFetch = globalThis.fetch; // Not needed if using stub effectively
+    const fetchStub = mockGeminiFetch(async () => {
+        return Promise.resolve(new Response(JSON.stringify(geminiResponseInvalidJsonText), { status: 200 }));
+    });
     const insertSpy = spy(mockSupabaseClient.from("llm_logs"), "insert");
 
     try {
         const plan = await generateMCPToolPlan(
             "Test email",
             [{ name: "mcp:test.tool", instructions: "Test tool" }],
-            "test-openai-key",
+            mockApiKey,
             mockSupabaseClient, "user1", "email1"
         );
-        assertEquals(plan, null); // Or specific error object/empty array based on implementation
-        assert(insertSpy.calls.length > 0, "llm_log insert should be called");
-        assertExists(insertSpy.calls[0].args[0][0].error_message, "Error message should be logged for invalid JSON");
+        assertEquals(plan, null, "Plan should be null or empty for invalid JSON content");
+        assertEquals(insertSpy.calls.length, 1, "llm_log insert should be called");
+        const logData = insertSpy.calls[0].args[0][0];
+        assertExists(logData.error_message, "Error message should be logged for invalid JSON");
+        assert(logData.error_message!.includes("Error parsing JSON from Gemini response") || logData.error_message!.includes("LLM response JSON is not an array"), "Error message should indicate JSON parsing issue");
+
     } finally {
-        globalThis.fetch = originalFetch; // Restore original fetch
+        fetchStub.restore();
         insertSpy.restore();
     }
 });
 
+Deno.test("[generateMCPToolPlan with Gemini] should handle SAFETY block", async () => {
+  const mockApiKey = "test-gemini-key";
+  const geminiSafetyBlockResponse = {
+    candidates: [], // No candidates when blocked
+    promptFeedback: {
+      blockReason: "SAFETY",
+      safetyRatings: [ /* ... some safety ratings data ... */ ]
+    }
+  };
+   const fetchStub = mockGeminiFetch(async () => {
+        return Promise.resolve(new Response(JSON.stringify(geminiSafetyBlockResponse), { status: 200 })); // Gemini might return 200 OK even if blocked
+    });
+  const insertSpy = spy(mockSupabaseClient.from("llm_logs"), "insert");
 
-Deno.test("[executeMCPPlan] successful execution of a single action", async () => {
+  try {
+    const plan = await generateMCPToolPlan(
+      "Problematic email body",
+      [{ name: "mcp:test.tool", instructions: "Test tool" }],
+      mockApiKey,
+      mockSupabaseClient, "user1", "email1"
+    );
+    assertEquals(plan, null, "Plan should be null when Gemini blocks due to safety");
+    assertEquals(insertSpy.calls.length, 1, "llm_log insert should be called");
+    const logData = insertSpy.calls[0].args[0][0];
+    assertExists(logData.error_message, "Error message should be logged for safety block");
+    assert(logData.error_message!.includes("Gemini response blocked due to safety settings"), "Error message should indicate safety block");
+  } finally {
+    fetchStub.restore();
+    insertSpy.restore();
+  }
+});
+
+
+Deno.test("[executeMCPPlan] successful execution of a single action", async () => { // This test and subsequent executeMCPPlan tests should remain unchanged
   const mcpPlan = [{ tool: "mcp:valid.tool", args: { data: "send" } }];
   const availableMcps = [{ name: "mcp:valid.tool", post_url: "https://mcp.example.com/action", auth_token: "token123" }];
   
-  const fetchStub = mockFetch({ success: true, result: "tool_data" });
+  // Using a generic fetch mock for MCP calls, not specific to Gemini/OpenAI
+  originalFetch = globalThis.fetch; // Store original
+  globalThis.fetch = async (url, options) => {
+    if (url.toString().includes("mcp.example.com/action")) {
+      return Promise.resolve(new Response(JSON.stringify({ success: true, result: "tool_data" }), { status: 200 }));
+    }
+    return Promise.resolve(new Response("Not Found", { status: 404 }));
+  };
   const activityLogSpy = spy(mockSupabaseClient.from("activity_logs"), "insert");
 
   try {

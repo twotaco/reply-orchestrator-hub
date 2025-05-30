@@ -72,13 +72,13 @@ interface KnowReplyAgentConfig {
 async function generateMCPToolPlan(
   emailBody: string,
   availableMcps: KnowReplyAgentConfig['mcp_endpoints'],
-  openAIApiKey: string,
+  geminiApiKey: string, // Changed from openAIApiKey
   supabaseClient: any, // For logging
   userId: string | null,
   emailInteractionId: string | null
 ): Promise<object[] | null> {
-  console.log('🤖 Generating MCP Tool Plan...');
-  const modelName = 'gpt-3.5-turbo-1106'; // Define model name for logging and use
+  console.log('🤖 Generating MCP Tool Plan using Google Gemini...');
+  const modelName = 'gemini-pro'; // Define model name for logging and use
   if (!emailBody || emailBody.trim() === '') {
     console.warn('✉️ Email body is empty. Skipping MCP plan generation.');
     return [];
@@ -118,66 +118,110 @@ Output Format guidance (ensure output is ONLY the JSON array, do not add any oth
   { "tool": "mcp:example.toolName", "args": { "parameter": "value" } }
 ]`;
 
-  console.log('📝 Constructed User Prompt for OpenAI (first 200 chars):', userPrompt.substring(0,200));
+  // Construct the prompt for Gemini
+  const geminiPrompt = `You are an intent and action planner. Based on the customer email below, determine which external tools (MCPs) are needed to answer or fulfill the request.
+
+Customer Email:
+---
+${emailBody.substring(0, 8000)} 
+---
+
+Available Tools:
+---
+${JSON.stringify(availableMcps.map(mcp => ({ name: mcp.name, description: mcp.instructions || 'No specific instructions provided.' })), null, 2)}
+---
+
+Output format constraints:
+Respond ONLY with a valid JSON array in the following format:
+[
+  { "tool": "mcp:example.toolName", "args": { "parameter": "value" } }
+]
+If no tools are needed, or if the email content does not require any actionable steps, return an empty array [].
+Only use tools from the 'Available Tools' list. Ensure the tool name in your output matches exactly a name from the 'Available Tools' list. Do not include any explanatory text, markdown formatting, or anything else before or after the JSON array itself.
+Your entire response must be only the JSON array.`;
+
+  console.log('📝 Constructed Prompt for Gemini (first 200 chars):', geminiPrompt.substring(0,200));
   
-  const messagesForLlm = [
-    { role: 'system', content: systemPrompt },
-    { role: 'user', content: userPrompt },
-  ];
+  // Gemini API expects contents.parts.text format
+  const requestPayloadForGemini = {
+    contents: [{
+      parts: [{
+        text: geminiPrompt
+      }]
+    }],
+    generationConfig: {
+      response_mime_type: "application/json", // Request JSON output directly
+      temperature: 0.2, // Lower temperature for more deterministic JSON
+      // maxOutputTokens: 2048, // Optional: adjust as needed
+    }
+  };
 
   let llmApiResponse: any = null;
   let parsedPlan: object[] | null = null;
   let llmError: Error | null = null;
 
   try {
-    const response = await fetch('https://api.openai.com/v1/chat/completions', {
+    const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${geminiApiKey}`;
+    const response = await fetch(apiUrl, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${openAIApiKey}`,
       },
-      body: JSON.stringify({
-        model: modelName,
-        messages: messagesForLlm,
-        response_format: { type: 'json_object' },
-        temperature: 0.2, // Lower temperature for more deterministic planning
-      }),
+      body: JSON.stringify(requestPayloadForGemini),
     });
 
     llmApiResponse = await response.json(); // Store the full API response
 
     if (!response.ok) {
-      const errorBodyText = llmApiResponse ? JSON.stringify(llmApiResponse) : await response.text(); // Use .text() as fallback if .json() failed or was not called
-      console.error(`❌ OpenAI API error: ${response.status} - ${response.statusText}`, errorBodyText);
-      llmError = new Error(`OpenAI API error: ${response.status} - ${errorBodyText}`);
-      // Do not throw here, allow logging to occur
+      const errorDetail = llmApiResponse?.error?.message || JSON.stringify(llmApiResponse);
+      console.error(`❌ Gemini API error: ${response.status} - ${response.statusText}`, errorDetail);
+      llmError = new Error(`Gemini API error: ${response.status} - ${errorDetail}`);
     } else {
-      console.log('✅ OpenAI API call successful.');
-    }
-    
-    const messageContent = llmApiResponse?.choices?.[0]?.message?.content;
-    if (!llmError && !messageContent) {
-      console.warn('⚠️ No content in OpenAI response choice.');
-      llmError = new Error('No content in OpenAI response choice.');
-    }
-
-    if (!llmError && messageContent) {
-      console.log('🛠️ Attempting to parse LLM response:', messageContent);
-      try {
-        const jsonResponse = JSON.parse(messageContent);
-        if (jsonResponse && Array.isArray(jsonResponse.plan)) {
-          parsedPlan = jsonResponse.plan;
-        } else if (Array.isArray(jsonResponse)) {
-          parsedPlan = jsonResponse;
-        } else {
-          console.warn('⚠️ LLM response is valid JSON but not in the expected array format or { "plan": [...] } structure.', jsonResponse);
-          parsedPlan = []; 
-          llmError = new Error('LLM response JSON not in expected array format.');
+      console.log('✅ Gemini API call successful.');
+      const candidate = llmApiResponse?.candidates?.[0];
+      if (!candidate) {
+        llmError = new Error('No candidates found in Gemini response.');
+        console.warn(`⚠️ ${llmError.message}`, llmApiResponse);
+      } else if (candidate.finishReason !== 'STOP' && candidate.finishReason !== 'MAX_TOKENS') { 
+        // MAX_TOKENS can sometimes be acceptable if JSON is complete
+        llmError = new Error(`Gemini generation finished with reason: ${candidate.finishReason}`);
+        console.warn(`⚠️ ${llmError.message}`, llmApiResponse);
+         if (candidate.finishReason === "SAFETY") {
+          console.error("❌ Gemini response blocked due to safety settings. Response details:", candidate.safetyRatings);
+          llmError = new Error(`Gemini response blocked due to safety settings: ${JSON.stringify(candidate.safetyRatings)}`);
         }
-      } catch (e) {
-        console.error('❌ Error parsing JSON from OpenAI response:', e.message);
-        console.error('Raw response content that failed parsing:', messageContent);
-        llmError = e;
+      } else {
+        const messageContent = candidate.content?.parts?.[0]?.text;
+        if (!messageContent) {
+          llmError = new Error('No text content in Gemini response candidate part.');
+          console.warn(`⚠️ ${llmError.message}`, llmApiResponse);
+        } else {
+          console.log('🛠️ Attempting to parse LLM response from Gemini:', messageContent);
+          try {
+            // Gemini with response_mime_type: "application/json" should return valid JSON directly.
+            // However, the actual *content* of that JSON (the plan) needs to be an array as per prompt.
+            const jsonFromTheLLM = JSON.parse(messageContent); 
+
+            // Check if the parsed JSON is itself the array (our desired plan format)
+            if (Array.isArray(jsonFromTheLLM)) {
+                parsedPlan = jsonFromTheLLM;
+            } 
+            // Or if the LLM wrapped it, e.g. { "plan": [...] } (less likely with strong prompting for direct array)
+            else if (jsonFromTheLLM && Array.isArray(jsonFromTheLLM.plan)) {
+                console.warn("⚠️ Gemini returned JSON object with a 'plan' key instead of direct array. Adapting.");
+                parsedPlan = jsonFromTheLLM.plan;
+            }
+            else {
+              llmError = new Error('LLM response JSON is not an array or a {plan: []} object.');
+              console.warn(`⚠️ ${llmError.message}`, jsonFromTheLLM);
+              parsedPlan = []; // Default to empty if structure is unexpected but valid JSON
+            }
+          } catch (e) {
+            console.error('❌ Error parsing JSON from Gemini response:', e.message);
+            console.error('Raw response content that failed parsing:', messageContent);
+            llmError = e;
+          }
+        }
       }
     }
     
@@ -189,21 +233,32 @@ Output Format guidance (ensure output is ONLY the JSON array, do not add any oth
     
     // Further validation: check if tool names in the plan are valid
     const validToolNames = new Set(simplifiedMcps.map(mcp => mcp.name));
+    // Validation of the parsed plan (if no error occurred before this)
     if (!llmError && parsedPlan) {
       const validToolNames = new Set(simplifiedMcps.map(mcp => mcp.name));
       parsedPlan = parsedPlan.filter(step => {
-        if (typeof step.tool === 'string' && validToolNames.has(step.tool)) {
+        if (step && typeof step.tool === 'string' && validToolNames.has(step.tool)) {
           return true;
         }
-        console.warn(`⚠️ Invalid tool name in plan: ${step.tool}. It will be filtered out.`);
+        console.warn(`⚠️ Invalid or unknown tool in plan from Gemini: '${step?.tool || "N/A"}'. It will be filtered out.`);
         return false;
       });
-      console.log('✅ MCP Tool Plan generated and validated:', parsedPlan);
+      console.log('✅ MCP Tool Plan from Gemini generated and validated:', parsedPlan);
+    } else if (!llmError && !parsedPlan) {
+        // If parsedPlan is null but there was no explicit llmError, it means something unexpected happened.
+        // For example, the JSON was valid but empty or not the array we wanted.
+        // If response_mime_type: "application/json" was used, Gemini should error if it can't produce JSON.
+        // This case might occur if the prompt was not followed for the *content* of the JSON.
+        console.warn("⚠️ Parsed plan is null or empty after Gemini call, despite no direct API or parsing error. This might indicate the LLM did not follow content instructions.");
+        // We might still want to set an llmError here or ensure parsedPlan is treated as empty.
+        if (!parsedPlan) parsedPlan = []; // Ensure it's an empty array if null but no error.
     }
 
-  } catch (error) { // Catch fetch errors or other unexpected errors
-    console.error('❌ Exception during MCP Tool Plan generation or LLM call:', error.message);
+
+  } catch (error) { // Catch fetch errors or other unexpected errors during the fetch/initial .json() call
+    console.error('❌ Exception during Gemini API call or initial response processing:', error.message);
     llmError = error; // Store the error
+    if (!llmApiResponse) llmApiResponse = { error: { message: error.message } }; // Ensure llmApiResponse has error info
     parsedPlan = null; // Ensure plan is null on exception
   }
 
@@ -211,8 +266,8 @@ Output Format guidance (ensure output is ONLY the JSON array, do not add any oth
   const logData = {
     user_id: userId,
     email_interaction_id: emailInteractionId,
-    prompt_messages: messagesForLlm,
-    llm_response: llmApiResponse, // Log the full response
+    prompt_messages: requestPayloadForGemini.contents, // Log the Gemini specific prompt structure
+    llm_response: llmApiResponse, 
     tool_plan_generated: parsedPlan,
     model_used: modelName,
     error_message: llmError ? llmError.message : null,
@@ -221,7 +276,7 @@ Output Format guidance (ensure output is ONLY the JSON array, do not add any oth
   try {
     const { error: logError } = await supabaseClient.from('llm_logs').insert([logData]);
     if (logError) {
-      console.error('Failed to log LLM interaction to llm_logs:', logError.message);
+      console.error('Failed to log LLM (Gemini) interaction to llm_logs:', logError.message);
     } else {
       console.log('📝 LLM interaction logged successfully to llm_logs.');
     }
@@ -555,11 +610,11 @@ async function processWithAgent(
 ) {
   console.log(`📨 Processing email with agent ${agentConfig.agent_id}`);
 
-  const openAIApiKey = Deno.env.get('OPENAI_API_KEY');
+  const geminiApiKey = Deno.env.get('GEMINI_API_KEY'); // Changed to GEMINI_API_KEY
   let mcpPlan: object[] | null = null;
 
-  if (!openAIApiKey) {
-    console.error('❌ OPENAI_API_KEY is not set. Skipping MCP planning.');
+  if (!geminiApiKey) {
+    console.error('❌ GEMINI_API_KEY is not set. Skipping MCP planning.');
     await supabase
       .from('activity_logs')
       .insert({
@@ -567,17 +622,17 @@ async function processWithAgent(
         email_interaction_id: emailInteractionId,
         action: 'mcp_planning_skipped',
         status: 'warning',
-        details: { agent_id: agentConfig.agent_id, reason: 'OPENAI_API_KEY not set' }
+        details: { agent_id: agentConfig.agent_id, reason: 'GEMINI_API_KEY not set' } // Updated reason
       });
   } else {
     const emailBodyContent = payload.TextBody || payload.HtmlBody || payload.StrippedTextReply || "";
     if (agentConfig.mcp_endpoints && agentConfig.mcp_endpoints.length > 0) {
-      console.log(`🗺️ Agent ${agentConfig.agent_id} has ${agentConfig.mcp_endpoints.length} MCPs. Attempting to generate plan.`);
+      console.log(`🗺️ Agent ${agentConfig.agent_id} has ${agentConfig.mcp_endpoints.length} MCPs. Attempting to generate plan with Gemini.`);
       mcpPlan = await generateMCPToolPlan(
         emailBodyContent, 
         agentConfig.mcp_endpoints, 
-        openAIApiKey,
-        supabase, // Pass Supabase client for logging
+        geminiApiKey, // Pass Gemini API key
+        supabase, 
         userId,
         emailInteractionId
       );
