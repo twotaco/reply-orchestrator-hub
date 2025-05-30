@@ -42,6 +42,12 @@ const categories = [
   'Stripe',
   'Supabase',
   'Shopify',
+  'HubSpot',
+  'Klaviyo',
+  'Zendesk',
+  'Calendly',
+  'Mailchimp',
+  'Intercom',
   'Custom'
 ];
 
@@ -124,7 +130,7 @@ export function MCPManagement() {
   };
 
   const handleCategoryChange = (category: string) => {
-    const newFormData = { ...formData, category };
+    const newFormData = { ...formData, category, post_url: '', auth_token: '', stripe_tools: [] }; // Reset some fields
     
     if (category === 'Stripe') {
       newFormData.post_url = formData.server_type === 'remote' ? 'https://mcp.stripe.com' : '';
@@ -139,6 +145,38 @@ export function MCPManagement() {
       }, null, 2);
       newFormData.instructions = 'Use this MCP server to interact with Stripe API. Supports customer management, payments, subscriptions, and knowledge base search.';
       newFormData.stripe_tools = ['create_customer', 'retrieve_customer', 'create_payment_intent'];
+    } else if (category === 'HubSpot') {
+      newFormData.post_url = 'https://api.hubapi.com';
+      newFormData.expected_format = JSON.stringify({ "method": "contacts.getByEmail", "email": "test@example.com" }, null, 2);
+      newFormData.instructions = 'Configure this HubSpot MCP to interact with contacts, deals, or tickets.';
+    } else if (category === 'Shopify') {
+      newFormData.post_url = 'https://<your-store>.myshopify.com/admin/api/2023-10/graphql.json'; // User needs to replace <your-store>
+      newFormData.expected_format = JSON.stringify({ "query": "{ shop { name } }" }, null, 2);
+      newFormData.instructions = 'Integrate with Shopify orders, products, customers, etc. Ensure the Post URL is updated with your store name.';
+    } else if (category === 'Klaviyo') {
+      newFormData.post_url = 'https://a.klaviyo.com/api';
+      newFormData.expected_format = JSON.stringify({ "method": "profiles.get_profile", "params": { "external_id": "user123" } }, null, 2);
+      newFormData.instructions = 'Configure this Klaviyo MCP to manage customer profiles and events.';
+    } else if (category === 'Zendesk') {
+      newFormData.post_url = 'https://<your-subdomain>.zendesk.com/api/v2'; // User needs to replace <your-subdomain>
+      newFormData.expected_format = JSON.stringify({ "method": "tickets.create", "params": { "subject": "Test Ticket", "comment": { "body": "This is a test ticket." } } }, null, 2);
+      newFormData.instructions = 'Integrate with Zendesk tickets, users, and knowledge base. Ensure the Post URL is updated with your subdomain.';
+    } else if (category === 'Calendly') {
+      newFormData.post_url = 'https://api.calendly.com';
+      newFormData.expected_format = JSON.stringify({ "method": "users.me" }, null, 2);
+      newFormData.instructions = 'Configure this Calendly MCP to manage scheduling and events.';
+    } else if (category === 'Mailchimp') {
+      newFormData.post_url = 'https://<dc>.api.mailchimp.com/3.0'; // User needs to replace <dc> with their server prefix
+      newFormData.expected_format = JSON.stringify({ "method": "lists.get_lists" }, null, 2);
+      newFormData.instructions = 'Integrate with Mailchimp lists, campaigns, and automations. Ensure the Post URL is updated with your server prefix.';
+    } else if (category === 'Intercom') {
+      newFormData.post_url = 'https://api.intercom.io';
+      newFormData.expected_format = JSON.stringify({ "method": "contacts.list" }, null, 2);
+      newFormData.instructions = 'Configure this Intercom MCP to manage users, leads, and conversations.';
+    } else if (category === 'Custom') {
+      newFormData.post_url = '';
+      newFormData.expected_format = JSON.stringify({ "example": "json format" }, null, 2);
+      newFormData.instructions = 'Configure a custom MCP endpoint.';
     }
     
     setFormData(newFormData);
@@ -501,7 +539,7 @@ export function MCPManagement() {
               </div>
             )}
 
-            {formData.category !== 'Stripe' && (
+            {formData.category !== 'Stripe' && formData.category !== '' && (
               <div>
                 <Label htmlFor="post_url">POST URL *</Label>
                 <Input
@@ -513,7 +551,7 @@ export function MCPManagement() {
               </div>
             )}
 
-            {formData.category !== 'Stripe' && (
+            {formData.category !== 'Stripe' && formData.category !== '' && (
               <div>
                 <Label htmlFor="auth_token">Auth Token</Label>
                 <Input
