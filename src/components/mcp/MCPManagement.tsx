@@ -15,27 +15,31 @@ import { Checkbox } from '@/components/ui/checkbox';
 
 interface MCPEndpoint {
   id: string;
-  name: string;
+  name: string; // User-defined name for the AI to identify this tool, e.g., "stripe_getCustomerByEmail"
   category: string;
-  post_url: string;
-  auth_token?: string;
+  mcp_server_base_url?: string; // Base URL of the MCP server, e.g., "http://localhost:8000"
+  provider_name?: string; // e.g., "stripe", "hubspot"
+  action_name?: string; // e.g., "getCustomerByEmail", "createTicket"
+  auth_token?: string; // API key for the target provider
   expected_format?: any;
   instructions?: string;
   active: boolean;
   created_at: string;
   updated_at: string;
+  // post_url is deprecated, will be constructed from base_url, provider_name, action_name by the MCP server
 }
 
 interface MCPForm {
-  name: string;
+  name: string; // User-defined name, will be used as the identifier for the LLM
   category: string;
-  post_url: string;
-  auth_token: string;
+  mcp_server_base_url: string;
+  provider_name: string;
+  action_name: string;
+  auth_token: string; // API key for the target provider
   expected_format: string;
   instructions: string;
   active: boolean;
-  stripe_tools?: string[];
-  server_type?: 'local' | 'remote';
+  // stripe_tools and server_type are deprecated in this new model
 }
 
 const categories = [
@@ -76,13 +80,13 @@ export function MCPManagement() {
   const [formData, setFormData] = useState<MCPForm>({
     name: '',
     category: '',
-    post_url: '',
+    mcp_server_base_url: '',
+    provider_name: '',
+    action_name: '',
     auth_token: '',
     expected_format: '{\n  "example": "json format"\n}',
     instructions: '',
     active: true,
-    stripe_tools: [],
-    server_type: 'remote'
   });
 
   useEffect(() => {
@@ -117,128 +121,94 @@ export function MCPManagement() {
     setFormData({
       name: '',
       category: '',
-      post_url: '',
+      mcp_server_base_url: '',
+      provider_name: '',
+      action_name: '',
       auth_token: '',
       expected_format: '{\n  "example": "json format"\n}',
       instructions: '',
       active: true,
-      stripe_tools: [],
-      server_type: 'remote'
     });
     setEditingId(null);
     setShowAddForm(false);
   };
 
   const handleCategoryChange = (category: string) => {
-    const newFormData = { ...formData, category, post_url: '', auth_token: '', stripe_tools: [] }; // Reset some fields
+    // Preserve user input for some fields if they've already typed something
+    const newFormData = { 
+      ...formData, 
+      category, 
+      // mcp_server_base_url: formData.mcp_server_base_url, // Let's reset this to avoid confusion if category changes server expectations
+      mcp_server_base_url: '', 
+      provider_name: '', 
+      action_name: '', 
+      // auth_token: formData.auth_token, // Reset auth token as it's provider specific
+      auth_token: '',
+      instructions: '', 
+      expected_format: '{\n  "example": "json format"\n}', 
+    }; 
     
     if (category === 'Stripe') {
-      newFormData.post_url = formData.server_type === 'remote' ? 'https://mcp.stripe.com' : '';
-      newFormData.expected_format = JSON.stringify({
-        "jsonrpc": "2.0",
-        "method": "tools/call",
-        "params": {
-          "name": "create_customer",
-          "arguments": {"name": "Jenny Rosen", "email": "jenny.rosen@example.com"}
-        },
-        "id": 1
-      }, null, 2);
-      newFormData.instructions = 'Use this MCP server to interact with Stripe API. Supports customer management, payments, subscriptions, and knowledge base search.';
-      newFormData.stripe_tools = ['create_customer', 'retrieve_customer', 'create_payment_intent'];
+      newFormData.provider_name = 'stripe';
+      newFormData.instructions = 'This MCP interacts with the Stripe API. Define a specific action like "createCustomer" or "retrievePaymentIntent".';
+      newFormData.expected_format = JSON.stringify({"amount": 2000, "currency": "usd", "customer": "cus_example"}, null, 2);
     } else if (category === 'HubSpot') {
-      newFormData.post_url = 'https://api.hubapi.com';
-      newFormData.expected_format = JSON.stringify({ "method": "contacts.getByEmail", "email": "test@example.com" }, null, 2);
-      newFormData.instructions = 'Configure this HubSpot MCP to interact with contacts, deals, or tickets.';
+      newFormData.provider_name = 'hubspot';
+      newFormData.instructions = 'This MCP interacts with the HubSpot API. Define a specific action like "createContact" or "getDeal".';
+      newFormData.expected_format = JSON.stringify({ "properties": { "email": "test@example.com", "firstname": "Test"}}, null, 2);
     } else if (category === 'Shopify') {
-      newFormData.post_url = 'https://<your-store>.myshopify.com/admin/api/2023-10/graphql.json'; // User needs to replace <your-store>
+      newFormData.provider_name = 'shopify';
+      newFormData.instructions = 'This MCP interacts with the Shopify API. Define a specific action.';
       newFormData.expected_format = JSON.stringify({ "query": "{ shop { name } }" }, null, 2);
-      newFormData.instructions = 'Integrate with Shopify orders, products, customers, etc. Ensure the Post URL is updated with your store name.';
     } else if (category === 'Klaviyo') {
-      newFormData.post_url = 'https://a.klaviyo.com/api';
-      newFormData.expected_format = JSON.stringify({ "method": "profiles.get_profile", "params": { "external_id": "user123" } }, null, 2);
-      newFormData.instructions = 'Configure this Klaviyo MCP to manage customer profiles and events.';
+      newFormData.provider_name = 'klaviyo';
+      newFormData.instructions = 'This MCP interacts with the Klaviyo API. Define a specific action.';
     } else if (category === 'Zendesk') {
-      newFormData.post_url = 'https://<your-subdomain>.zendesk.com/api/v2'; // User needs to replace <your-subdomain>
-      newFormData.expected_format = JSON.stringify({ "method": "tickets.create", "params": { "subject": "Test Ticket", "comment": { "body": "This is a test ticket." } } }, null, 2);
-      newFormData.instructions = 'Integrate with Zendesk tickets, users, and knowledge base. Ensure the Post URL is updated with your subdomain.';
+      newFormData.provider_name = 'zendesk';
+      newFormData.instructions = 'This MCP interacts with the Zendesk API. Define a specific action.';
     } else if (category === 'Calendly') {
-      newFormData.post_url = 'https://api.calendly.com';
-      newFormData.expected_format = JSON.stringify({ "method": "users.me" }, null, 2);
-      newFormData.instructions = 'Configure this Calendly MCP to manage scheduling and events.';
+      newFormData.provider_name = 'calendly';
+      newFormData.instructions = 'This MCP interacts with the Calendly API. Define a specific action.';
     } else if (category === 'Mailchimp') {
-      newFormData.post_url = 'https://<dc>.api.mailchimp.com/3.0'; // User needs to replace <dc> with their server prefix
-      newFormData.expected_format = JSON.stringify({ "method": "lists.get_lists" }, null, 2);
-      newFormData.instructions = 'Integrate with Mailchimp lists, campaigns, and automations. Ensure the Post URL is updated with your server prefix.';
+      newFormData.provider_name = 'mailchimp';
+      newFormData.instructions = 'This MCP interacts with the Mailchimp API. Define a specific action.';
     } else if (category === 'Intercom') {
-      newFormData.post_url = 'https://api.intercom.io';
-      newFormData.expected_format = JSON.stringify({ "method": "contacts.list" }, null, 2);
-      newFormData.instructions = 'Configure this Intercom MCP to manage users, leads, and conversations.';
+      newFormData.provider_name = 'intercom';
+      newFormData.instructions = 'This MCP interacts with the Intercom API. Define a specific action.';
     } else if (category === 'Custom') {
-      newFormData.post_url = '';
-      newFormData.expected_format = JSON.stringify({ "example": "json format" }, null, 2);
-      newFormData.instructions = 'Configure a custom MCP endpoint.';
+      newFormData.provider_name = ''; // User defines everything
+      newFormData.instructions = 'Configure a custom MCP endpoint. You need to specify the provider and action name for your custom MCP server.';
+      newFormData.expected_format = JSON.stringify({ "custom_payload_key": "custom_value" }, null, 2);
     }
     
     setFormData(newFormData);
   };
 
-  const handleServerTypeChange = (serverType: 'local' | 'remote') => {
-    const newFormData = { ...formData, server_type: serverType };
-    
-    if (formData.category === 'Stripe') {
-      newFormData.post_url = serverType === 'remote' ? 'https://mcp.stripe.com' : '';
-    }
-    
-    setFormData(newFormData);
-  };
+  // handleServerTypeChange and handleStripeToolToggle are now deprecated and can be removed.
+  // const handleServerTypeChange = (serverType: 'local' | 'remote') => { ... };
+  // const handleStripeToolToggle = (tool: string, checked: boolean) => { ... };
 
-  const handleStripeToolToggle = (tool: string, checked: boolean) => {
-    const currentTools = formData.stripe_tools || [];
-    if (checked) {
-      setFormData({ ...formData, stripe_tools: [...currentTools, tool] });
-    } else {
-      setFormData({ ...formData, stripe_tools: currentTools.filter(t => t !== tool) });
-    }
-  };
+  // const handleStripeToolToggle = (...) => { ... };
 
   const handleSave = async () => {
-    if (!formData.name || !formData.category) {
+    if (!formData.name || !formData.category || !formData.mcp_server_base_url || !formData.provider_name || !formData.action_name) {
       toast({
         title: "Validation Error",
-        description: "Please fill in name and category",
+        description: "Please fill in Name, Category, MCP Server Base URL, Provider Name, and Action Name.",
         variant: "destructive"
       });
       return;
     }
 
-    // Validate Stripe-specific fields
-    if (formData.category === 'Stripe') {
-      if (!formData.auth_token) {
-        toast({
-          title: "Validation Error",
-          description: "Stripe Secret Key is required for Stripe MCP",
-          variant: "destructive"
-        });
-        return;
-      }
-      if (formData.server_type === 'local' && !formData.post_url) {
-        toast({
-          title: "Validation Error",
-          description: "Local server URL is required when using local server type",
-          variant: "destructive"
-        });
-        return;
-      }
-    } else {
-      // For non-Stripe categories, require POST URL
-      if (!formData.post_url) {
-        toast({
-          title: "Validation Error",
-          description: "POST URL is required",
-          variant: "destructive"
-        });
-        return;
-      }
+    // Category specific validation (e.g. Stripe API key) can be added here if necessary
+    // For example, if category is Stripe and auth_token is missing:
+    if (formData.category === 'Stripe' && !formData.auth_token) {
+       toast({
+        title: "Validation Error",
+        description: "Target Provider API Key (Stripe Secret Key) is recommended for Stripe MCPs.",
+        variant: "warning" // Warning instead of destructive for now
+      });
+      // return; // Optionally block save
     }
 
     let expectedFormat;
@@ -255,20 +225,18 @@ export function MCPManagement() {
 
     try {
       const endpointData = {
-        name: formData.name,
+        name: formData.name, // This is the unique ID for the AI
         category: formData.category,
-        post_url: formData.post_url,
+        mcp_server_base_url: formData.mcp_server_base_url,
+        provider_name: formData.provider_name,
+        action_name: formData.action_name,
         auth_token: formData.auth_token || null,
-        expected_format: {
-          ...expectedFormat,
-          ...(formData.category === 'Stripe' && {
-            stripe_tools: formData.stripe_tools,
-            server_type: formData.server_type
-          })
-        },
+        expected_format: expectedFormat, // Already parsed
         instructions: formData.instructions || null,
         active: formData.active,
-        user_id: user?.id
+        user_id: user?.id,
+        // post_url is no longer directly stored; it's derived by the MCP server
+        // from mcp_server_base_url, provider_name, and action_name.
       };
 
       if (editingId) {
@@ -307,20 +275,25 @@ export function MCPManagement() {
   };
 
   const handleEdit = (endpoint: MCPEndpoint) => {
-    const stripeConfig = endpoint.expected_format?.stripe_tools ? {
-      stripe_tools: endpoint.expected_format.stripe_tools,
-      server_type: endpoint.expected_format.server_type || 'remote'
-    } : { stripe_tools: [], server_type: 'remote' };
+    // Remove stripe_tools and server_type from expected_format if they exist for older data
+    let currentExpectedFormat = endpoint.expected_format || {};
+    if (currentExpectedFormat?.stripe_tools) delete currentExpectedFormat.stripe_tools;
+    if (currentExpectedFormat?.server_type) delete currentExpectedFormat.server_type;
+    if (Object.keys(currentExpectedFormat).length === 0) {
+      currentExpectedFormat = { example: "json format" };
+    }
+
 
     setFormData({
       name: endpoint.name,
       category: endpoint.category,
-      post_url: endpoint.post_url,
+      mcp_server_base_url: endpoint.mcp_server_base_url || '',
+      provider_name: endpoint.provider_name || '',
+      action_name: endpoint.action_name || '',
       auth_token: endpoint.auth_token || '',
-      expected_format: JSON.stringify(endpoint.expected_format || {}, null, 2),
+      expected_format: JSON.stringify(currentExpectedFormat, null, 2),
       instructions: endpoint.instructions || '',
       active: endpoint.active,
-      ...stripeConfig
     });
     setEditingId(endpoint.id);
     setShowAddForm(true);
@@ -363,7 +336,17 @@ export function MCPManagement() {
         headers['Authorization'] = `Bearer ${endpoint.auth_token}`;
       }
 
-      const response = await fetch(endpoint.post_url, {
+      // TODO: Update handleTest to construct the full URL if needed,
+      // or to send components to a test service that knows how to call the MCP server.
+      // For now, this will likely fail if mcp_server_base_url is not a full callable URL by itself.
+      const testUrl = endpoint.mcp_server_base_url; // This needs refinement for actual testing
+      if (!testUrl) {
+        toast({ title: "Test Error", description: "MCP Server Base URL is not configured.", variant: "destructive" });
+        setTestingId(null);
+        return;
+      }
+
+      const response = await fetch(testUrl, { // This will need to be updated
         method: 'POST',
         headers,
         body: JSON.stringify(testPayload)
@@ -439,13 +422,16 @@ export function MCPManagement() {
           <CardContent className="space-y-4">
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <Label htmlFor="name">Name *</Label>
+                <Label htmlFor="name">MCP Endpoint Name (Unique ID for AI) *</Label>
                 <Input
                   id="name"
                   value={formData.name}
                   onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                  placeholder="My MCP Endpoint"
+                  placeholder="e.g., stripe_getCustomerByEmail"
                 />
+                <p className="text-sm text-gray-500 mt-1">
+                  This name will be used by the AI to identify this tool. E.g., 'stripe_getCustomerByEmail' or 'Fetch Stripe Customer'. Must be unique.
+                </p>
               </div>
               <div>
                 <Label htmlFor="category">Category *</Label>
@@ -463,106 +449,61 @@ export function MCPManagement() {
                 </Select>
               </div>
             </div>
+            
+            {/* New MCP Server Configuration Fields */}
+            <div>
+              <Label htmlFor="mcp_server_base_url">MCP Server Base URL *</Label>
+              <Input
+                id="mcp_server_base_url"
+                value={formData.mcp_server_base_url}
+                onChange={(e) => setFormData({ ...formData, mcp_server_base_url: e.target.value })}
+                placeholder="e.g., http://localhost:8080 or https://mcp.example.com"
+              />
+              <p className="text-sm text-gray-500 mt-1">The base URL of your MCP server (e.g., the KnowReply MCP server).</p>
+            </div>
 
-            {formData.category === 'Stripe' && (
-              <div className="space-y-4 p-4 bg-blue-50 rounded-lg border">
-                <h3 className="font-semibold text-blue-900">Stripe MCP Configuration</h3>
-                
-                <div>
-                  <Label htmlFor="server_type">Server Type</Label>
-                  <Select 
-                    value={formData.server_type} 
-                    onValueChange={(value: 'local' | 'remote') => handleServerTypeChange(value)}
-                  >
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="remote">Remote (https://mcp.stripe.com)</SelectItem>
-                      <SelectItem value="local">Local Server</SelectItem>
-                    </SelectContent>
-                  </Select>
-                  <p className="text-sm text-gray-600 mt-1">
-                    Remote server is hosted by Stripe. Local server requires running npx @stripe/mcp locally.
-                  </p>
-                </div>
-
-                <div>
-                  <Label htmlFor="stripe_secret_key">Stripe Secret Key *</Label>
-                  <Input
-                    id="stripe_secret_key"
-                    type="password"
-                    value={formData.auth_token}
-                    onChange={(e) => setFormData({ ...formData, auth_token: e.target.value })}
-                    placeholder="sk_test_..."
-                  />
-                  <p className="text-sm text-gray-600 mt-1">
-                    Use restricted API keys to limit access to required functionality only.
-                  </p>
-                </div>
-
-                <div>
-                  <Label>Available Tools</Label>
-                  <div className="grid grid-cols-2 gap-2 mt-2 max-h-40 overflow-y-auto">
-                    {stripeTools.map((tool) => (
-                      <div key={tool} className="flex items-center space-x-2">
-                        <Checkbox
-                          id={tool}
-                          checked={formData.stripe_tools?.includes(tool) || false}
-                          onCheckedChange={(checked) => handleStripeToolToggle(tool, checked as boolean)}
-                        />
-                        <Label htmlFor={tool} className="text-sm">
-                          {tool}
-                        </Label>
-                      </div>
-                    ))}
-                  </div>
-                  <p className="text-sm text-gray-600 mt-1">
-                    Select which Stripe tools the agent can access.
-                  </p>
-                </div>
-              </div>
-            )}
-
-            {formData.category === 'Stripe' && formData.server_type === 'local' && (
+            <div className="grid grid-cols-2 gap-4">
               <div>
-                <Label htmlFor="post_url">Local Server URL *</Label>
+                <Label htmlFor="provider_name">Provider Name *</Label>
                 <Input
-                  id="post_url"
-                  value={formData.post_url}
-                  onChange={(e) => setFormData({ ...formData, post_url: e.target.value })}
-                  placeholder="http://localhost:8000"
+                  id="provider_name"
+                  value={formData.provider_name}
+                  onChange={(e) => setFormData({ ...formData, provider_name: e.target.value })}
+                  placeholder="e.g., stripe, hubspot, custom"
                 />
-                <p className="text-sm text-gray-600 mt-1">
-                  URL where your local Stripe MCP server is running.
-                </p>
+                <p className="text-sm text-gray-500 mt-1">Identifier for the target service provider.</p>
               </div>
-            )}
-
-            {formData.category !== 'Stripe' && formData.category !== '' && (
               <div>
-                <Label htmlFor="post_url">POST URL *</Label>
+                <Label htmlFor="action_name">Action Name *</Label>
                 <Input
-                  id="post_url"
-                  value={formData.post_url}
-                  onChange={(e) => setFormData({ ...formData, post_url: e.target.value })}
-                  placeholder="https://api.example.com/webhook"
+                  id="action_name"
+                  value={formData.action_name}
+                  onChange={(e) => setFormData({ ...formData, action_name: e.target.value })}
+                  placeholder="e.g., getCustomerByEmail, createTicket"
                 />
+                <p className="text-sm text-gray-500 mt-1">Specific action to be performed by the provider.</p>
               </div>
-            )}
+            </div>
 
-            {formData.category !== 'Stripe' && formData.category !== '' && (
-              <div>
-                <Label htmlFor="auth_token">Auth Token</Label>
-                <Input
-                  id="auth_token"
-                  type="password"
-                  value={formData.auth_token}
-                  onChange={(e) => setFormData({ ...formData, auth_token: e.target.value })}
-                  placeholder="Bearer token for authentication"
-                />
-              </div>
-            )}
+            {/* Stripe specific UI is now simplified/removed as it's handled by provider_name + action_name */}
+            {/* 
+              The old Stripe UI for server_type and stripe_tools is deprecated.
+              Users will now set provider_name="stripe" and action_name="specificStripeAction".
+              The mcp_server_base_url will point to their MCP server that can handle these.
+            */}
+            
+            {/* Generic Auth Token field - label updated */}
+            <div>
+              <Label htmlFor="auth_token">Target Provider API Key</Label>
+              <Input
+                id="auth_token"
+                type="password"
+                value={formData.auth_token}
+                onChange={(e) => setFormData({ ...formData, auth_token: e.target.value })}
+                placeholder="e.g., sk_test_xxxxxx (for Stripe), or other provider API key"
+              />
+              <p className="text-sm text-gray-500 mt-1">API Key for the target service (Stripe, HubSpot, etc.). Leave blank if not required.</p>
+            </div>
 
             <div>
               <Label htmlFor="instructions">Instructions for AI Agent</Label>
@@ -629,10 +570,12 @@ export function MCPManagement() {
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Name</TableHead>
+                  <TableHead>Name (AI Identifier)</TableHead>
                   <TableHead>Category</TableHead>
-                  <TableHead>URL</TableHead>
-                  <TableHead>Instructions</TableHead>
+                  <TableHead>MCP Server Base URL</TableHead>
+                  <TableHead>Provider</TableHead>
+                  <TableHead>Action</TableHead>
+                  {/* <TableHead>Instructions</TableHead> */}
                   <TableHead>Status</TableHead>
                   <TableHead className="text-right">Actions</TableHead>
                 </TableRow>
@@ -647,20 +590,30 @@ export function MCPManagement() {
                       </span>
                     </TableCell>
                     <TableCell>
-                      <code className="text-sm bg-gray-100 px-2 py-1 rounded">
-                        {endpoint.post_url || (endpoint.category === 'Stripe' ? 'https://mcp.stripe.com' : 'Not configured')}
+                      <code className="text-sm bg-gray-100 px-2 py-1 rounded truncate max-w-[200px] block">
+                        {endpoint.mcp_server_base_url || 'N/A'}
                       </code>
                     </TableCell>
-                    <TableCell>
+                     <TableCell>
+                      <code className="text-sm bg-gray-100 px-2 py-1 rounded">
+                        {endpoint.provider_name || 'N/A'}
+                      </code>
+                    </TableCell>
+                     <TableCell>
+                      <code className="text-sm bg-gray-100 px-2 py-1 rounded">
+                        {endpoint.action_name || 'N/A'}
+                      </code>
+                    </TableCell>
+                    {/* <TableCell>
                       {endpoint.instructions ? (
                         <span className="text-sm text-gray-600 truncate max-w-xs block">
-                          {endpoint.instructions.substring(0, 50)}
-                          {endpoint.instructions.length > 50 ? '...' : ''}
+                          {endpoint.instructions.substring(0, 30)}
+                          {endpoint.instructions.length > 30 ? '...' : ''}
                         </span>
                       ) : (
                         <span className="text-sm text-gray-400">No instructions</span>
                       )}
-                    </TableCell>
+                    </TableCell> */}
                     <TableCell>
                       <Switch
                         checked={endpoint.active}
