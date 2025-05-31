@@ -61,7 +61,7 @@ interface MCPForm {
 interface ConfiguredActionData {
   id?: string; // ID of the saved MCPEndpoint, if this action is already configured/saved
   ai_name: string;
-  auth_token: string;
+  // auth_token: string; // Removed: API key is now provider-level
   is_selected: boolean;
   active: boolean; // Reflects the 'active' status from the database, used by the switch if already saved
   action_name: string;
@@ -214,8 +214,8 @@ export function MCPManagement() {
         );
         newActionFormsData[discoveredAction.action_name] = {
           id: savedAction?.id,
-          ai_name: savedAction?.name || `${selectedDiscoveredProvider.provider_name}_${discoveredAction.action_name}`,
-          auth_token: savedAction?.auth_token || '',
+          ai_name: `${selectedDiscoveredProvider.provider_name}_${discoveredAction.action_name}`, // Always auto-generate AI name
+          // auth_token: savedAction?.auth_token || '', // Removed
           is_selected: !!savedAction, // Select if it's already saved
           active: savedAction ? savedAction.active : false, // Persist active state or default to false
           action_name: discoveredAction.action_name,
@@ -267,13 +267,14 @@ export function MCPManagement() {
       if (!actionConfig.is_selected && !actionConfig.id) continue; // Skip if not selected and never saved
 
       if (actionConfig.is_selected) {
-        if (!actionConfig.ai_name) {
-          toast({ title: "Validation Error", description: `Unique AI Name is required for action: ${actionConfig.display_name}.`, variant: "destructive" });
-          errorOccurred = true;
-          break;
-        }
+        // Removed validation for actionConfig.ai_name as it's now auto-generated
+        // if (!actionConfig.ai_name) {
+        //   toast({ title: "Validation Error", description: `Unique AI Name is required for action: ${actionConfig.display_name}.`, variant: "destructive" });
+        //   errorOccurred = true;
+        //   break;
+        // }
 
-        const determinedAuthToken = actionConfig.auth_token || formData.auth_token || null;
+        // const determinedAuthToken = actionConfig.auth_token || formData.auth_token || null; // Removed: auth_token is now only from formData
         let parsedSamplePayload = {};
         try {
           parsedSamplePayload = JSON.parse(actionConfig.sample_payload || '{}');
@@ -287,7 +288,7 @@ export function MCPManagement() {
           name: actionConfig.ai_name,
           provider_name: actionConfig.provider_name,
           action_name: actionConfig.action_name,
-          auth_token: determinedAuthToken,
+          auth_token: formData.auth_token || null, // Use provider-level auth_token
           instructions: actionConfig.instructions,
           expected_format: parsedSamplePayload, // Save parsed JSON
           active: true, // is_selected implies active for saving
@@ -566,44 +567,23 @@ export function MCPManagement() {
 
                           {actionConfig.is_selected && (
                             <div className="space-y-4 pl-6 border-l-2 border-gray-200 ml-2">
-                              <div>
-                                <Label htmlFor={`ai-name-${actionName}`}>Unique AI Name *</Label>
-                                <Input
-                                  id={`ai-name-${actionName}`}
-                                  value={actionConfig.ai_name}
-                                  onChange={(e) => handleActionConfigChange(actionName, 'ai_name', e.target.value)}
-                                  placeholder={`e.g., ${formData.provider_name}_${actionName}`}
-                                />
-                                <p className="text-xs text-gray-500 mt-1">Unique name for the AI to identify this specific action.</p>
-                              </div>
-                              <div>
-                                <Label htmlFor={`auth-token-${actionName}`}>Target Provider API Key</Label>
-                                <Input
-                                  id={`auth-token-${actionName}`}
-                                  type="password"
-                                  value={actionConfig.auth_token}
-                                  onChange={(e) => handleActionConfigChange(actionName, 'auth_token', e.target.value)}
-                                  placeholder="API Key for this action (if different from provider default)"
-                                />
-                                 <p className="text-xs text-gray-500 mt-1">Optional: Only if this action uses a different key than a provider-level key.</p>
-                              </div>
+                              {/* AI Name input field removed */}
+                              {/* Per-action API key input removed */}
                             </div>
                           )}
                           <div>
-                            <Label className="text-sm font-semibold">Instructions (from discovery):</Label>
-                            <Textarea
-                              value={actionConfig.instructions || "No instructions provided."}
-                              readOnly
-                              className="mt-1 h-20 bg-gray-50"
-                            />
+                            {/* Label is removed */}
+                            <p className="text-sm text-gray-700 mt-1 bg-gray-50 p-2 rounded-md whitespace-pre-wrap">
+                              {actionConfig.instructions || "No instructions provided."}
+                            </p>
                           </div>
                           <div>
-                            <Label className="text-sm font-semibold">Sample Payload (from discovery):</Label>
-                            <Textarea
-                              value={actionConfig.sample_payload || "{}"}
-                              readOnly
-                              className="mt-1 h-24 font-mono text-xs bg-gray-50"
-                            />
+                            <Label className="text-sm font-semibold">Example Input:</Label>
+                            <pre className="mt-1 p-2 text-xs bg-gray-50 rounded-md overflow-x-auto">
+                              <code>
+                                {actionConfig.sample_payload || "{}"}
+                              </code>
+                            </pre>
                           </div>
                         </Card>
                       ))}
