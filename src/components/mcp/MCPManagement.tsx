@@ -440,7 +440,7 @@ export function MCPManagement() {
       return;
     }
 
-    const mcpServerInternalApiKey = Deno.env.get('VITE_MCP_SERVER_INTERNAL_API_KEY'); //import.meta.env.VITE_MCP_SERVER_INTERNAL_API_KEY;
+    const mcpServerInternalApiKey = import.meta.env.VITE_MCP_SERVER_INTERNAL_API_KEY;
     if (!mcpServerInternalApiKey) {
       toast({
         title: "Test Error",
