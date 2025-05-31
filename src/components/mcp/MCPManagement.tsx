@@ -433,49 +433,72 @@ export function MCPManagement() {
 
   const handleTest = async (endpoint: MCPEndpoint) => {
     setTestingId(endpoint.id);
-    
+
+    if (!endpoint.mcp_server_base_url || !endpoint.provider_name || !endpoint.action_name) {
+      toast({ title: "Test Error", description: "Endpoint configuration is incomplete (missing URL, provider, or action).", variant: "destructive" });
+      setTestingId(null);
+      return;
+    }
+
+    const mcpServerInternalApiKey = import.meta.env.VITE_MCP_SERVER_INTERNAL_API_KEY;
+    if (!mcpServerInternalApiKey) {
+      toast({
+        title: "Test Error",
+        description: "MCP Server Internal API Key is not configured. Please set VITE_MCP_SERVER_INTERNAL_API_KEY.",
+        variant: "destructive",
+      });
+      setTestingId(null);
+      return;
+    }
+
     try {
-      const testPayload = endpoint.expected_format || { test: true };
-      const headers: any = { 'Content-Type': 'application/json' };
+      const testUrl = `${endpoint.mcp_server_base_url}/mcp/${endpoint.provider_name}/${endpoint.action_name}`;
       
-      if (endpoint.auth_token) {
-        headers['Authorization'] = `Bearer ${endpoint.auth_token}`;
-      }
+      const newTestPayload = {
+        args: endpoint.expected_format || {}, // The sample payload
+        auth: {
+          token: endpoint.auth_token || null // The provider-specific API key
+        }
+      };
 
-      // TODO: Update handleTest to construct the full URL if needed,
-      // or to send components to a test service that knows how to call the MCP server.
+      const headers: any = {
+        'Content-Type': 'application/json',
+        'x-internal-api-key': mcpServerInternalApiKey,
+      };
 
-      if (!endpoint.mcp_server_base_url || !endpoint.provider_name || !endpoint.action_name) {
-        toast({ title: "Test Error", description: "Endpoint configuration is incomplete (missing URL, provider, or action).", variant: "destructive" });
-        setTestingId(null);
-        return;
-      }
-      const testUrl = `${endpoint.mcp_server_base_url}/${endpoint.provider_name}/${endpoint.action_name}`;
-      if (!testUrl) { // This check is somewhat redundant now given the above, but kept for safety.
-        toast({ title: "Test Error", description: "MCP Server Base URL is not configured.", variant: "destructive" }); // This specific message might be misleading now
-        setTestingId(null);
-        return;
-      }
-
-      const response = await fetch(testUrl, { // This will need to be updated
+      // The actual fetch call
+      const response = await fetch(testUrl, {
         method: 'POST',
         headers,
-        body: JSON.stringify(testPayload)
+        body: JSON.stringify(newTestPayload),
       });
 
-      const responseText = await response.text();
+      const responseText = await response.text(); // Get raw text first
+
+      // Try to parse as JSON if content type suggests it, otherwise use text
+      let responseData: any = responseText;
+      try {
+          if (response.headers.get("content-type")?.includes("application/json")) {
+              responseData = JSON.parse(responseText);
+          }
+      } catch (e) {
+          // console.warn("Response was not valid JSON, using raw text.");
+      }
       
       toast({
         title: response.ok ? "Test Successful" : "Test Failed",
-        description: `Status: ${response.status} - ${response.statusText}${responseText ? `\nResponse: ${responseText.substring(0, 100)}...` : ''}`,
-        variant: response.ok ? "default" : "destructive"
+        description: `Status: ${response.status} - ${response.statusText}
+Response: ${typeof responseData === 'string' ? responseData.substring(0,300) : JSON.stringify(responseData, null, 2).substring(0,300)}...`,
+        variant: response.ok ? "default" : "destructive",
+        duration: response.ok ? 5000 : 10000
       });
-    } catch (error) {
+
+    } catch (error: any) {
       console.error('Error testing endpoint:', error);
       toast({
         title: "Test Failed",
-        description: "Network error or invalid URL",
-        variant: "destructive"
+        description: `Network error or other issue: ${error.message}`,
+        variant: "destructive",
       });
     } finally {
       setTestingId(null);
