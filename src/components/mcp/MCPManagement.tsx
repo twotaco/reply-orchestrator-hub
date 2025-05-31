@@ -141,9 +141,10 @@ export function MCPManagement() {
       } else {
         throw new Error("Discovery data is not in the expected format (missing 'providers' array).");
       }
-    } catch (error) {
-      console.error('Error fetching MCP discovery data:', error);
-      setDiscoveryError(`Failed to fetch MCP discovery data: ${error.message}`);
+    } catch (error: any) { // Added ': any' to access error properties more freely if needed, or type guard
+      console.error('Detailed error fetching MCP discovery data:', error); // Log the full error object
+      // Keep existing error message for UI
+      setDiscoveryError(`Failed to fetch MCP discovery data. Details: ${error.message}. Check console for more info.`);
       // toast({ title: "Discovery Error", description: `Failed to fetch MCP providers: ${error.message}`, variant: "destructive" });
     } finally {
       setDiscoveryLoading(false);
@@ -468,7 +469,11 @@ export function MCPManagement() {
       {showAddForm && (
         <Card>
           <CardHeader>
-            <CardTitle>{editingId ? 'Edit' : 'Add'} MCP Endpoint</CardTitle>
+            <CardTitle>
+              {formData.selected_provider_name
+                ? `Configure Actions for ${formData.selected_provider_name.charAt(0).toUpperCase() + formData.selected_provider_name.slice(1)}`
+                : 'Select a Provider to Configure MCP Actions'}
+            </CardTitle>
             <CardDescription>
               Configure an endpoint for external system integration
             </CardDescription>
@@ -641,7 +646,7 @@ export function MCPManagement() {
             <div className="flex gap-2">
               <Button onClick={handleSave}>
                 <Save className="h-4 w-4 mr-2" />
-                {editingId ? 'Update' : 'Save'}
+                {Object.values(actionFormsData).some(action => action.id) ? 'Update Configuration' : 'Save New Configuration'}
               </Button>
               <Button variant="outline" onClick={resetForm}>
                 <X className="h-4 w-4 mr-2" />
