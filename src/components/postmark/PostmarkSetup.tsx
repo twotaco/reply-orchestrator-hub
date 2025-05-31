@@ -292,7 +292,6 @@ export function PostmarkSetup() {
               <li>Navigate to the "Inbound" section</li>
               <li>Paste the webhook URL above in the "Webhook URL" field</li>
               <li>Save your Postmark server settings</li>
-              <li>Test by sending an email to your inbound address</li>
             </ol>
           </div>
         </CardContent>
@@ -307,7 +306,7 @@ export function PostmarkSetup() {
               Your Inbound Email Address
             </CardTitle>
             <CardDescription>
-              This is where people can send emails to your system
+              This is your default Postmark inbound email address.
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -324,7 +323,7 @@ export function PostmarkSetup() {
               </Button>
             </div>
             <p className="text-sm text-gray-500 mt-2">
-              Emails sent to this address will be processed by your system
+              See the Postmark "Inbound Email Documentation" for using other email addresses.
             </p>
           </CardContent>
         </Card>
