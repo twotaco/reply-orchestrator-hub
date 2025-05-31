@@ -556,6 +556,7 @@ Response: ${typeof responseData === 'string' ? responseData.substring(0,300) : J
       </div>
 
       {showAddForm && (
+      <form onSubmit={(e) => { e.preventDefault(); }} className="w-full">
         <Card>
           <CardHeader>
             <CardTitle>
@@ -695,6 +696,7 @@ Response: ${typeof responseData === 'string' ? responseData.substring(0,300) : J
             </div>
           </CardContent>
         </Card>
+      </form>
       )}
 
      <Card>
