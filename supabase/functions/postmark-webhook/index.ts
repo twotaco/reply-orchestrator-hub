@@ -93,7 +93,7 @@ async function generateMCPToolPlan(
     name: mcp.name,
     description: mcp.instructions || 'No specific instructions provided.',
     // Later, we can try to derive args_schema from mcp.expected_format
-    // args_schema: mcp.expected_format ? { type: "object", properties: { example_param: { type: "string" } } } : {} 
+    // args_schema: mcp.expected_format ? { type: "object", properties: { example_param: { type: "string" } } } : {}
   }));
 
   const systemPrompt = `You are an intent and action planner. Your goal is to identify which tools (MCPs) are needed to answer a customer's email and what arguments they need.
@@ -123,7 +123,7 @@ Output Format guidance (ensure output is ONLY the JSON array, do not add any oth
 
 Customer Email:
 ---
-${emailBody.substring(0, 8000)} 
+${emailBody.substring(0, 8000)}
 ---
 
 Available Tools:
@@ -141,7 +141,7 @@ Only use tools from the 'Available Tools' list. Ensure the tool name in your out
 Your entire response must be only the JSON array.`;
 
   console.log('📝 Constructed Prompt for Gemini (first 200 chars):', geminiPrompt.substring(0,200));
-  
+
   // Gemini API expects contents.parts.text format
   const requestPayloadForGemini = {
     contents: [{
@@ -182,7 +182,7 @@ Your entire response must be only the JSON array.`;
       if (!candidate) {
         llmError = new Error('No candidates found in Gemini response.');
         console.warn(`⚠️ ${llmError.message}`, llmApiResponse);
-      } else if (candidate.finishReason !== 'STOP' && candidate.finishReason !== 'MAX_TOKENS') { 
+      } else if (candidate.finishReason !== 'STOP' && candidate.finishReason !== 'MAX_TOKENS') {
         // MAX_TOKENS can sometimes be acceptable if JSON is complete
         llmError = new Error(`Gemini generation finished with reason: ${candidate.finishReason}`);
         console.warn(`⚠️ ${llmError.message}`, llmApiResponse);
@@ -200,12 +200,12 @@ Your entire response must be only the JSON array.`;
           try {
             // Gemini with response_mime_type: "application/json" should return valid JSON directly.
             // However, the actual *content* of that JSON (the plan) needs to be an array as per prompt.
-            const jsonFromTheLLM = JSON.parse(messageContent); 
+            const jsonFromTheLLM = JSON.parse(messageContent);
 
             // Check if the parsed JSON is itself the array (our desired plan format)
             if (Array.isArray(jsonFromTheLLM)) {
                 parsedPlan = jsonFromTheLLM;
-            } 
+            }
             // Or if the LLM wrapped it, e.g. { "plan": [...] } (less likely with strong prompting for direct array)
             else if (jsonFromTheLLM && Array.isArray(jsonFromTheLLM.plan)) {
                 console.warn("⚠️ Gemini returned JSON object with a 'plan' key instead of direct array. Adapting.");
@@ -224,13 +224,13 @@ Your entire response must be only the JSON array.`;
         }
       }
     }
-    
+
     if (!llmError && !Array.isArray(parsedPlan)) {
       console.warn('⚠️ Parsed plan is not an array:', parsedPlan);
       llmError = new Error('Parsed plan is not an array.');
       parsedPlan = null; // Ensure it's null if not a valid array
     }
-    
+
     // Further validation: check if tool names in the plan are valid
     const validToolNames = new Set(simplifiedMcps.map(mcp => mcp.name));
     // Validation of the parsed plan (if no error occurred before this)
@@ -267,7 +267,7 @@ Your entire response must be only the JSON array.`;
     user_id: userId,
     email_interaction_id: emailInteractionId,
     prompt_messages: requestPayloadForGemini.contents, // Log the Gemini specific prompt structure
-    llm_response: llmApiResponse, 
+    llm_response: llmApiResponse,
     tool_plan_generated: parsedPlan,
     model_used: modelName,
     error_message: llmError ? llmError.message : null,
@@ -287,7 +287,7 @@ Your entire response must be only the JSON array.`;
 
   if (llmError) {
     // If there was an error at any point (API call, parsing, validation), return null
-    return null; 
+    return null;
   }
   return parsedPlan; // Return the validated plan (could be empty array)
   }
@@ -351,7 +351,7 @@ async function executeMCPPlan(
       baseUrl = baseUrl.slice(0, -1); // Remove trailing slash if present
     }
     const targetUrl = `${baseUrl}/mcp/${mcpConfig.provider_name}/${mcpConfig.action_name}`;
-    
+
     console.log(`⚙️ Executing MCP: ${mcpConfig.name} via URL: ${targetUrl}`);
 
     // Structure the request body
@@ -368,7 +368,7 @@ async function executeMCPPlan(
         console.warn(`⚠️ Placeholder argument detected for ${actionToExecute.tool} - ${key}: ${requestPayload.args[key]}. Using as literal string for now.`);
       }
     }
-    
+
     let responseData: any = null;
     let rawResponseText = '';
     let status: 'success' | 'error' = 'error';
@@ -396,7 +396,7 @@ async function executeMCPPlan(
           console.log(`✅ MCP call successful for ${actionToExecute.tool}. Response:`, responseData);
         } catch (e) {
           console.warn(`⚠️ MCP call for ${actionToExecute.tool} was successful (status ${response.status}) but response was not valid JSON. Raw response: ${rawResponseText.substring(0,100)}...`);
-          responseData = null; 
+          responseData = null;
         }
       } else {
         errorMessage = `MCP call failed for ${actionToExecute.tool} to ${targetUrl}: ${response.status} - ${response.statusText}. Raw: ${rawResponseText.substring(0, 200)}`;
@@ -405,7 +405,7 @@ async function executeMCPPlan(
     } catch (e) {
       errorMessage = `Network or fetch error for MCP ${actionToExecute.tool} to ${targetUrl}: ${e.message}`;
       console.error(`❌ ${errorMessage}`, e);
-      rawResponseText = e.message; 
+      rawResponseText = e.message;
     }
 
     results.push({
@@ -638,14 +638,14 @@ async function processWithAgent(
     if (agentConfig.mcp_endpoints && agentConfig.mcp_endpoints.length > 0) {
       console.log(`🗺️ Agent ${agentConfig.agent_id} has ${agentConfig.mcp_endpoints.length} MCPs. Attempting to generate plan with Gemini.`);
       mcpPlan = await generateMCPToolPlan(
-        emailBodyContent, 
-        agentConfig.mcp_endpoints, 
+        emailBodyContent,
+        agentConfig.mcp_endpoints,
         geminiApiKey, // Pass Gemini API key
-        supabase, 
+        supabase,
         userId,
         emailInteractionId
       );
-      
+
       if (mcpPlan) {
         console.log(`✅ MCP Plan generated for agent ${agentConfig.agent_id}:`, JSON.stringify(mcpPlan, null, 2));
       } else {
@@ -751,14 +751,14 @@ async function processWithAgent(
     .update({
       knowreply_agent_used: agentConfig.agent_id,
       knowreply_request: knowReplyRequest, // Includes mcp_plan
-      knowreply_response: responseData, 
+      knowreply_response: responseData,
       // knowreply_mcp_results from responseData is if KnowReply itself ran some and returned them.
       // The mcpResults we just got are from our own execution prior to calling KnowReply.
       // These might be duplicative or distinct depending on how KnowReply is configured.
       // For now, we are storing our locally executed mcpResults in email_interactions.mcp_results.
       // And also in email_interactions.knowreply_request.mcp_plan (the plan itself).
       // The field email_interactions.knowreply_mcp_results is for results returned BY KnowReply service.
-      knowreply_mcp_results: responseData.mcp_results || null, 
+      knowreply_mcp_results: responseData.mcp_results || null,
       mcp_plan: mcpPlan, // Storing the generated plan
       // mcp_results: mcpResults, // We are NOT adding our execution results to the knowreply_response update here.
                                 // This is because `responseData` is the response from KnowReply service.

@@ -135,18 +135,18 @@ export function MCPManagement() {
 
   const handleCategoryChange = (category: string) => {
     // Preserve user input for some fields if they've already typed something
-    const newFormData = { 
-      ...formData, 
-      category, 
+    const newFormData = {
+      ...formData,
+      category,
       // mcp_server_base_url: formData.mcp_server_base_url, // Let's reset this to avoid confusion if category changes server expectations
-      mcp_server_base_url: '', 
-      provider_name: '', 
-      action_name: '', 
+      mcp_server_base_url: '',
+      provider_name: '',
+      action_name: '',
       // auth_token: formData.auth_token, // Reset auth token as it's provider specific
       auth_token: '',
-      instructions: '', 
-      expected_format: '{\n  "example": "json format"\n}', 
-    }; 
+      instructions: '',
+      expected_format: '{\n  "example": "json format"\n}',
+    };
     
     if (category === 'Stripe') {
       newFormData.provider_name = 'stripe';
@@ -449,7 +449,7 @@ export function MCPManagement() {
                 </Select>
               </div>
             </div>
-            
+
             {/* New MCP Server Configuration Fields */}
             <div>
               <Label htmlFor="mcp_server_base_url">MCP Server Base URL *</Label>
@@ -486,12 +486,12 @@ export function MCPManagement() {
             </div>
 
             {/* Stripe specific UI is now simplified/removed as it's handled by provider_name + action_name */}
-            {/* 
+            {/*
               The old Stripe UI for server_type and stripe_tools is deprecated.
               Users will now set provider_name="stripe" and action_name="specificStripeAction".
               The mcp_server_base_url will point to their MCP server that can handle these.
             */}
-            
+
             {/* Generic Auth Token field - label updated */}
             <div>
               <Label htmlFor="auth_token">Target Provider API Key</Label>
