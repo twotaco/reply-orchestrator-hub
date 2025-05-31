@@ -13,6 +13,38 @@ import { toast } from '@/hooks/use-toast';
 import { Plus, Edit, Trash2, TestTube, Save, X } from 'lucide-react';
 import { Checkbox } from '@/components/ui/checkbox';
 
+const categoryMapUtil: { [key: string]: string } = { // Renamed to avoid conflict if any other 'categoryMap' exists in global scope for some reason
+  'calendly': 'Calendly',
+  'hubspot': 'HubSpot',
+  'klaviyo': 'Klaviyo',
+  'shopify': 'Shopify',
+  'stripe': 'Stripe',
+  'zendesk': 'Zendesk',
+  'supabase': 'Supabase',
+  'mailchimp': 'Mailchimp',
+  'intercom': 'Intercom',
+  'custom': 'Custom'
+};
+
+function getPascalCaseCategory(providerName: string): string {
+  const lowerProviderName = providerName.toLowerCase(); // Ensure lookup is case-insensitive
+  const mappedCategory = categoryMapUtil[lowerProviderName];
+  if (mappedCategory) {
+    return mappedCategory;
+  } else {
+    // If providerName was 'custom' and somehow missed the map (e.g. map was incomplete), ensure it's 'Custom'
+    if (lowerProviderName === 'custom') {
+        return 'Custom';
+    }
+    // For any other unmapped provider, log a warning and default to 'Custom'.
+    console.warn(
+      `Category for provider '${providerName}' not found in categoryMapUtil. Defaulting to 'Custom'. ` +
+      `Please update the map if this provider should have a specific PascalCase category.`
+    );
+    return 'Custom';
+  }
+}
+
 interface MCPEndpoint {
   id: string;
   name: string; // User-defined name for the AI to identify this tool, e.g., "stripe_getCustomerByEmail"
@@ -88,6 +120,8 @@ const stripeTools = [ // This might be deprecated or used differently for custom
   'create_checkout_session',
   'search_knowledge_base'
 ];
+
+// categoryMap definition removed from here, moved outside and renamed to categoryMapUtil within getPascalCaseCategory scope
 
 export function MCPManagement() {
   const { user } = useAuth();
@@ -305,9 +339,11 @@ export function MCPManagement() {
           expected_format: parsedSamplePayload, // Save parsed JSON
           active: actionConfig.is_selected, // Active status is based on selection
           user_id: user.id,
-          category: formData.selected_provider_name.toLowerCase(), // Ensure lowercase for category
+          category: getPascalCaseCategory(formData.selected_provider_name),
           mcp_server_base_url: 'https://mcp.knowreply.email', // Hardcoded URL
         };
+
+        // Warning logic is now inside getPascalCaseCategory
 
         if (actionConfig.id) { // Existing, selected action: Update
           operations.push(supabase.from('mcp_endpoints').update(dataToSave).eq('id', actionConfig.id));
