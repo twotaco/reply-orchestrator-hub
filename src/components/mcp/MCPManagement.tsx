@@ -29,11 +29,27 @@ interface MCPEndpoint {
   // post_url is deprecated, will be constructed from base_url, provider_name, action_name by the MCP server
 }
 
+interface DiscoveredProviderAction {
+  action_name: string;
+  display_name: string;
+  description?: string;
+  sample_payload?: any; // Added for displaying sample payload
+  // We might add expected_payload_schema and response_schema here later
+}
+
+interface DiscoveredProvider {
+  provider_name: string;
+  display_name: string;
+  description?: string;
+  mcp_server_type: 'knowreply_managed' | 'self_hosted'; // To know if it's a standard one we might pre-fill base URL for
+  actions: DiscoveredProviderAction[];
+}
+
 interface MCPForm {
   name: string; // User-defined name, will be used as the identifier for the LLM
-  category: string;
+  selected_provider_name: string; // Renamed from category
   mcp_server_base_url: string;
-  provider_name: string;
+  provider_name: string; // This will be set from selected_provider_name, or manually if custom
   action_name: string;
   auth_token: string; // API key for the target provider
   expected_format: string;
@@ -42,20 +58,23 @@ interface MCPForm {
   // stripe_tools and server_type are deprecated in this new model
 }
 
-const categories = [
-  'Stripe',
-  'Supabase',
-  'Shopify',
-  'HubSpot',
-  'Klaviyo',
-  'Zendesk',
-  'Calendly',
-  'Mailchimp',
-  'Intercom',
-  'Custom'
-];
+interface ConfiguredActionData {
+  id?: string; // ID of the saved MCPEndpoint, if this action is already configured/saved
+  ai_name: string;
+  auth_token: string;
+  is_selected: boolean;
+  active: boolean; // Reflects the 'active' status from the database, used by the switch if already saved
+  action_name: string;
+  provider_name: string;
+  instructions?: string;
+  sample_payload?: string;
+  display_name?: string;
+}
 
-const stripeTools = [
+
+// const categories array is now removed, will be fetched.
+
+const stripeTools = [ // This might be deprecated or used differently for custom Stripe actions
   'create_customer',
   'retrieve_customer',
   'update_customer',
@@ -72,44 +91,82 @@ const stripeTools = [
 
 export function MCPManagement() {
   const { user } = useAuth();
-  const [endpoints, setEndpoints] = useState<MCPEndpoint[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [editingId, setEditingId] = useState<string | null>(null);
-  const [showAddForm, setShowAddForm] = useState(false);
+  // Renamed 'endpoints' to 'savedConfiguredActions' for clarity
+  const [savedConfiguredActions, setSavedConfiguredActions] = useState<MCPEndpoint[]>([]);
+  const [loading, setLoading] = useState(true); // For existing endpoints list
+  // editingId might be deprecated if "edit" means selecting provider and seeing its actions
+  // const [editingId, setEditingId] = useState<string | null>(null);
+  const [showAddForm, setShowAddForm] = useState(false); // Controls visibility of the configuration section
   const [testingId, setTestingId] = useState<string | null>(null);
+
+  // New state for discovery client
+  const [discoveredProviders, setDiscoveredProviders] = useState<DiscoveredProvider[] | null>(null);
+  const [discoveryLoading, setDiscoveryLoading] = useState(true);
+  const [discoveryError, setDiscoveryError] = useState<string | null>(null);
+
+  // New state for action configurations based on selected provider
+  const [actionFormsData, setActionFormsData] = useState<Record<string, ConfiguredActionData>>({});
+
   const [formData, setFormData] = useState<MCPForm>({
-    name: '',
-    category: '',
+    name: '', // This field is deprecated for the main form, AI name is per action.
+    selected_provider_name: '',
     mcp_server_base_url: '',
-    provider_name: '',
-    action_name: '',
-    auth_token: '',
-    expected_format: '{\n  "example": "json format"\n}',
-    instructions: '',
-    active: true,
+    provider_name: '', // Actual provider name (e.g. if selected_provider_name is 'custom')
+    action_name: '', // Deprecated at this level
+    auth_token: '', // Provider-level default auth token
+    expected_format: '{}', // Deprecated at this level
+    instructions: '', // Deprecated at this level
+    active: true, // Deprecated at this level, active is per configured action
   });
 
   useEffect(() => {
     if (user) {
-      fetchEndpoints();
+      fetchEndpoints(); // Fetches savedConfiguredActions
+      fetchDiscoveryData();
     }
   }, [user]);
 
-  const fetchEndpoints = async () => {
+  const fetchDiscoveryData = async () => {
+    setDiscoveryLoading(true);
+    setDiscoveryError(null);
+    try {
+      const response = await fetch('https://mcp.knowreply.email/discover');
+      if (!response.ok) {
+        throw new Error(`HTTP error ${response.status}: ${response.statusText}`);
+      }
+      const data = await response.json();
+      if (data && Array.isArray(data.providers)) {
+        setDiscoveredProviders(data.providers);
+        console.log("Fetched MCP Discovery Data:", data.providers);
+      } else {
+        throw new Error("Discovery data is not in the expected format (missing 'providers' array).");
+      }
+    } catch (error) {
+      console.error('Error fetching MCP discovery data:', error);
+      setDiscoveryError(`Failed to fetch MCP discovery data: ${error.message}`);
+      // toast({ title: "Discovery Error", description: `Failed to fetch MCP providers: ${error.message}`, variant: "destructive" });
+    } finally {
+      setDiscoveryLoading(false);
+    }
+  };
+
+  const fetchEndpoints = async () => { // Renamed to reflect it fetches saved configured actions
+    if (!user) return;
+    setLoading(true);
     try {
       const { data, error } = await supabase
         .from('mcp_endpoints')
         .select('*')
-        .eq('user_id', user?.id)
+        .eq('user_id', user.id)
         .order('created_at', { ascending: false });
 
       if (error) throw error;
-      setEndpoints(data || []);
+      setSavedConfiguredActions(data || []);
     } catch (error) {
-      console.error('Error fetching MCP endpoints:', error);
+      console.error('Error fetching configured MCP actions:', error);
       toast({
         title: "Error",
-        description: "Failed to fetch MCP endpoints",
+        description: "Failed to fetch configured MCP actions.",
         variant: "destructive"
       });
     } finally {
@@ -120,68 +177,58 @@ export function MCPManagement() {
   const resetForm = () => {
     setFormData({
       name: '',
-      category: '',
+      selected_provider_name: '',
       mcp_server_base_url: '',
       provider_name: '',
       action_name: '',
       auth_token: '',
-      expected_format: '{\n  "example": "json format"\n}',
+      expected_format: '{}',
       instructions: '',
       active: true,
     });
-    setEditingId(null);
+    setActionFormsData({});
+    // setEditingId(null); // Deprecated
     setShowAddForm(false);
   };
 
-  const handleCategoryChange = (category: string) => {
-    // Preserve user input for some fields if they've already typed something
-    const newFormData = {
-      ...formData,
-      category,
-      // mcp_server_base_url: formData.mcp_server_base_url, // Let's reset this to avoid confusion if category changes server expectations
-      mcp_server_base_url: '',
-      provider_name: '',
+  const handleProviderSelect = (selectedProviderNameValue: string) => {
+    const selectedDiscoveredProvider = discoveredProviders?.find(p => p.provider_name === selectedProviderNameValue);
+
+    setFormData(prev => ({
+      ...prev,
+      selected_provider_name: selectedProviderNameValue,
+      provider_name: selectedProviderNameValue === 'custom' ? '' : selectedProviderNameValue,
       action_name: '',
-      // auth_token: formData.auth_token, // Reset auth token as it's provider specific
+      mcp_server_base_url: (selectedDiscoveredProvider?.mcp_server_type === 'knowreply_managed' && selectedProviderNameValue !== 'custom')
+                           ? 'https://mcp.knowreply.email'
+                           : (selectedProviderNameValue === 'custom' ? '' : prev.mcp_server_base_url),
       auth_token: '',
-      instructions: '',
-      expected_format: '{\n  "example": "json format"\n}',
-    };
-    
-    if (category === 'Stripe') {
-      newFormData.provider_name = 'stripe';
-      newFormData.instructions = 'This MCP interacts with the Stripe API. Define a specific action like "createCustomer" or "retrievePaymentIntent".';
-      newFormData.expected_format = JSON.stringify({"amount": 2000, "currency": "usd", "customer": "cus_example"}, null, 2);
-    } else if (category === 'HubSpot') {
-      newFormData.provider_name = 'hubspot';
-      newFormData.instructions = 'This MCP interacts with the HubSpot API. Define a specific action like "createContact" or "getDeal".';
-      newFormData.expected_format = JSON.stringify({ "properties": { "email": "test@example.com", "firstname": "Test"}}, null, 2);
-    } else if (category === 'Shopify') {
-      newFormData.provider_name = 'shopify';
-      newFormData.instructions = 'This MCP interacts with the Shopify API. Define a specific action.';
-      newFormData.expected_format = JSON.stringify({ "query": "{ shop { name } }" }, null, 2);
-    } else if (category === 'Klaviyo') {
-      newFormData.provider_name = 'klaviyo';
-      newFormData.instructions = 'This MCP interacts with the Klaviyo API. Define a specific action.';
-    } else if (category === 'Zendesk') {
-      newFormData.provider_name = 'zendesk';
-      newFormData.instructions = 'This MCP interacts with the Zendesk API. Define a specific action.';
-    } else if (category === 'Calendly') {
-      newFormData.provider_name = 'calendly';
-      newFormData.instructions = 'This MCP interacts with the Calendly API. Define a specific action.';
-    } else if (category === 'Mailchimp') {
-      newFormData.provider_name = 'mailchimp';
-      newFormData.instructions = 'This MCP interacts with the Mailchimp API. Define a specific action.';
-    } else if (category === 'Intercom') {
-      newFormData.provider_name = 'intercom';
-      newFormData.instructions = 'This MCP interacts with the Intercom API. Define a specific action.';
-    } else if (category === 'Custom') {
-      newFormData.provider_name = ''; // User defines everything
-      newFormData.instructions = 'Configure a custom MCP endpoint. You need to specify the provider and action name for your custom MCP server.';
-      newFormData.expected_format = JSON.stringify({ "custom_payload_key": "custom_value" }, null, 2);
+      instructions: selectedDiscoveredProvider?.description || (selectedProviderNameValue === 'custom' ? 'Define your custom provider.' : 'Select actions below.'),
+      expected_format: '{}',
+    }));
+
+    const newActionFormsData: Record<string, ConfiguredActionData> = {};
+    if (selectedDiscoveredProvider && selectedDiscoveredProvider.actions) {
+      selectedDiscoveredProvider.actions.forEach(discoveredAction => {
+        const savedAction = savedConfiguredActions.find(
+          sa => sa.provider_name === selectedDiscoveredProvider.provider_name && sa.action_name === discoveredAction.action_name
+        );
+        newActionFormsData[discoveredAction.action_name] = {
+          id: savedAction?.id,
+          ai_name: savedAction?.name || `${selectedDiscoveredProvider.provider_name}_${discoveredAction.action_name}`,
+          auth_token: savedAction?.auth_token || '',
+          is_selected: !!savedAction, // Select if it's already saved
+          active: savedAction ? savedAction.active : false, // Persist active state or default to false
+          action_name: discoveredAction.action_name,
+          provider_name: selectedDiscoveredProvider.provider_name,
+          instructions: discoveredAction.description || "No specific instructions.",
+          sample_payload: JSON.stringify(discoveredAction.sample_payload || {}, null, 2),
+          display_name: discoveredAction.display_name || discoveredAction.action_name,
+        };
+      });
     }
-    
-    setFormData(newFormData);
+    setActionFormsData(newActionFormsData);
+    setShowAddForm(true); // Automatically show configuration section when a provider is selected
   };
 
   // handleServerTypeChange and handleStripeToolToggle are now deprecated and can be removed.
@@ -190,114 +237,126 @@ export function MCPManagement() {
 
   // const handleStripeToolToggle = (...) => { ... };
 
+  const handleActionConfigChange = (actionName: string, field: keyof ConfiguredActionData, value: any) => {
+    setActionFormsData(prev => ({
+      ...prev,
+      [actionName]: {
+        ...prev[actionName],
+        [field]: value,
+      },
+    }));
+  };
+
   const handleSave = async () => {
-    if (!formData.name || !formData.category || !formData.mcp_server_base_url || !formData.provider_name || !formData.action_name) {
-      toast({
-        title: "Validation Error",
-        description: "Please fill in Name, Category, MCP Server Base URL, Provider Name, and Action Name.",
-        variant: "destructive"
-      });
+    if (!user) return;
+    if (!formData.selected_provider_name) {
+        toast({ title: "Error", description: "Please select a provider first.", variant: "destructive" });
+        return;
+    }
+    if (formData.selected_provider_name === 'custom' && !formData.provider_name) {
+       toast({ title: "Validation Error", description: "For 'Custom' provider type, please specify the actual Provider Name.", variant: "destructive"});
+       return;
+    }
+     if (!formData.mcp_server_base_url) {
+      toast({title: "Validation Error", description: "MCP Server Base URL is required.", variant: "destructive"});
       return;
     }
 
-    // Category specific validation (e.g. Stripe API key) can be added here if necessary
-    // For example, if category is Stripe and auth_token is missing:
-    if (formData.category === 'Stripe' && !formData.auth_token) {
-       toast({
-        title: "Validation Error",
-        description: "Target Provider API Key (Stripe Secret Key) is recommended for Stripe MCPs.",
-        variant: "warning" // Warning instead of destructive for now
-      });
-      // return; // Optionally block save
-    }
+    const operations: Promise<any>[] = [];
+    let errorOccurred = false;
+    let itemsSaved = 0;
+    let itemsDeselectedAndRemoved = 0;
 
-    let expectedFormat;
-    try {
-      expectedFormat = formData.expected_format ? JSON.parse(formData.expected_format) : null;
-    } catch (error) {
-      toast({
-        title: "JSON Error",
-        description: "Invalid JSON format in expected format field",
-        variant: "destructive"
-      });
-      return;
-    }
+    for (const actionConfig of Object.values(actionFormsData)) {
+      if (!actionConfig.is_selected && !actionConfig.id) continue; // Skip if not selected and never saved
 
-    try {
-      const endpointData = {
-        name: formData.name, // This is the unique ID for the AI
-        category: formData.category,
-        mcp_server_base_url: formData.mcp_server_base_url,
-        provider_name: formData.provider_name,
-        action_name: formData.action_name,
-        auth_token: formData.auth_token || null,
-        expected_format: expectedFormat, // Already parsed
-        instructions: formData.instructions || null,
-        active: formData.active,
-        user_id: user?.id,
-        // post_url is no longer directly stored; it's derived by the MCP server
-        // from mcp_server_base_url, provider_name, and action_name.
-      };
+      if (actionConfig.is_selected) {
+        if (!actionConfig.ai_name) {
+          toast({ title: "Validation Error", description: `Unique AI Name is required for action: ${actionConfig.display_name}.`, variant: "destructive" });
+          errorOccurred = true;
+          break;
+        }
 
-      if (editingId) {
-        const { error } = await supabase
-          .from('mcp_endpoints')
-          .update(endpointData)
-          .eq('id', editingId);
+        const determinedAuthToken = actionConfig.auth_token || formData.auth_token || null;
+        let parsedSamplePayload = {};
+        try {
+          parsedSamplePayload = JSON.parse(actionConfig.sample_payload || '{}');
+        } catch (e) {
+          toast({ title: "JSON Error", description: `Invalid sample payload JSON for action ${actionConfig.display_name}.`, variant: "destructive" });
+          errorOccurred = true;
+          break;
+        }
 
-        if (error) throw error;
-        toast({
-          title: "Success",
-          description: "MCP endpoint updated successfully"
-        });
-      } else {
-        const { error } = await supabase
-          .from('mcp_endpoints')
-          .insert([endpointData]);
+        const dataToSave = {
+          name: actionConfig.ai_name,
+          provider_name: actionConfig.provider_name,
+          action_name: actionConfig.action_name,
+          auth_token: determinedAuthToken,
+          instructions: actionConfig.instructions,
+          expected_format: parsedSamplePayload, // Save parsed JSON
+          active: true, // is_selected implies active for saving
+          user_id: user.id,
+          category: formData.selected_provider_name, // The "group" or type of provider
+          mcp_server_base_url: formData.mcp_server_base_url,
+        };
 
-        if (error) throw error;
-        toast({
-          title: "Success",
-          description: "MCP endpoint created successfully"
-        });
+        if (actionConfig.id) { // Existing, selected action: Update
+          operations.push(supabase.from('mcp_endpoints').update(dataToSave).eq('id', actionConfig.id));
+        } else { // New, selected action: Insert
+          operations.push(supabase.from('mcp_endpoints').insert([dataToSave]));
+        }
+        itemsSaved++;
+      } else if (!actionConfig.is_selected && actionConfig.id) { // Existing, but now deselected: Delete
+        operations.push(supabase.from('mcp_endpoints').delete().eq('id', actionConfig.id));
+        itemsDeselectedAndRemoved++;
       }
+    }
 
-      resetForm();
-      fetchEndpoints();
-    } catch (error) {
-      console.error('Error saving MCP endpoint:', error);
-      toast({
-        title: "Error",
-        description: "Failed to save MCP endpoint",
-        variant: "destructive"
+    if (errorOccurred) return;
+    if (operations.length === 0 && itemsSaved === 0) {
+        toast({title: "No Changes", description: "No actions were selected or modified to save.", variant: "default"});
+        resetForm(); // Still reset/hide form
+        return;
+    }
+
+
+    try {
+      const results = await Promise.all(operations);
+      results.forEach(result => {
+        if (result.error) throw result.error;
       });
+      toast({ title: "Success", description: `Successfully saved configurations for ${itemsSaved} action(s). ${itemsDeselectedAndRemoved > 0 ? `${itemsDeselectedAndRemoved} deselected action(s) removed.` : ''}` });
+      fetchEndpoints(); // Refresh the main list
+      resetForm(); // Hide the form and clear states
+    } catch (error: any) {
+      console.error('Error saving MCP configurations:', error);
+      toast({ title: "Error", description: `Failed to save configurations: ${error.message}`, variant: "destructive" });
     }
   };
 
   const handleEdit = (endpoint: MCPEndpoint) => {
-    // Remove stripe_tools and server_type from expected_format if they exist for older data
-    let currentExpectedFormat = endpoint.expected_format || {};
-    if (currentExpectedFormat?.stripe_tools) delete currentExpectedFormat.stripe_tools;
-    if (currentExpectedFormat?.server_type) delete currentExpectedFormat.server_type;
-    if (Object.keys(currentExpectedFormat).length === 0) {
-      currentExpectedFormat = { example: "json format" };
-    }
-
-
-    setFormData({
-      name: endpoint.name,
-      category: endpoint.category,
-      mcp_server_base_url: endpoint.mcp_server_base_url || '',
-      provider_name: endpoint.provider_name || '',
-      action_name: endpoint.action_name || '',
-      auth_token: endpoint.auth_token || '',
-      expected_format: JSON.stringify(currentExpectedFormat, null, 2),
-      instructions: endpoint.instructions || '',
-      active: endpoint.active,
-    });
-    setEditingId(endpoint.id);
     setShowAddForm(true);
+    // Set the provider for the form, which will trigger handleProviderSelect
+    // handleProviderSelect will then merge with saved data, including the specific endpoint being edited.
+    setFormData(prev => ({
+        ...prev,
+        selected_provider_name: endpoint.category, // This is the originally selected provider type
+        mcp_server_base_url: endpoint.mcp_server_base_url || '',
+        provider_name: endpoint.provider_name || endpoint.category, // Actual provider name
+        auth_token: endpoint.auth_token || '', // This is the default provider key, action specific keys are in actionFormsData
+    }));
+    // Trigger handleProviderSelect manually IF selected_provider_name was already set to this value
+    // otherwise the Select's onValueChange would handle it.
+    // This ensures actions are populated even if clicking edit on an item whose provider is already selected.
+     if (formData.selected_provider_name === endpoint.category) {
+        handleProviderSelect(endpoint.category);
+     } else {
+        // Update selected_provider_name, which will trigger handleProviderSelect via the Select component's effect
+         setFormData(prev => ({...prev, selected_provider_name: endpoint.category}));
+     }
+    // Note: The specific highlighting or scrolling to the edited action card is a UI enhancement not implemented here.
   };
+
 
   const handleDelete = async (id: string) => {
     if (!confirm('Are you sure you want to delete this MCP endpoint?')) return;
@@ -434,110 +493,165 @@ export function MCPManagement() {
                 </p>
               </div>
               <div>
-                <Label htmlFor="category">Category *</Label>
-                <Select value={formData.category} onValueChange={handleCategoryChange}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select category" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {categories.map((category) => (
-                      <SelectItem key={category} value={category}>
-                        {category}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <Label htmlFor="provider_select">Provider *</Label>
+                {discoveryLoading && <p className="text-sm text-gray-500">Loading providers...</p>}
+                {discoveryError && <p className="text-sm text-red-500">{discoveryError}</p>}
+                {!discoveryLoading && !discoveryError && (
+                  <Select
+                    value={formData.selected_provider_name}
+                    onValueChange={handleProviderSelect}
+                    disabled={!discoveredProviders || discoveredProviders.length === 0}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select a provider" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {discoveredProviders?.map((provider) => (
+                        <SelectItem key={provider.provider_name} value={provider.provider_name}>
+                          {provider.display_name} ({provider.provider_name})
+                        </SelectItem>
+                      ))}
+                       <SelectItem value="custom">Custom Provider</SelectItem>
+                    </SelectContent>
+                  </Select>
+                )}
               </div>
             </div>
 
-            {/* New MCP Server Configuration Fields */}
-            <div>
-              <Label htmlFor="mcp_server_base_url">MCP Server Base URL *</Label>
-              <Input
-                id="mcp_server_base_url"
-                value={formData.mcp_server_base_url}
-                onChange={(e) => setFormData({ ...formData, mcp_server_base_url: e.target.value })}
-                placeholder="e.g., http://localhost:8080 or https://mcp.example.com"
-              />
-              <p className="text-sm text-gray-500 mt-1">The base URL of your MCP server (e.g., the KnowReply MCP server).</p>
-            </div>
+            {/* Common fields for the selected provider - if selected_provider_name is set */}
+            {formData.selected_provider_name && (
+              <>
+                <div>
+                  <Label htmlFor="mcp_server_base_url">MCP Server Base URL *</Label>
+                  <Input
+                    id="mcp_server_base_url"
+                    value={formData.mcp_server_base_url}
+                    onChange={(e) => setFormData({ ...formData, mcp_server_base_url: e.target.value })}
+                    placeholder="e.g., http://localhost:8080 or https://mcp.knowreply.email"
+                  />
+                  <p className="text-sm text-gray-500 mt-1">The base URL of your MCP server.</p>
+                </div>
 
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <Label htmlFor="provider_name">Provider Name *</Label>
-                <Input
-                  id="provider_name"
-                  value={formData.provider_name}
-                  onChange={(e) => setFormData({ ...formData, provider_name: e.target.value })}
-                  placeholder="e.g., stripe, hubspot, custom"
-                />
-                <p className="text-sm text-gray-500 mt-1">Identifier for the target service provider.</p>
-              </div>
-              <div>
-                <Label htmlFor="action_name">Action Name *</Label>
-                <Input
-                  id="action_name"
-                  value={formData.action_name}
-                  onChange={(e) => setFormData({ ...formData, action_name: e.target.value })}
-                  placeholder="e.g., getCustomerByEmail, createTicket"
-                />
-                <p className="text-sm text-gray-500 mt-1">Specific action to be performed by the provider.</p>
-              </div>
-            </div>
+                {/* Provider Name input - only editable if "Custom" is selected from Provider dropdown */}
+                {formData.selected_provider_name === 'custom' && (
+                  <div>
+                    <Label htmlFor="provider_name_custom">Custom Provider Name *</Label>
+                    <Input
+                      id="provider_name_custom"
+                      value={formData.provider_name}
+                      onChange={(e) => setFormData({ ...formData, provider_name: e.target.value })}
+                      placeholder="Enter your custom provider identifier"
+                    />
+                     <p className="text-sm text-gray-500 mt-1">Your custom provider's unique name (e.g., my_internal_api).</p>
+                  </div>
+                )}
+                {/* Display provider_name read-only if not custom */}
+                {formData.selected_provider_name !== 'custom' && formData.provider_name && (
+                   <div>
+                    <Label>Provider Name (from selection)</Label>
+                    <p className="text-sm py-2 px-3 bg-gray-100 rounded-md">{formData.provider_name}</p>
+                  </div>
+                )}
 
-            {/* Stripe specific UI is now simplified/removed as it's handled by provider_name + action_name */}
-            {/*
-              The old Stripe UI for server_type and stripe_tools is deprecated.
-              Users will now set provider_name="stripe" and action_name="specificStripeAction".
-              The mcp_server_base_url will point to their MCP server that can handle these.
-            */}
 
-            {/* Generic Auth Token field - label updated */}
-            <div>
-              <Label htmlFor="auth_token">Target Provider API Key</Label>
-              <Input
-                id="auth_token"
-                type="password"
-                value={formData.auth_token}
-                onChange={(e) => setFormData({ ...formData, auth_token: e.target.value })}
-                placeholder="e.g., sk_test_xxxxxx (for Stripe), or other provider API key"
-              />
-              <p className="text-sm text-gray-500 mt-1">API Key for the target service (Stripe, HubSpot, etc.). Leave blank if not required.</p>
-            </div>
+                {/* Actions Section */}
+                {Object.keys(actionFormsData).length > 0 && (
+                  <Card className="mt-4">
+                    <CardHeader>
+                      <CardTitle>Configure Actions for {formData.provider_name || formData.selected_provider_name}</CardTitle>
+                      <CardDescription>Select and configure the actions you want to enable for this provider.</CardDescription>
+                    </CardHeader>
+                    <CardContent className="space-y-6">
+                      {Object.entries(actionFormsData).map(([actionName, actionConfig]) => (
+                        <Card key={actionName} className="p-4 space-y-3">
+                          <div className="flex items-center space-x-2">
+                            <Checkbox
+                              id={`action-select-${actionName}`}
+                              checked={actionConfig.is_selected}
+                              onCheckedChange={(checked) => handleActionConfigChange(actionName, 'is_selected', !!checked)}
+                            />
+                            <Label htmlFor={`action-select-${actionName}`} className="text-lg font-medium">
+                              {actionConfig.display_name} ({actionName})
+                            </Label>
+                          </div>
 
-            <div>
-              <Label htmlFor="instructions">Instructions for AI Agent</Label>
-              <Textarea
-                id="instructions"
-                value={formData.instructions}
-                onChange={(e) => setFormData({ ...formData, instructions: e.target.value })}
-                rows={3}
-                placeholder="Describe what this endpoint does and how the AI agent should use it..."
-              />
-              <p className="text-sm text-gray-500 mt-1">
-                These instructions help the AI agent understand when and how to use this endpoint
-              </p>
-            </div>
+                          {actionConfig.is_selected && (
+                            <div className="space-y-4 pl-6 border-l-2 border-gray-200 ml-2">
+                              <div>
+                                <Label htmlFor={`ai-name-${actionName}`}>Unique AI Name *</Label>
+                                <Input
+                                  id={`ai-name-${actionName}`}
+                                  value={actionConfig.ai_name}
+                                  onChange={(e) => handleActionConfigChange(actionName, 'ai_name', e.target.value)}
+                                  placeholder={`e.g., ${formData.provider_name}_${actionName}`}
+                                />
+                                <p className="text-xs text-gray-500 mt-1">Unique name for the AI to identify this specific action.</p>
+                              </div>
+                              <div>
+                                <Label htmlFor={`auth-token-${actionName}`}>Target Provider API Key</Label>
+                                <Input
+                                  id={`auth-token-${actionName}`}
+                                  type="password"
+                                  value={actionConfig.auth_token}
+                                  onChange={(e) => handleActionConfigChange(actionName, 'auth_token', e.target.value)}
+                                  placeholder="API Key for this action (if different from provider default)"
+                                />
+                                 <p className="text-xs text-gray-500 mt-1">Optional: Only if this action uses a different key than a provider-level key.</p>
+                              </div>
+                            </div>
+                          )}
+                          <div>
+                            <Label className="text-sm font-semibold">Instructions (from discovery):</Label>
+                            <Textarea
+                              value={actionConfig.instructions || "No instructions provided."}
+                              readOnly
+                              className="mt-1 h-20 bg-gray-50"
+                            />
+                          </div>
+                          <div>
+                            <Label className="text-sm font-semibold">Sample Payload (from discovery):</Label>
+                            <Textarea
+                              value={actionConfig.sample_payload || "{}"}
+                              readOnly
+                              className="mt-1 h-24 font-mono text-xs bg-gray-50"
+                            />
+                          </div>
+                        </Card>
+                      ))}
+                    </CardContent>
+                  </Card>
+                )}
+                 {/* End Actions Section */}
+              </>
+            )}
 
-            <div>
-              <Label htmlFor="expected_format">Expected JSON Format</Label>
-              <Textarea
-                id="expected_format"
-                value={formData.expected_format}
-                onChange={(e) => setFormData({ ...formData, expected_format: e.target.value })}
-                rows={6}
-                className="font-mono text-sm"
-                placeholder='{\n  "example": "json format"\n}'
-              />
-            </div>
+            {/* The old top-level fields like instructions, expected_format, action_name, auth_token are now mostly per-action or deprecated */}
+            {/* For example, a global auth_token might still be useful if all actions for a provider share one */}
+             {formData.selected_provider_name && formData.selected_provider_name !== 'custom' && (
+                <div>
+                  <Label htmlFor="provider_auth_token">Default Provider API Key (Optional)</Label>
+                  <Input
+                    id="provider_auth_token"
+                    type="password"
+                    value={formData.auth_token} // This is the top-level auth_token now
+                    onChange={(e) => setFormData({ ...formData, auth_token: e.target.value })}
+                    placeholder={`Optional: Default API Key for all ${formData.selected_provider_name} actions`}
+                  />
+                  <p className="text-sm text-gray-500 mt-1">
+                    If all actions for this provider share the same API key, you can set it here.
+                    Otherwise, set API keys per action if they differ or if this is left blank.
+                  </p>
+                </div>
+             )}
 
-            <div className="flex items-center space-x-2">
+
+            <div className="flex items-center space-x-2 mt-4">
               <Switch
                 id="active"
                 checked={formData.active}
                 onCheckedChange={(checked) => setFormData({ ...formData, active: checked })}
               />
-              <Label htmlFor="active">Active</Label>
+              {/* The top-level active switch is removed, active is per-action */}
             </div>
 
             <div className="flex gap-2">

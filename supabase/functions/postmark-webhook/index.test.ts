@@ -31,6 +31,8 @@ const mockGeminiFetch = (
   return stub(globalThis, "fetch", geminiResponseHandler);
 };
 
+// Define the fixed MCP server base URL for use in tests, matching index.ts
+const TEST_MCP_SERVER_BASE_URL = "https://mcp.knowreply.email";
 
 // Mock Supabase client
 const mockSupabaseClient = {
@@ -56,13 +58,13 @@ Deno.test("[generateMCPToolPlan with Gemini] should generate a plan successfully
   };
   const mockAvailableMcps = [
     {
-      name: "mcp:stripe.getCustomer", // This is the ID the LLM uses for the tool name
+      name: "mcp:stripe.getCustomer",
       instructions: "Get customer from Stripe by email",
-      // These fields are for executeMCPPlan, but generateMCPToolPlan needs valid availableMcps structure
-      mcp_server_base_url: "http://mock-mcp-server.com",
-      provider_name: "stripe",
+      provider_name: "stripe", // No mcp_server_base_url here
       action_name: "getCustomer",
-      auth_token: "sk_test_mock"
+      auth_token: "sk_test_mock",
+      expected_format: {},
+      active: true,
     }
   ];
 
@@ -110,7 +112,15 @@ Deno.test("[generateMCPToolPlan with Gemini] should generate a plan successfully
 Deno.test("[generateMCPToolPlan with Gemini] should handle Gemini API error", async () => {
   const mockApiKey = "test-gemini-key";
   const geminiErrorResponse = { error: { code: 500, message: "Gemini Internal Server Error" } };
-   const mockAvailableMcps = [{ name: "mcp:test.tool", instructions: "Test tool", mcp_server_base_url:"http://a", provider_name:"b", action_name:"c" }];
+   const mockAvailableMcps = [{
+     name: "mcp:test.tool",
+     instructions: "Test tool",
+     provider_name:"b",  // No mcp_server_base_url
+     action_name:"c",
+     auth_token: "test_token",
+     expected_format: {},
+     active: true,
+    }];
 
 
   const fetchStub = mockGeminiFetch(async (url) => {
@@ -148,7 +158,15 @@ Deno.test("[generateMCPToolPlan with Gemini] should return empty array if no too
             finishReason: "STOP"
         }]
     };
-    const mockAvailableMcps = [{ name: "mcp:test.tool", instructions: "Test tool", mcp_server_base_url:"http://a", provider_name:"b", action_name:"c" }];
+    const mockAvailableMcps = [{
+      name: "mcp:test.tool",
+      instructions: "Test tool",
+      provider_name:"b", // No mcp_server_base_url
+      action_name:"c",
+      auth_token: "test_token",
+      expected_format: {},
+      active: true,
+    }];
     const fetchStub = mockGeminiFetch(async () => {
         return Promise.resolve(new Response(JSON.stringify(geminiResponseNoTools), { status: 200 }));
     });
@@ -178,7 +196,15 @@ Deno.test("[generateMCPToolPlan with Gemini] should handle invalid JSON string i
             finishReason: "STOP"
         }]
     };
-    const mockAvailableMcps = [{ name: "mcp:test.tool", instructions: "Test tool", mcp_server_base_url:"http://a", provider_name:"b", action_name:"c" }];
+    const mockAvailableMcps = [{
+      name: "mcp:test.tool",
+      instructions: "Test tool",
+      provider_name:"b", // No mcp_server_base_url
+      action_name:"c",
+      auth_token: "test_token",
+      expected_format: {},
+      active: true,
+    }];
     const fetchStub = mockGeminiFetch(async () => {
         return Promise.resolve(new Response(JSON.stringify(geminiResponseInvalidJsonText), { status: 200 }));
     });
@@ -212,7 +238,15 @@ Deno.test("[generateMCPToolPlan with Gemini] should handle SAFETY block", async 
       safetyRatings: [ /* ... some safety ratings data ... */ ]
     }
   };
-  const mockAvailableMcps = [{ name: "mcp:test.tool", instructions: "Test tool", mcp_server_base_url:"http://a", provider_name:"b", action_name:"c" }];
+  const mockAvailableMcps = [{
+    name: "mcp:test.tool",
+    instructions: "Test tool",
+    provider_name:"b", // No mcp_server_base_url
+    action_name:"c",
+    auth_token: "test_token",
+    expected_format: {},
+    active: true,
+  }];
    const fetchStub = mockGeminiFetch(async () => {
         return Promise.resolve(new Response(JSON.stringify(geminiSafetyBlockResponse), { status: 200 })); // Gemini might return 200 OK even if blocked
     });
@@ -240,17 +274,17 @@ Deno.test("[generateMCPToolPlan with Gemini] should handle SAFETY block", async 
 Deno.test("[executeMCPPlan] successful execution of a single action", async () => {
   const mcpPlan = [{ tool: "mcp:stripe.payment", args: { amount: 100, currency: "usd" } }];
   const availableMcps = [{
-    name: "mcp:stripe.payment", // This is the ID from the plan
-    mcp_server_base_url: "http://localhost:8000",
-    provider_name: "stripe",
+    name: "mcp:stripe.payment",
+    provider_name: "stripe", // No mcp_server_base_url
     action_name: "createPayment",
     auth_token: "sk_test_provider_key",
-    instructions: "Creates a stripe payment"
+    instructions: "Creates a stripe payment",
+    expected_format: {}, active: true
   }];
 
   originalFetch = globalThis.fetch;
   globalThis.fetch = async (url, options) => {
-    assertEquals(url.toString(), "http://localhost:8000/mcp/stripe/createPayment");
+    assertEquals(url.toString(), `${TEST_MCP_SERVER_BASE_URL}/mcp/stripe/createPayment`);
     assert(options?.method === "POST");
     assertEquals(options?.headers?.['Content-Type'], "application/json");
     const body = JSON.parse(options!.body!.toString());
@@ -275,7 +309,7 @@ Deno.test("[executeMCPPlan] successful execution of a single action", async () =
     assertEquals(results[0].response?.paymentId, "pi_123"); // Updated to match new mock
     assert(activityLogSpy.calls.length > 0, "Activity log was not called");
     const activityLogDetails = activityLogSpy.calls[0].args[0][0].details;
-    assertEquals(activityLogDetails.target_url, "http://localhost:8000/mcp/stripe/createPayment");
+    assertEquals(activityLogDetails.target_url, `${TEST_MCP_SERVER_BASE_URL}/mcp/stripe/createPayment`);
 
 
   } finally {
@@ -288,15 +322,15 @@ Deno.test("[executeMCPPlan] MCP execution failure (HTTP error)", async () => {
     const mcpPlan = [{ tool: "mcp:failing.tool", args: { data: "bad_data" } }];
     const availableMcps = [{
       name: "mcp:failing.tool",
-      mcp_server_base_url: "http://mcp-server.com",
-      provider_name: "failing_provider",
+      provider_name: "failing_provider", // No mcp_server_base_url
       action_name: "doomed_action",
-      auth_token: "irrelevant_key"
+      auth_token: "irrelevant_key",
+      expected_format: {}, active: true
     }];
 
     originalFetch = globalThis.fetch;
     globalThis.fetch = async (url, options) => {
-      assertEquals(url.toString(), "http://mcp-server.com/mcp/failing_provider/doomed_action");
+      assertEquals(url.toString(), `${TEST_MCP_SERVER_BASE_URL}/mcp/failing_provider/doomed_action`);
       assert(options?.method === "POST");
       assertEquals(options?.headers?.['Content-Type'], "application/json");
       const body = JSON.parse(options!.body!.toString());
@@ -314,7 +348,7 @@ Deno.test("[executeMCPPlan] MCP execution failure (HTTP error)", async () => {
         assert(results[0].error_message!.includes("MCP call failed"), "Error message content is incorrect");
         assert(activityLogSpy.calls.length > 0, "Activity log was not called");
         assertEquals(activityLogSpy.calls[0].args[0][0].status, "error");
-        assertEquals(activityLogSpy.calls[0].args[0][0].details.target_url, "http://mcp-server.com/mcp/failing_provider/doomed_action");
+    assertEquals(activityLogDetails.target_url, `${TEST_MCP_SERVER_BASE_URL}/mcp/failing_provider/doomed_action`);
 
 
     } finally {
@@ -327,15 +361,15 @@ Deno.test("[executeMCPPlan] MCP returns non-JSON response (HTTP success)", async
     const mcpPlan = [{ tool: "mcp:text.tool", args: { format: "text" } }];
     const availableMcps = [{
       name: "mcp:text.tool",
-      mcp_server_base_url: "http://text-server.com",
-      provider_name: "text_provider",
+      provider_name: "text_provider", // No mcp_server_base_url
       action_name: "get_plain_text",
-      auth_token: null // Explicitly null for this test
+      auth_token: null,
+      expected_format: {}, active: true
     }];
 
     originalFetch = globalThis.fetch;
     globalThis.fetch = async (url, options) => {
-        assertEquals(url.toString(), "http://text-server.com/mcp/text_provider/get_plain_text");
+        assertEquals(url.toString(), `${TEST_MCP_SERVER_BASE_URL}/mcp/text_provider/get_plain_text`);
         assertEquals(options?.method, "POST");
         assertEquals(options?.headers?.['Content-Type'], "application/json");
         const body = JSON.parse(options!.body!.toString());
@@ -363,9 +397,9 @@ Deno.test("[executeMCPPlan] MCP tool not found in availableMcps", async () => {
     const mcpPlan = [{ tool: "mcp:ghost.tool", args: {} }];
     const availableMcps = [{
       name: "mcp:real.tool",
-      mcp_server_base_url: "http://server.com",
-      provider_name: "real_provider",
-      action_name: "real_action"
+      provider_name: "real_provider", // No mcp_server_base_url
+      action_name: "real_action",
+      auth_token: "key", expected_format: {}, active: true
     }];
     const activityLogSpy = spy(mockSupabaseClient.from("activity_logs"), "insert");
 
@@ -387,9 +421,9 @@ Deno.test("[executeMCPPlan] MCP tool config incomplete (missing mcp_server_base_
     const mcpPlan = [{ tool: "mcp:half_configured.tool", args: {} }];
     const availableMcps = [{
       name: "mcp:half_configured.tool",
-      // mcp_server_base_url is missing
-      provider_name: "half_provider",
-      action_name: "half_action"
+      provider_name: "half_provider", // mcp_server_base_url is implicitly handled by fixed URL
+      // action_name is missing for this test of incomplete config
+      auth_token: "key", expected_format: {}, active: true
     }];
     const activityLogSpy = spy(mockSupabaseClient.from("activity_logs"), "insert");
 
@@ -398,7 +432,7 @@ Deno.test("[executeMCPPlan] MCP tool config incomplete (missing mcp_server_base_
         assertEquals(results.length, 1);
         assertEquals(results[0].status, "error");
         assert(results[0].error_message!.includes("MCP configuration incomplete or not found"), "Error message for incomplete config is incorrect");
-        assert(results[0].error_message!.includes("mcp_server_base_url"), "Error message should mention missing field");
+        assert(results[0].error_message!.includes("action_name"), "Error message should mention missing field action_name");
     } finally {
       activityLogSpy.restore();
     }
@@ -411,15 +445,15 @@ Deno.test("[executeMCPPlan] Plan with multiple actions (success and failure)", a
         { tool: "mcp:second.failure", args: { data: "bad_call" } }
     ];
     const availableMcps = [
-        { name: "mcp:first.success", mcp_server_base_url: "http://mcp.example.com", provider_name: "provider1", action_name: "actionA", auth_token: "token_success" },
-        { name: "mcp:second.failure", mcp_server_base_url: "http://mcp.example.com", provider_name: "provider2", action_name: "actionB", auth_token: "token_fail" }
+        { name: "mcp:first.success", provider_name: "provider1", action_name: "actionA", auth_token: "token_success", instructions:"i1", expected_format:{}, active:true },
+        { name: "mcp:second.failure", provider_name: "provider2", action_name: "actionB", auth_token: "token_fail", instructions:"i2", expected_format:{}, active:true }
     ];
 
     const fetchStub = stub(globalThis, "fetch", (url: URL | Request | string, options?: RequestInit) => {
         const urlString = url.toString();
         const body = options?.body ? JSON.parse(options.body.toString()) : {};
 
-        if (urlString.includes("/mcp/provider1/actionA")) {
+        if (urlString === `${TEST_MCP_SERVER_BASE_URL}/mcp/provider1/actionA`) {
             assertEquals(body.args.data, "good_call");
             assertEquals(body.auth.token, "token_success");
             return Promise.resolve(new Response(JSON.stringify({ result: "success_data_from_A" }), { status: 200 }));
@@ -459,15 +493,15 @@ Deno.test("[executeMCPPlan] Placeholder argument warning", async () => {
     const mcpPlan = [{ tool: "mcp:placeholder.test", args: { param1: "{{placeholder_value}}", param2: "normal_value" } }];
     const availableMcps = [{
       name: "mcp:placeholder.test",
-      mcp_server_base_url: "http://mcp.example.com",
-      provider_name: "placeholder_provider",
+      provider_name: "placeholder_provider", // No mcp_server_base_url
       action_name: "placeholder_action",
-      auth_token: "token_placeholder"
+      auth_token: "token_placeholder",
+      instructions:"inst", expected_format:{}, active:true
     }];
 
     originalFetch = globalThis.fetch;
     globalThis.fetch = async (url, options) => {
-      assertEquals(url.toString(), "http://mcp.example.com/mcp/placeholder_provider/placeholder_action");
+      assertEquals(url.toString(), `${TEST_MCP_SERVER_BASE_URL}/mcp/placeholder_provider/placeholder_action`);
       const body = JSON.parse(options!.body!.toString());
       assertEquals(body.args.param1, "{{placeholder_value}}");
       assertEquals(body.args.param2, "normal_value");

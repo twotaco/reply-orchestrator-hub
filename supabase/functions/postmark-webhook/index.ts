@@ -56,15 +56,21 @@ interface PostmarkWebhookPayload {
   }>
 }
 
+const MCP_SERVER_BASE_URL = "https://mcp.knowreply.email";
+
 interface KnowReplyAgentConfig {
   agent_id: string
   mcp_endpoints: Array<{
     id: string
-    name: string
-    post_url: string
-    auth_token: string | null
-    instructions?: string // Added for MCP Planner
-    expected_format?: any // Added for MCP Planner (future use for args_schema)
+    name: string // This is the unique AI name for the action
+    provider_name: string // e.g., "stripe", "hubspot"
+    action_name: string // e.g., "getCustomerByEmail", "createTicket"
+    auth_token: string | null // API key for the target provider
+    instructions?: string
+    expected_format?: any
+    // mcp_server_base_url is removed, post_url is also removed
+    // active status is also needed if we filter by it before passing to executeMCPPlan
+    active?: boolean
   }>
 }
 
@@ -296,12 +302,12 @@ Your entire response must be only the JSON array.`;
 // Function to execute the MCP plan
 async function executeMCPPlan(
   mcpPlan: any[],
-  availableMcps: KnowReplyAgentConfig['mcp_endpoints'], // These should have mcp_server_base_url, provider_name, action_name
+  availableMcps: KnowReplyAgentConfig['mcp_endpoints'],
   supabaseClient: any,
   userId: string,
   emailInteractionId: string
 ): Promise<any[]> {
-  console.log('🚀 Starting MCP Plan Execution (New Structure)...');
+  console.log('🚀 Starting MCP Plan Execution (Fixed Base URL)...');
   const results: any[] = [];
 
   if (!mcpPlan || mcpPlan.length === 0) {
@@ -323,10 +329,12 @@ async function executeMCPPlan(
     }
 
     console.log(`🔎 Looking for MCP configuration for tool: ${actionToExecute.tool}`);
+    // .tool from plan is the unique AI name, which is mcpConfig.name
     const mcpConfig = availableMcps.find(mcp => mcp.name === actionToExecute.tool);
 
-    if (!mcpConfig || !mcpConfig.mcp_server_base_url || !mcpConfig.provider_name || !mcpConfig.action_name) {
-      const errorMsg = `MCP configuration incomplete or not found for tool: ${actionToExecute.tool}. Required: mcp_server_base_url, provider_name, action_name.`;
+    // mcp_server_base_url is now fixed, so not needed in mcpConfig for URL construction
+    if (!mcpConfig || !mcpConfig.provider_name || !mcpConfig.action_name) {
+      const errorMsg = `MCP configuration incomplete or not found for tool: ${actionToExecute.tool}. Required fields from DB: provider_name, action_name.`;
       console.error(`❌ ${errorMsg}`);
       results.push({
         tool_name: actionToExecute.tool,
@@ -345,12 +353,12 @@ async function executeMCPPlan(
       continue;
     }
 
-    // Construct the target URL
-    let baseUrl = mcpConfig.mcp_server_base_url;
-    if (baseUrl.endsWith('/')) {
-      baseUrl = baseUrl.slice(0, -1); // Remove trailing slash if present
+    // Construct the target URL using the fixed base URL
+    let tempBaseUrl = MCP_SERVER_BASE_URL;
+    if (tempBaseUrl.endsWith('/')) {
+      tempBaseUrl = tempBaseUrl.slice(0, -1);
     }
-    const targetUrl = `${baseUrl}/mcp/${mcpConfig.provider_name}/${mcpConfig.action_name}`;
+    const targetUrl = `${tempBaseUrl}/mcp/${mcpConfig.provider_name}/${mcpConfig.action_name}`;
 
     console.log(`⚙️ Executing MCP: ${mcpConfig.name} via URL: ${targetUrl}`);
 
@@ -501,7 +509,8 @@ async function processEmailWithKnowReply(
     if (mcpEndpointIds.length > 0) {
       const { data: endpoints, error: endpointsError } = await supabase
         .from('mcp_endpoints')
-        .select('id, name, post_url, auth_token, instructions, expected_format') // Added instructions and expected_format
+        // Removed mcp_server_base_url and post_url from select. Added provider_name, action_name.
+        .select('id, name, provider_name, action_name, auth_token, instructions, expected_format, active')
         .in('id', mcpEndpointIds)
         .eq('active', true)
 
