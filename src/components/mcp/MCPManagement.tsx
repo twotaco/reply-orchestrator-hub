@@ -52,6 +52,7 @@ interface MCPEndpoint {
   mcp_server_base_url?: string; // Base URL of the MCP server, e.g., "http://localhost:8000"
   provider_name?: string; // e.g., "stripe", "hubspot"
   action_name?: string; // e.g., "getCustomerByEmail", "createTicket"
+  action_display_name?: string; // User-friendly display name for the action
   auth_token?: string; // API key for the target provider
   expected_format?: any;
   instructions?: string;
@@ -334,6 +335,7 @@ export function MCPManagement() {
           name: actionConfig.ai_name,
           provider_name: actionConfig.provider_name,
           action_name: actionConfig.action_name,
+          action_display_name: actionConfig.display_name, // Save the display name
           auth_token: formData.auth_token || null, // Use provider-level auth_token
           instructions: actionConfig.instructions,
           expected_format: parsedSamplePayload, // Save parsed JSON
@@ -442,10 +444,15 @@ export function MCPManagement() {
 
       // TODO: Update handleTest to construct the full URL if needed,
       // or to send components to a test service that knows how to call the MCP server.
-      // For now, this will likely fail if mcp_server_base_url is not a full callable URL by itself.
-      const testUrl = endpoint.mcp_server_base_url; // This needs refinement for actual testing
-      if (!testUrl) {
-        toast({ title: "Test Error", description: "MCP Server Base URL is not configured.", variant: "destructive" });
+
+      if (!endpoint.mcp_server_base_url || !endpoint.provider_name || !endpoint.action_name) {
+        toast({ title: "Test Error", description: "Endpoint configuration is incomplete (missing URL, provider, or action).", variant: "destructive" });
+        setTestingId(null);
+        return;
+      }
+      const testUrl = `${endpoint.mcp_server_base_url}/${endpoint.provider_name}/${endpoint.action_name}`;
+      if (!testUrl) { // This check is somewhat redundant now given the above, but kept for safety.
+        toast({ title: "Test Error", description: "MCP Server Base URL is not configured.", variant: "destructive" }); // This specific message might be misleading now
         setTestingId(null);
         return;
       }
@@ -502,6 +509,16 @@ export function MCPManagement() {
     );
   }
 
+  const groupedEndpoints: { [category: string]: MCPEndpoint[] } =
+    savedConfiguredActions.reduce((acc, endpoint) => {
+      const category = endpoint.category || 'Uncategorized'; // Default if category is somehow missing
+      if (!acc[category]) {
+        acc[category] = [];
+      }
+      acc[category].push(endpoint);
+      return acc;
+    }, {} as { [category: string]: MCPEndpoint[] });
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
@@ -520,7 +537,7 @@ export function MCPManagement() {
           <CardHeader>
             <CardTitle>
               {formData.selected_provider_name
-                ? `Configure Actions for ${formData.selected_provider_name.charAt(0).toUpperCase() + formData.selected_provider_name.slice(1)}`
+                ? `Configure Actions for ${categoryMapUtil[formData.selected_provider_name] || formData.selected_provider_name}`
                 : 'Select a Provider to Configure MCP Actions'}
             </CardTitle>
             <CardDescription>
@@ -579,7 +596,7 @@ export function MCPManagement() {
                 {Object.keys(actionFormsData).length > 0 && (
                   <Card className="mt-4">
                     <CardHeader>
-                      <CardTitle>Configure Actions for {formData.provider_name || formData.selected_provider_name}</CardTitle>
+                      <CardTitle>Configure Actions for {categoryMapUtil[formData.selected_provider_name] || formData.selected_provider_name}</CardTitle>
                       <CardDescription>Select and configure the actions you want to enable for this provider.</CardDescription>
                     </CardHeader>
                     <CardContent className="space-y-6">
@@ -657,99 +674,93 @@ export function MCPManagement() {
         </Card>
       )}
 
-      <Card>
+     <Card>
         <CardHeader>
-          <CardTitle>MCP Endpoints</CardTitle>
+          <CardTitle>Configured MCP Endpoints</CardTitle>
           <CardDescription>
-            {savedConfiguredActions.length} endpoint{savedConfiguredActions.length !== 1 ? 's' : ''} configured
+            {savedConfiguredActions.length} action(s) configured across {Object.keys(groupedEndpoints).length} provider(s).
           </CardDescription>
         </CardHeader>
         <CardContent>
-          {savedConfiguredActions.length === 0 ? (
+          {Object.keys(groupedEndpoints).length === 0 ? (
             <div className="text-center py-8 text-gray-500">
-              No MCP endpoints configured yet. Add your first endpoint to get started.
+              No MCP endpoints configured yet. Add one above to get started.
             </div>
           ) : (
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Name (AI Identifier)</TableHead>
-                  <TableHead>Category</TableHead>
-                  {/* MCP Server Base URL column removed */}
-                  <TableHead>Provider</TableHead>
-                  <TableHead>Action</TableHead>
-                  {/* <TableHead>Instructions</TableHead> */}
-                  <TableHead>Status</TableHead>
-                  <TableHead className="text-right">Actions</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {savedConfiguredActions.map((endpoint) => (
-                  <TableRow key={endpoint.id}>
-                    <TableCell className="font-medium">{endpoint.name}</TableCell>
-                    <TableCell>
-                      <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
-                        {endpoint.category}
-                      </span>
-                    </TableCell>
-                    {/* MCP Server Base URL cell removed */}
-                     <TableCell>
-                      <code className="text-sm bg-gray-100 px-2 py-1 rounded">
-                        {endpoint.provider_name || 'N/A'}
-                      </code>
-                    </TableCell>
-                     <TableCell>
-                      <code className="text-sm bg-gray-100 px-2 py-1 rounded">
-                        {endpoint.action_name || 'N/A'}
-                      </code>
-                    </TableCell>
-                    {/* <TableCell>
-                      {endpoint.instructions ? (
-                        <span className="text-sm text-gray-600 truncate max-w-xs block">
-                          {endpoint.instructions.substring(0, 30)}
-                          {endpoint.instructions.length > 30 ? '...' : ''}
-                        </span>
-                      ) : (
-                        <span className="text-sm text-gray-400">No instructions</span>
-                      )}
-                    </TableCell> */}
-                    <TableCell>
-                      <Switch
-                        checked={endpoint.active}
-                        onCheckedChange={() => toggleActive(endpoint.id, endpoint.active)}
-                      />
-                    </TableCell>
-                    <TableCell className="text-right">
-                      <div className="flex gap-2 justify-end">
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => handleTest(endpoint)}
-                          disabled={testingId === endpoint.id}
-                        >
-                          <TestTube className="h-4 w-4" />
-                          {testingId === endpoint.id ? 'Testing...' : 'Test'}
-                        </Button>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => handleEdit(endpoint)}
-                        >
-                          <Edit className="h-4 w-4" />
-                        </Button>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => handleDelete(endpoint.id)}
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
-                      </div>
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
+            Object.entries(groupedEndpoints).map(([category, actionsInGroup]) => (
+              <div key={category} className="mb-8 p-4 border rounded-lg shadow-sm">
+                <div className="flex justify-between items-center mb-4">
+                  <h3 className="text-2xl font-semibold text-gray-700">{categoryMapUtil[category.toLowerCase()] || category}</h3>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      // Find the first endpoint in the group to pass to handleEdit
+                      // handleEdit uses endpoint.category (which is already PascalCased here)
+                      // and endpoint.auth_token for pre-filling the form.
+                      if (actionsInGroup.length > 0) {
+                        handleEdit(actionsInGroup[0]);
+                      }
+                    }}
+                  >
+                    <Edit className="h-4 w-4 mr-2" />
+                    Edit Provider Settings
+                  </Button>
+                </div>
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead className="w-[30%]">Function Name</TableHead>
+                      <TableHead className="w-[30%]">Action Slug</TableHead>
+                      <TableHead className="w-[15%]">Status</TableHead>
+                      <TableHead className="text-right w-[25%]">Actions</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {actionsInGroup.map((endpoint) => (
+                      <TableRow key={endpoint.id}>
+                        <TableCell className="font-medium">
+                          {endpoint.action_display_name || endpoint.name} {/* Display name with fallback to AI name */}
+                        </TableCell>
+                        <TableCell>
+                          <code className="text-sm bg-gray-100 px-2 py-1 rounded">
+                            {endpoint.action_name || 'N/A'}
+                          </code>
+                        </TableCell>
+                        <TableCell>
+                          <Switch
+                            checked={endpoint.active}
+                            onCheckedChange={() => toggleActive(endpoint.id, endpoint.active)}
+                            aria-label={`Toggle status for ${endpoint.name}`}
+                          />
+                        </TableCell>
+                        <TableCell className="text-right">
+                          <div className="flex gap-2 justify-end">
+                            <Button
+                              variant="outline"
+                              size="icon"
+                              onClick={() => handleTest(endpoint)}
+                              disabled={testingId === endpoint.id}
+                              title="Test Action"
+                            >
+                              <TestTube className="h-4 w-4" />
+                            </Button>
+                            <Button
+                              variant="destructive"
+                              size="icon"
+                              onClick={() => handleDelete(endpoint.id)}
+                              title="Delete Action"
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+            ))
           )}
         </CardContent>
       </Card>
