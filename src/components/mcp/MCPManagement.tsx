@@ -199,9 +199,7 @@ export function MCPManagement() {
       selected_provider_name: selectedProviderNameValue,
       provider_name: selectedProviderNameValue === 'custom' ? '' : selectedProviderNameValue,
       action_name: '',
-      mcp_server_base_url: (selectedDiscoveredProvider?.mcp_server_type === 'knowreply_managed' && selectedProviderNameValue !== 'custom')
-                           ? 'https://mcp.knowreply.email'
-                           : (selectedProviderNameValue === 'custom' ? '' : prev.mcp_server_base_url),
+      mcp_server_base_url: 'https://mcp.knowreply.email',
       auth_token: '',
       instructions: selectedDiscoveredProvider?.description || (selectedProviderNameValue === 'custom' ? 'Define your custom provider.' : 'Select actions below.'),
       expected_format: '{}',
@@ -257,10 +255,7 @@ export function MCPManagement() {
        toast({ title: "Validation Error", description: "For 'Custom' provider type, please specify the actual Provider Name.", variant: "destructive"});
        return;
     }
-     if (!formData.mcp_server_base_url) {
-      toast({title: "Validation Error", description: "MCP Server Base URL is required.", variant: "destructive"});
-      return;
-    }
+    // Removed validation for mcp_server_base_url as it's now fixed.
 
     const operations: Promise<any>[] = [];
     let errorOccurred = false;
@@ -297,7 +292,7 @@ export function MCPManagement() {
           active: true, // is_selected implies active for saving
           user_id: user.id,
           category: formData.selected_provider_name, // The "group" or type of provider
-          mcp_server_base_url: formData.mcp_server_base_url,
+          mcp_server_base_url: 'https://mcp.knowreply.email', // Hardcoded URL
         };
 
         if (actionConfig.id) { // Existing, selected action: Update
@@ -521,17 +516,6 @@ export function MCPManagement() {
             {/* Common fields for the selected provider - if selected_provider_name is set */}
             {formData.selected_provider_name && (
               <>
-                <div>
-                  <Label htmlFor="mcp_server_base_url">MCP Server Base URL *</Label>
-                  <Input
-                    id="mcp_server_base_url"
-                    value={formData.mcp_server_base_url}
-                    onChange={(e) => setFormData({ ...formData, mcp_server_base_url: e.target.value })}
-                    placeholder="e.g., http://localhost:8080 or https://mcp.knowreply.email"
-                  />
-                  <p className="text-sm text-gray-500 mt-1">The base URL of your MCP server.</p>
-                </div>
-
                 {/* Provider Name input - only editable if "Custom" is selected from Provider dropdown */}
                 {formData.selected_provider_name === 'custom' && (
                   <div>
@@ -672,11 +656,11 @@ export function MCPManagement() {
         <CardHeader>
           <CardTitle>MCP Endpoints</CardTitle>
           <CardDescription>
-            {endpoints.length} endpoint{endpoints.length !== 1 ? 's' : ''} configured
+            {savedConfiguredActions.length} endpoint{savedConfiguredActions.length !== 1 ? 's' : ''} configured
           </CardDescription>
         </CardHeader>
         <CardContent>
-          {endpoints.length === 0 ? (
+          {savedConfiguredActions.length === 0 ? (
             <div className="text-center py-8 text-gray-500">
               No MCP endpoints configured yet. Add your first endpoint to get started.
             </div>
@@ -686,7 +670,7 @@ export function MCPManagement() {
                 <TableRow>
                   <TableHead>Name (AI Identifier)</TableHead>
                   <TableHead>Category</TableHead>
-                  <TableHead>MCP Server Base URL</TableHead>
+                  {/* MCP Server Base URL column removed */}
                   <TableHead>Provider</TableHead>
                   <TableHead>Action</TableHead>
                   {/* <TableHead>Instructions</TableHead> */}
@@ -695,7 +679,7 @@ export function MCPManagement() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {endpoints.map((endpoint) => (
+                {savedConfiguredActions.map((endpoint) => (
                   <TableRow key={endpoint.id}>
                     <TableCell className="font-medium">{endpoint.name}</TableCell>
                     <TableCell>
@@ -703,11 +687,7 @@ export function MCPManagement() {
                         {endpoint.category}
                       </span>
                     </TableCell>
-                    <TableCell>
-                      <code className="text-sm bg-gray-100 px-2 py-1 rounded truncate max-w-[200px] block">
-                        {endpoint.mcp_server_base_url || 'N/A'}
-                      </code>
-                    </TableCell>
+                    {/* MCP Server Base URL cell removed */}
                      <TableCell>
                       <code className="text-sm bg-gray-100 px-2 py-1 rounded">
                         {endpoint.provider_name || 'N/A'}
