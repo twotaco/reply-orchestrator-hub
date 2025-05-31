@@ -8,6 +8,14 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { toast } from '@/hooks/use-toast';
 import { Plus, Edit, Trash2, TestTube, Save, X } from 'lucide-react';
@@ -132,7 +140,12 @@ export function MCPManagement() {
   // editingId might be deprecated if "edit" means selecting provider and seeing its actions
   // const [editingId, setEditingId] = useState<string | null>(null);
   const [showAddForm, setShowAddForm] = useState(false); // Controls visibility of the configuration section
-  const [testingId, setTestingId] = useState<string | null>(null);
+  const [testingId, setTestingId] = useState<string | null>(null); // Used for disabling button during actual test execution
+
+  // State for Test Payload Modal
+  const [isTestModalOpen, setIsTestModalOpen] = useState(false);
+  const [testingEndpoint, setTestingEndpoint] = useState<MCPEndpoint | null>(null); // Endpoint being prepared for test in modal
+  const [currentTestPayload, setCurrentTestPayload] = useState<string>('');
 
   // New state for discovery client
   const [discoveredProviders, setDiscoveredProviders] = useState<DiscoveredProvider[] | null>(null);
@@ -431,10 +444,10 @@ export function MCPManagement() {
     }
   };
 
-  const handleTest = async (endpoint: MCPEndpoint) => {
-    setTestingId(endpoint.id);
+  const handleTest = async (endpointToTest: MCPEndpoint, payloadString: string) => {
+    setTestingId(endpointToTest.id); // For main button spinner & to disable "Run Test" in modal
 
-    if (!endpoint.mcp_server_base_url || !endpoint.provider_name || !endpoint.action_name) {
+    if (!endpointToTest.mcp_server_base_url || !endpointToTest.provider_name || !endpointToTest.action_name) {
       toast({ title: "Test Error", description: "Endpoint configuration is incomplete (missing URL, provider, or action).", variant: "destructive" });
       setTestingId(null);
       return;
@@ -451,13 +464,28 @@ export function MCPManagement() {
       return;
     }
 
+    let payloadForArgs: any;
     try {
-      const testUrl = `${endpoint.mcp_server_base_url}/mcp/${endpoint.provider_name}/${endpoint.action_name}`;
+      payloadForArgs = JSON.parse(payloadString);
+    } catch (e: any) {
+      toast({
+        title: "Test Error",
+        description: `Invalid JSON format in payload: ${e.message}`,
+        variant: "destructive",
+        duration: 10000
+      });
+      setIsTestModalOpen(false); // Close modal on parsing error
+      setTestingId(null); // Clear spinner
+      return;
+    }
+
+    try {
+      const testUrl = `${endpointToTest.mcp_server_base_url}/mcp/${endpointToTest.provider_name}/${endpointToTest.action_name}`;
       
       const newTestPayload = {
-        args: endpoint.expected_format || {}, // The sample payload
+        args: payloadForArgs, // Use the parsed payload from the modal
         auth: {
-          token: endpoint.auth_token || null // The provider-specific API key
+          token: endpointToTest.auth_token || null // The provider-specific API key
         }
       };
 
@@ -764,8 +792,12 @@ Response: ${typeof responseData === 'string' ? responseData.substring(0,300) : J
                             <Button
                               variant="outline"
                               size="icon"
-                              onClick={() => handleTest(endpoint)}
-                              disabled={testingId === endpoint.id}
+                              onClick={() => {
+                                setTestingEndpoint(endpoint);
+                                setCurrentTestPayload(JSON.stringify(endpoint.expected_format || {}, null, 2));
+                                setIsTestModalOpen(true);
+                              }}
+                              disabled={testingId === endpoint.id} // Keep this to disable if a test is actively running via testingId
                               title="Test Action"
                             >
                               <TestTube className="h-4 w-4" />
@@ -789,6 +821,54 @@ Response: ${typeof responseData === 'string' ? responseData.substring(0,300) : J
           )}
         </CardContent>
       </Card>
+
+      {/* Test Payload Modal */}
+      {testingEndpoint && (
+        <Dialog open={isTestModalOpen} onOpenChange={setIsTestModalOpen}>
+          <DialogContent className="sm:max-w-[600px]">
+            <DialogHeader>
+              <DialogTitle>
+                Test Action: {testingEndpoint.action_display_name || testingEndpoint.name}
+              </DialogTitle>
+              <DialogDescription>
+                Modify the JSON payload below to test with different inputs.
+                The 'args' will be taken from this payload. The 'auth.token' will use the configured Provider API Key for this provider ({categoryMapUtil[testingEndpoint.category.toLowerCase()] || testingEndpoint.category}).
+              </DialogDescription>
+            </DialogHeader>
+            <div className="grid gap-4 py-4">
+              <Label htmlFor="test-payload-textarea">Payload for "args" (JSON format)</Label>
+              <Textarea
+                id="test-payload-textarea"
+                value={currentTestPayload}
+                onChange={(e) => setCurrentTestPayload(e.target.value)}
+                placeholder='Enter JSON payload for "args"'
+                className="h-60 font-mono text-xs"
+              />
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setIsTestModalOpen(false)}>
+                Cancel
+              </Button>
+              <Button
+                onClick={() => {
+                  if (testingEndpoint) {
+                    handleTest(testingEndpoint, currentTestPayload);
+                    // setIsTestModalOpen(false); // Decided to keep modal open until test finishes or user cancels
+                                                // handleTest will close it on JSON parse error.
+                                                // The main "Test" button spinner is controlled by testingId.
+                  } else {
+                    toast({ title: "Error", description: "No endpoint selected for testing.", variant: "destructive" });
+                    setIsTestModalOpen(false);
+                  }
+                }}
+                disabled={testingId === testingEndpoint?.id}
+              >
+                {testingId === testingEndpoint?.id ? 'Testing...' : 'Run Test'}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      )}
     </div>
   );
 }
