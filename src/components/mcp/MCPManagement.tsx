@@ -54,7 +54,7 @@ interface MCPForm {
   auth_token: string; // API key for the target provider
   expected_format: string;
   instructions: string;
-  active: boolean;
+  // active: boolean; // Removed: Top-level active is deprecated
   // stripe_tools and server_type are deprecated in this new model
 }
 
@@ -185,7 +185,7 @@ export function MCPManagement() {
       auth_token: '',
       expected_format: '{}',
       instructions: '',
-      active: true,
+      // active: true, // Removed
     });
     setActionFormsData({});
     // setEditingId(null); // Deprecated
@@ -258,6 +258,18 @@ export function MCPManagement() {
     }
     // Removed validation for mcp_server_base_url as it's now fixed.
 
+    // Check if any action is selected
+    const anyActionSelected = Object.values(actionFormsData).some(action => action.is_selected);
+
+    if (anyActionSelected && (!formData.auth_token || formData.auth_token.trim() === '')) {
+      toast({
+        title: "Validation Error",
+        description: "Provider API Key is required when actions are selected.",
+        variant: "destructive"
+      });
+      return;
+    }
+
     const operations: Promise<any>[] = [];
     let errorOccurred = false;
     let itemsSaved = 0;
@@ -291,9 +303,9 @@ export function MCPManagement() {
           auth_token: formData.auth_token || null, // Use provider-level auth_token
           instructions: actionConfig.instructions,
           expected_format: parsedSamplePayload, // Save parsed JSON
-          active: true, // is_selected implies active for saving
+          active: actionConfig.is_selected, // Active status is based on selection
           user_id: user.id,
-          category: formData.selected_provider_name, // The "group" or type of provider
+          category: formData.selected_provider_name.toLowerCase(), // Ensure lowercase for category
           mcp_server_base_url: 'https://mcp.knowreply.email', // Hardcoded URL
         };
 
@@ -480,19 +492,8 @@ export function MCPManagement() {
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <Label htmlFor="name">MCP Endpoint Name (Unique ID for AI) *</Label>
-                <Input
-                  id="name"
-                  value={formData.name}
-                  onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                  placeholder="e.g., stripe_getCustomerByEmail"
-                />
-                <p className="text-sm text-gray-500 mt-1">
-                  This name will be used by the AI to identify this tool. E.g., 'stripe_getCustomerByEmail' or 'Fetch Stripe Customer'. Must be unique.
-                </p>
-              </div>
+            <div className="grid grid-cols-1 gap-4"> {/* Changed grid-cols-2 to grid-cols-1 as only one item remains here initially */}
+              {/* MCP Endpoint Name input removed */}
               <div>
                 <Label htmlFor="provider_select">Provider *</Label>
                 {discoveryLoading && <p className="text-sm text-gray-500">Loading providers...</p>}
@@ -535,13 +536,7 @@ export function MCPManagement() {
                      <p className="text-sm text-gray-500 mt-1">Your custom provider's unique name (e.g., my_internal_api).</p>
                   </div>
                 )}
-                {/* Display provider_name read-only if not custom */}
-                {formData.selected_provider_name !== 'custom' && formData.provider_name && (
-                   <div>
-                    <Label>Provider Name (from selection)</Label>
-                    <p className="text-sm py-2 px-3 bg-gray-100 rounded-md">{formData.provider_name}</p>
-                  </div>
-                )}
+                {/* Redundant display of provider_name removed */}
 
 
                 {/* Actions Section */}
@@ -598,30 +593,19 @@ export function MCPManagement() {
             {/* For example, a global auth_token might still be useful if all actions for a provider share one */}
              {formData.selected_provider_name && formData.selected_provider_name !== 'custom' && (
                 <div>
-                  <Label htmlFor="provider_auth_token">Default Provider API Key (Optional)</Label>
+                  <Label htmlFor="provider_auth_token">Provider API Key *</Label>
                   <Input
                     id="provider_auth_token"
                     type="password"
                     value={formData.auth_token} // This is the top-level auth_token now
                     onChange={(e) => setFormData({ ...formData, auth_token: e.target.value })}
-                    placeholder={`Optional: Default API Key for all ${formData.selected_provider_name} actions`}
+                    placeholder={`API Key for ${formData.selected_provider_name} actions`}
                   />
-                  <p className="text-sm text-gray-500 mt-1">
-                    If all actions for this provider share the same API key, you can set it here.
-                    Otherwise, set API keys per action if they differ or if this is left blank.
-                  </p>
+                  {/* Descriptive paragraph removed */}
                 </div>
              )}
 
-
-            <div className="flex items-center space-x-2 mt-4">
-              <Switch
-                id="active"
-                checked={formData.active}
-                onCheckedChange={(checked) => setFormData({ ...formData, active: checked })}
-              />
-              {/* The top-level active switch is removed, active is per-action */}
-            </div>
+            {/* Top-level active switch and its comment removed */}
 
             <div className="flex gap-2">
               <Button onClick={handleSave}>
