@@ -20,10 +20,10 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { toast } from '@/hooks/use-toast';
 import { Plus, Edit, Trash2, TestTube, Save, X } from 'lucide-react';
 import { Checkbox } from '@/components/ui/checkbox';
-import { Client } from "@modelcontextprotocol/sdk/client/index.js";
-import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
+import { Client } from "@modelcontextprotocol/sdk/client";
+import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp";
 // McpContent might be used later for typing responses, importing proactively.
-// import { McpContent } from "@modelcontextprotocol/sdk/types.js";
+// import { McpContent } from "@modelcontextprotocol/sdk/types";
 
 const categoryMapUtil: { [key: string]: string } = {
   'calendly': 'Calendly',
@@ -1099,8 +1099,6 @@ export function MCPManagement() {
                     ))}
                   </TableBody>
                 </Table>
-                // dont forget to close the )} brackets here!!!
-                )}
               </div>
             ))
           )}
