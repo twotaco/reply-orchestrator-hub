@@ -20,8 +20,12 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { toast } from '@/hooks/use-toast';
 import { Plus, Edit, Trash2, TestTube, Save, X } from 'lucide-react';
 import { Checkbox } from '@/components/ui/checkbox';
+import { Client } from "@modelcontextprotocol/sdk/client/index.js";
+import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
+// McpContent might be used later for typing responses, importing proactively.
+// import { McpContent } from "@modelcontextprotocol/sdk/types.js";
 
-const categoryMapUtil: { [key: string]: string } = { // Renamed to avoid conflict if any other 'categoryMap' exists in global scope for some reason
+const categoryMapUtil: { [key: string]: string } = {
   'calendly': 'Calendly',
   'hubspot': 'HubSpot',
   'klaviyo': 'Klaviyo',
@@ -70,19 +74,19 @@ interface MCPEndpoint {
   // post_url is deprecated, will be constructed from base_url, provider_name, action_name by the MCP server
 }
 
-interface DiscoveredProviderAction {
-  action_name: string;
+interface DiscoveredProviderAction { // Updated to reflect SDK's ActionDefinition structure (simplified)
+  action_name: string; // e.g., "getCustomerByEmail" (after splitting from "provider.actionName")
   display_name: string;
   description?: string;
-  sample_payload?: any; // Added for displaying sample payload
-  // We might add expected_payload_schema and response_schema here later
+  param_schema?: any; // Placeholder for ZodSchema from SDK if we want to use it later
+                     // sample_payload is no longer directly available from listActions
 }
 
-interface DiscoveredProvider {
-  provider_name: string;
-  display_name: string;
-  description?: string;
-  mcp_server_type: 'knowreply_managed' | 'self_hosted'; // To know if it's a standard one we might pre-fill base URL for
+interface DiscoveredProvider { // Updated
+  provider_name: string; // e.g., "stripe"
+  display_name: string; // e.g., "Stripe" (derived)
+  description?: string; // (derived or from SDK if available at provider level)
+  // mcp_server_type is removed as it's not part of SDK's listActions response
   actions: DiscoveredProviderAction[];
 }
 
@@ -134,6 +138,59 @@ const stripeTools = [ // This might be deprecated or used differently for custom
 
 export function MCPManagement() {
   const { user } = useAuth();
+
+  const mcpServerUrl = 'https://mcp.knowreply.email';
+
+  // MCP Client Setup
+  const [isMcpClientConnected, setIsMcpClientConnected] = useState(false);
+  const mcpClientAndTransport = useMemo(() => {
+    const internalApiKey = import.meta.env.VITE_MCP_SERVER_INTERNAL_API_KEY;
+    if (!internalApiKey) {
+      console.error("VITE_MCP_SERVER_INTERNAL_API_KEY is not set. MCP Client setup skipped.");
+      // Display a persistent error to the user if the key is missing, as parts of the UI will be non-functional.
+      // This could be a banner or a more integrated UI element. For now, console error + future toast.
+      return null;
+    }
+
+    const customFetch = async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+      const headers = new Headers(init?.headers);
+      headers.set('x-internal-api-key', internalApiKey);
+      return fetch(input, { ...init, headers });
+    };
+
+    const transport = new StreamableHTTPClientTransport(
+      new URL(mcpServerUrl), // SDK appends /mcp
+      customFetch
+    );
+
+    const client = new Client({
+      name: "KnowReplyHubClient",
+      version: "1.0.0"
+    });
+
+    return { client, transport };
+  }, []); // mcpServerUrl is a const defined outside, so no dependency needed for it.
+
+  useEffect(() => {
+    if (mcpClientAndTransport && !isMcpClientConnected) {
+      const { client, transport } = mcpClientAndTransport;
+      client.connect(transport)
+        .then(() => {
+          console.log("MCP Client connected successfully.");
+          setIsMcpClientConnected(true);
+          // Consider fetching initial data like discoveredProviders via MCP client here
+        })
+        .catch(err => {
+          console.error("MCP Client failed to connect:", err);
+          toast({ title: "MCP Connection Error", description: `Failed to connect to MCP server: ${err.message}. Some features may be unavailable.`, variant: "destructive", duration: 10000});
+          setIsMcpClientConnected(false);
+        });
+      // Optional: return cleanup function for client.close() or transport.close() if needed on unmount.
+      // return () => { client.close(); }; // Example, check SDK for proper cleanup
+    }
+  }, [mcpClientAndTransport, isMcpClientConnected]);
+
+
   // Renamed 'endpoints' to 'savedConfiguredActions' for clarity
   const [savedConfiguredActions, setSavedConfiguredActions] = useState<MCPEndpoint[]>([]);
   const [loading, setLoading] = useState(true); // For existing endpoints list
@@ -175,31 +232,82 @@ export function MCPManagement() {
 
   useEffect(() => {
     if (user) {
-      fetchEndpoints(); // Fetches savedConfiguredActions
-      fetchDiscoveryData();
+      fetchEndpoints(); // Fetches savedConfiguredActions (from Supabase)
+      if (isMcpClientConnected && mcpClientAndTransport?.client) {
+        fetchMcpActions();
+      } else if (!import.meta.env.VITE_MCP_SERVER_INTERNAL_API_KEY && !discoveryLoading) {
+        setDiscoveryError("MCP Server Internal API Key is not configured. Cannot fetch provider actions.");
+        setDiscoveryLoading(false);
+      }
     }
-  }, [user]);
+  }, [user, isMcpClientConnected, mcpClientAndTransport, discoveryLoading]); // Added discoveryLoading to deps to prevent potential re-runs if error is set
 
-  const fetchDiscoveryData = async () => {
+  const fetchMcpActions = async () => {
+    if (!mcpClientAndTransport?.client || !isMcpClientConnected) {
+      // This condition should ideally prevent this function from being called if client not ready,
+      // but as a safeguard:
+      setDiscoveryError("MCP Client not available or not connected.");
+      setDiscoveryLoading(false);
+      return;
+    }
+
     setDiscoveryLoading(true);
     setDiscoveryError(null);
     try {
-      const response = await fetch('https://mcp.knowreply.email/discover');
-      if (!response.ok) {
-        throw new Error(`HTTP error ${response.status}: ${response.statusText}`);
+      const client = mcpClientAndTransport.client;
+      const sdkActionsResponse = await client.listActions();
+
+      const providerActionsMap: { [providerName: string]: DiscoveredProviderAction[] } = {};
+      const providerMetaMap: { [providerName: string]: { displayName: string, description: string } } = {};
+
+      for (const sdkAction of sdkActionsResponse.actions) {
+        let providerName = 'general';
+        let actionNameOnly = sdkAction.name;
+        const nameParts = sdkAction.name.split('.');
+
+        if (nameParts.length > 1) {
+          providerName = nameParts[0];
+          actionNameOnly = nameParts.slice(1).join('.');
+        } else {
+          // If no explicit provider, it might be a general action.
+          // Or, the provider might be an implicit part of the server's setup not in the name.
+          // For now, we group under 'general' or a default.
+          // This behavior might need refinement based on how such actions should be presented.
+          console.warn(`Action '${sdkAction.name}' does not follow 'provider.action' naming. Grouping under '${providerName}'.`);
+        }
+
+        if (!providerActionsMap[providerName]) {
+          providerActionsMap[providerName] = [];
+          providerMetaMap[providerName] = {
+            displayName: categoryMapUtil[providerName] || (providerName.charAt(0).toUpperCase() + providerName.slice(1)),
+            description: `Actions related to ${categoryMapUtil[providerName] || (providerName.charAt(0).toUpperCase() + providerName.slice(1))}.`
+          };
+        }
+
+        providerActionsMap[providerName].push({
+          action_name: actionNameOnly,
+          display_name: sdkAction.displayName || actionNameOnly.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase()),
+          description: sdkAction.description,
+          param_schema: sdkAction.paramSchema,
+          // sample_payload is no longer directly available.
+          // We might generate one from param_schema if needed, or link to schema docs.
+          // For now, it's removed from DiscoveredProviderAction or can be set to {}
+        });
       }
-      const data = await response.json();
-      if (data && Array.isArray(data.providers)) {
-        setDiscoveredProviders(data.providers);
-        console.log("Fetched MCP Discovery Data:", data.providers);
-      } else {
-        throw new Error("Discovery data is not in the expected format (missing 'providers' array).");
-      }
-    } catch (error: any) { // Added ': any' to access error properties more freely if needed, or type guard
-      console.error('Detailed error fetching MCP discovery data:', error); // Log the full error object
-      // Keep existing error message for UI
-      setDiscoveryError(`Failed to fetch MCP discovery data. Details: ${error.message}. Check console for more info.`);
-      // toast({ title: "Discovery Error", description: `Failed to fetch MCP providers: ${error.message}`, variant: "destructive" });
+
+      const newDiscoveredProviders: DiscoveredProvider[] = Object.keys(providerActionsMap).map(providerName => ({
+        provider_name: providerName,
+        display_name: providerMetaMap[providerName].displayName,
+        description: providerMetaMap[providerName].description,
+        actions: providerActionsMap[providerName],
+      }));
+
+      setDiscoveredProviders(newDiscoveredProviders);
+      console.log("Fetched and transformed MCP Actions via SDK:", newDiscoveredProviders);
+
+    } catch (error: any) {
+      console.error('Error fetching MCP actions via SDK:', error);
+      setDiscoveryError(`Failed to fetch MCP actions: ${error.message}`);
     } finally {
       setDiscoveryLoading(false);
     }
@@ -991,7 +1099,6 @@ export function MCPManagement() {
                     ))}
                   </TableBody>
                 </Table>
-                )}
               </div>
             ))
           )}
