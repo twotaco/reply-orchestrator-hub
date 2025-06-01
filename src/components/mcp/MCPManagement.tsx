@@ -146,6 +146,12 @@ export function MCPManagement() {
   const [isTestModalOpen, setIsTestModalOpen] = useState(false);
   const [testingEndpoint, setTestingEndpoint] = useState<MCPEndpoint | null>(null); // Endpoint being prepared for test in modal
   const [currentTestPayload, setCurrentTestPayload] = useState<string>('');
+  const [testResponse, setTestResponse] = useState<string | null>(null); // State for storing test response
+
+  // State for Inline Provider Editing
+  const [editingCategory, setEditingCategory] = useState<string | null>(null);
+  const [editingApiKey, setEditingApiKey] = useState<string>('');
+  const [editingActionsSelection, setEditingActionsSelection] = useState<Record<string, boolean>>({});
 
   // New state for discovery client
   const [discoveredProviders, setDiscoveredProviders] = useState<DiscoveredProvider[] | null>(null);
@@ -196,6 +202,98 @@ export function MCPManagement() {
       // toast({ title: "Discovery Error", description: `Failed to fetch MCP providers: ${error.message}`, variant: "destructive" });
     } finally {
       setDiscoveryLoading(false);
+    }
+  };
+
+  const handleInlineProviderSave = async () => {
+    if (!editingCategory || !user) {
+      toast({ title: "Error", description: "Editing context is missing.", variant: "destructive" });
+      return;
+    }
+
+    const anyActionSelectedInInlineEdit = Object.values(editingActionsSelection).some(isSelected => isSelected);
+    if (anyActionSelectedInInlineEdit && (!editingApiKey || editingApiKey.trim() === '')) {
+      toast({
+        title: "Validation Error",
+        description: "Provider API Key is required when actions are selected for this provider.",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    const providerData = discoveredProviders?.find(p => p.provider_name === editingCategory);
+    if (!providerData) {
+      toast({ title: "Error", description: `Could not find discoverable provider data for ${editingCategory}.`, variant: "destructive" });
+      return;
+    }
+
+    const currentSavedActionsInThisCategory = savedConfiguredActions.filter(
+      sa => sa.provider_name === editingCategory // provider_name is lowercase from DB
+    );
+    const operations: Promise<any>[] = [];
+    let itemsUpdated = 0;
+    let itemsAdded = 0;
+    let itemsDeleted = 0;
+
+    // Process discoverable actions for inserts or updates
+    for (const discoveredAction of providerData.actions) {
+      const isSelected = !!editingActionsSelection[discoveredAction.action_name];
+      const existingSavedAction = currentSavedActionsInThisCategory.find(sa => sa.action_name === discoveredAction.action_name);
+
+      if (isSelected) {
+        const dataToSave = {
+          name: `${editingCategory}_${discoveredAction.action_name}`, // AI Name
+          category: getPascalCaseCategory(editingCategory), // PascalCase for DB 'category' field
+          mcp_server_base_url: 'https://mcp.knowreply.email',
+          provider_name: editingCategory, // Lowercase provider name for DB 'provider_name' field
+          action_name: discoveredAction.action_name,
+          action_display_name: discoveredAction.display_name || discoveredAction.action_name,
+          auth_token: editingApiKey.trim(),
+          expected_format: discoveredAction.sample_payload || {},
+          instructions: discoveredAction.description || '',
+          active: true, // If selected in UI, it's active
+          user_id: user.id,
+        };
+        if (existingSavedAction) { // Update existing
+          operations.push(supabase.from('mcp_endpoints').update({
+            ...dataToSave,
+            id: existingSavedAction.id // ensure id is part of update payload for clarity, though not strictly needed for .eq
+          }).eq('id', existingSavedAction.id));
+          itemsUpdated++;
+        } else { // Insert new
+          operations.push(supabase.from('mcp_endpoints').insert([dataToSave]));
+          itemsAdded++;
+        }
+      } else { // Not selected in UI
+        if (existingSavedAction) { // Was saved, now deselected: Delete
+          operations.push(supabase.from('mcp_endpoints').delete().eq('id', existingSavedAction.id));
+          itemsDeleted++;
+        }
+      }
+    }
+
+    if (operations.length === 0) {
+      toast({title: "No Changes", description: "No changes were made to this provider's configuration."});
+      setEditingCategory(null);
+      setEditingApiKey('');
+      setEditingActionsSelection({});
+      return;
+    }
+
+    try {
+      const results = await Promise.all(operations);
+      results.forEach(result => {
+        if (result.error) throw result.error;
+      });
+      toast({ title: "Success", description: `Successfully updated ${getPascalCaseCategory(editingCategory)}: ${itemsAdded} added, ${itemsUpdated} updated, ${itemsDeleted} removed.` });
+      fetchEndpoints(); // Refresh the main list
+    } catch (error: any) {
+      console.error('Error saving inline MCP configurations:', error);
+      toast({ title: "Error", description: `Failed to save configurations: ${error.message}`, variant: "destructive" });
+    } finally {
+      setEditingCategory(null);
+      setEditingApiKey('');
+      setEditingActionsSelection({});
     }
   };
 
@@ -468,13 +566,15 @@ export function MCPManagement() {
     try {
       payloadForArgs = JSON.parse(payloadString);
     } catch (e: any) {
+      const errorMessage = `Invalid JSON format in payload: ${e.message}`;
       toast({
         title: "Test Error",
-        description: `Invalid JSON format in payload: ${e.message}`,
+        description: errorMessage,
         variant: "destructive",
         duration: 10000
       });
-      setIsTestModalOpen(false); // Close modal on parsing error
+      setTestResponse(errorMessage); // Show JSON parse error in modal response area
+      // setIsTestModalOpen(false); // Keep modal open to show error
       setTestingId(null); // Clear spinner
       return;
     }
@@ -513,23 +613,29 @@ export function MCPManagement() {
           // console.warn("Response was not valid JSON, using raw text.");
       }
       
+      const formattedResponseForState = typeof responseData === 'string'
+                                       ? responseData
+                                       : JSON.stringify(responseData, null, 2);
+      setTestResponse(formattedResponseForState);
+
       toast({
         title: response.ok ? "Test Successful" : "Test Failed",
-        description: `Status: ${response.status} - ${response.statusText}
-Response: ${typeof responseData === 'string' ? responseData.substring(0,300) : JSON.stringify(responseData, null, 2).substring(0,300)}...`,
+        description: `Status: ${response.status} - ${response.statusText}. Full response in modal.`,
         variant: response.ok ? "default" : "destructive",
         duration: response.ok ? 5000 : 10000
       });
 
     } catch (error: any) {
       console.error('Error testing endpoint:', error);
+      const errorMessage = `Network error or other issue: ${error.message}`;
+      setTestResponse(errorMessage);
       toast({
         title: "Test Failed",
-        description: `Network error or other issue: ${error.message}`,
+        description: errorMessage,
         variant: "destructive",
       });
     } finally {
-      setTestingId(null);
+      setTestingId(null); // Clear spinner for the main button
     }
   };
 
@@ -748,22 +854,90 @@ Response: ${typeof responseData === 'string' ? responseData.substring(0,300) : J
                     variant="outline"
                     size="sm"
                     onClick={() => {
-                      // Find the first endpoint in the group to pass to handleEdit
-                      // handleEdit uses endpoint.category (which is already PascalCased here)
-                      // and endpoint.auth_token for pre-filling the form.
-                      if (actionsInGroup.length > 0) {
-                        handleEdit(actionsInGroup[0]);
+                      const lowerCategory = category.toLowerCase(); // Key for discoveredProviders is lowercase
+                      setEditingCategory(lowerCategory);
+                      const currentProviderApiKey = actionsInGroup.length > 0 ? (actionsInGroup[0].auth_token || '') : '';
+                      setEditingApiKey(currentProviderApiKey);
+
+                      const initialSelections: Record<string, boolean> = {};
+                      const providerData = discoveredProviders?.find(p => p.provider_name === lowerCategory);
+                      if (providerData && providerData.actions) {
+                        providerData.actions.forEach(discoveredAction => {
+                          // actionsInGroup are already filtered for the current category (PascalCase key from groupedEndpoints)
+                          // and their provider_name field should be lowercase.
+                          const savedAction = actionsInGroup.find(sa =>
+                            sa.action_name === discoveredAction.action_name &&
+                            sa.provider_name === lowerCategory // Ensure we are matching against the lowercase provider_name
+                          );
+                          initialSelections[discoveredAction.action_name] = savedAction ? savedAction.active : false;
+                        });
                       }
+                      setEditingActionsSelection(initialSelections);
+                      setShowAddForm(false);
                     }}
                   >
                     <Edit className="h-4 w-4 mr-2" />
-                    Edit Provider Settings
+                    Configure Provider
                   </Button>
                 </div>
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead className="w-[30%]">Function Name</TableHead>
+                {editingCategory === category.toLowerCase() ? ( // Compare with lowercase editingCategory
+                  <div className="p-4 border-t border-dashed mt-2 space-y-4">
+                    <div>
+                      <Label htmlFor={`edit-apikey-${category}`}>Provider API Key *</Label>
+                      <Input
+                        id={`edit-apikey-${category}`}
+                        type="password"
+                        value={editingApiKey}
+                        onChange={(e) => setEditingApiKey(e.target.value)}
+                        placeholder={`Enter API Key for ${categoryMapUtil[category.toLowerCase()] || category}`}
+                        className="mt-1"
+                      />
+                    </div>
+
+                    <div>
+                      <h4 className="text-md font-semibold mb-2">Configure Actions:</h4>
+                      <div className="space-y-2 max-h-60 overflow-y-auto p-2 border rounded-md"> {/* Scrollable action list */}
+                        {(discoveredProviders?.find(p => p.provider_name === category.toLowerCase())?.actions || []).map(discoveredAction => (
+                          <div key={discoveredAction.action_name} className="flex items-center space-x-2">
+                            <Checkbox
+                              id={`inline-edit-action-${category}-${discoveredAction.action_name}`}
+                              checked={!!editingActionsSelection[discoveredAction.action_name]}
+                              onCheckedChange={(checked) => {
+                                setEditingActionsSelection(prev => ({
+                                  ...prev,
+                                  [discoveredAction.action_name]: !!checked
+                                }));
+                              }}
+                            />
+                            <Label htmlFor={`inline-edit-action-${category}-${discoveredAction.action_name}`} className="font-normal">
+                              {discoveredAction.display_name} ({discoveredAction.action_name})
+                            </Label>
+                          </div>
+                        ))}
+                         { (discoveredProviders?.find(p => p.provider_name === category.toLowerCase())?.actions || []).length === 0 && (
+                            <p className="text-sm text-gray-500">No discoverable actions found for this provider.</p>
+                         )}
+                      </div>
+                    </div>
+
+                    <div className="flex justify-end gap-2 mt-4">
+                      <Button variant="outline" onClick={() => {
+                        setEditingCategory(null);
+                        setEditingApiKey('');
+                        setEditingActionsSelection({});
+                      }}>
+                        Cancel
+                      </Button>
+                      <Button onClick={handleInlineProviderSave}>
+                        Save Changes
+                      </Button>
+                    </div>
+                  </div>
+                ) : (
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead className="w-[30%]">Function Name</TableHead>
                       <TableHead className="w-[30%]">Action Slug</TableHead>
                       <TableHead className="w-[15%]">Status</TableHead>
                       <TableHead className="text-right w-[25%]">Actions</TableHead>
@@ -795,6 +969,7 @@ Response: ${typeof responseData === 'string' ? responseData.substring(0,300) : J
                               onClick={() => {
                                 setTestingEndpoint(endpoint);
                                 setCurrentTestPayload(JSON.stringify(endpoint.expected_format || {}, null, 2));
+                                setTestResponse(null); // Clear previous results when opening modal
                                 setIsTestModalOpen(true);
                               }}
                               disabled={testingId === endpoint.id} // Keep this to disable if a test is actively running via testingId
@@ -842,20 +1017,29 @@ Response: ${typeof responseData === 'string' ? responseData.substring(0,300) : J
                 value={currentTestPayload}
                 onChange={(e) => setCurrentTestPayload(e.target.value)}
                 placeholder='Enter JSON payload for "args"'
-                className="h-60 font-mono text-xs"
+                className="h-40 font-mono text-xs" // Reduced height
               />
             </div>
+            {testResponse !== null && (
+              <div className="mt-4">
+                <Label htmlFor="test-response-area">Test Response</Label>
+                <pre
+                  id="test-response-area"
+                  className="mt-1 p-2 text-xs bg-gray-100 rounded-md overflow-x-auto h-40 border"
+                >
+                  {testResponse}
+                </pre>
+              </div>
+            )}
             <DialogFooter>
-              <Button variant="outline" onClick={() => setIsTestModalOpen(false)}>
+              <Button variant="outline" onClick={() => { setIsTestModalOpen(false); setTestResponse(null); } }>
                 Cancel
               </Button>
               <Button
                 onClick={() => {
                   if (testingEndpoint) {
+                    setTestResponse(null); // Clear previous results before running a new test
                     handleTest(testingEndpoint, currentTestPayload);
-                    // setIsTestModalOpen(false); // Decided to keep modal open until test finishes or user cancels
-                                                // handleTest will close it on JSON parse error.
-                                                // The main "Test" button spinner is controlled by testingId.
                   } else {
                     toast({ title: "Error", description: "No endpoint selected for testing.", variant: "destructive" });
                     setIsTestModalOpen(false);
