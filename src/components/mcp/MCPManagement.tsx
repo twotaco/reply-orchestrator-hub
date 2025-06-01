@@ -1099,6 +1099,8 @@ export function MCPManagement() {
                     ))}
                   </TableBody>
                 </Table>
+                // dont forget to close the )} brackets here!!!
+                )}
               </div>
             ))
           )}
