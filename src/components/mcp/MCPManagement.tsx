@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useAuth } from '@/hooks/useAuth';
 import { supabase } from '@/integrations/supabase/client';
 import { Button } from '@/components/ui/button';
@@ -1099,7 +1099,6 @@ export function MCPManagement() {
                     ))}
                   </TableBody>
                 </Table>
-                )}
               </div>
             ))
           )}
