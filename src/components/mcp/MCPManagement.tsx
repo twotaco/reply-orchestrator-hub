@@ -20,7 +20,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { toast } from '@/hooks/use-toast';
 import { Plus, Edit, Trash2, TestTube, Save, X } from 'lucide-react';
 import { Checkbox } from '@/components/ui/checkbox';
-import { Client } from "@modelcontextprotocol/sdk/client.js";
+import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 // McpContent might be used later for typing responses, importing proactively.
 // import { McpContent } from "@modelcontextprotocol/sdk/types";
