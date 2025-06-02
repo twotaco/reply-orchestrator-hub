@@ -1056,4 +1056,4 @@ export function MCPManagement() {
       )}
     </div>
   );
-}
+} 
