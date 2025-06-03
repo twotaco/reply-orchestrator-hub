@@ -7,7 +7,7 @@ import {
   assertThrows,
 } from "https://deno.land/std@0.214.0/assert/mod.ts";
 import { stub, spy, type Stub, type Spy } from "https://deno.land/std@0.214.0/testing/mock.ts";
-import { generateMCPToolPlan, executeMCPPlan, KnowReplyAgentConfig } from './index.ts';
+import { generateMCPToolPlan, executeMCPPlan, KnowReplyAgentConfig, resolvePath } from './index.ts'; // Added resolvePath
 
 // --- Global Test Utilities ---
 const TEST_MCP_SERVER_BASE_URL = "https://mcp.knowreply.email";
@@ -22,14 +22,13 @@ const mockGeminiFetch = (
 // Helper to create a Supabase client mock
 interface MockSupabaseClient {
   from: (tableName: string) => {
-    select: (selectStr?: string) => any; // Adjust to be more specific if needed
+    select: (selectStr?: string) => any;
     insert: Spy<any, any[], Promise<{ error: any; data: any; }>>;
   };
 }
 
 const createMockSupabaseClient = (params?: {
   mcpConnectionParamsData?: Record<string, { connection_values: any, error?: any }>;
-  // llmLimitData?: { count: number, error?: any }; // Not used in current tests, can add if needed
 }): MockSupabaseClient => {
   const spies: Record<string, Spy<any, any[], Promise<{ error: any; data: any; }>>> = {};
 
@@ -55,7 +54,6 @@ const createMockSupabaseClient = (params?: {
               })
             };
           }
-          // Add other select mocks if needed for other tables
           return {
             eq: () => ({ single: async () => ({ data: {}, error: "Not implemented in mock select" }) })
           } as any;
@@ -65,6 +63,49 @@ const createMockSupabaseClient = (params?: {
     },
   };
 };
+
+Deno.test("resolvePath utility tests", async (t) => {
+  const testCases = [
+    { name: "simple direct property access", obj: { user: { name: "John" } }, path: "user.name", expected: "John" },
+    { name: "direct id access", obj: { id: "123" }, path: "id", expected: "123" },
+    { name: "array element access", obj: { orders: [{ id: 101 }, { id: 102 }] }, path: "orders[0].id", expected: 101 },
+    { name: "array direct element access", obj: { items: ["a", "b"] }, path: "items[1]", expected: "b" },
+    { name: "nested array and object access", obj: { data: { results: [{ value: "test" }] } }, path: "data.results[0].value", expected: "test" },
+    { name: "path with multiple array indexes", obj: { matrix: [[1,2],[3,4]]}, path: "matrix[1][0]", expected: 3 },
+    { name: "non-existent top-level property", obj: { user: { name: "John" } }, path: "customer.name", expected: undefined },
+    { name: "non-existent nested property", obj: { user: { name: "John" } }, path: "user.age", expected: undefined },
+    { name: "out-of-bounds array index (positive)", obj: { orders: [{ id: 101 }] }, path: "orders[1].id", expected: undefined },
+    { name: "out-of-bounds array index (negative)", obj: { orders: [{ id: 101 }] }, path: "orders[-1].id", expected: undefined },
+    { name: "property on non-object intermediate path", obj: { user: "John" }, path: "user.name", expected: undefined },
+    { name: "index on non-array intermediate path", obj: { orders: { notAnArray: true } }, path: "orders[0].id", expected: undefined },
+    { name: "empty path", obj: { user: "John" }, path: "", expected: undefined },
+    { name: "null object", obj: null, path: "user.name", expected: undefined },
+    { name: "undefined object", obj: undefined, path: "user.name", expected: undefined },
+    { name: "path with hyphens", obj: { "user-data": { "full-name": "John Doe" } }, path: "user-data.full-name", expected: "John Doe"},
+    { name: "path with numbers in property names", obj: { "prop1": { "item0": "val" } }, path: "prop1.item0", expected: "val"},
+    { name: "path starting with array index (direct object)", obj: { arr: [ {a:1} ] }, path: "arr[0]", expected: {a:1} },
+    { name: "path is just an array index for top level array object value", obj: [{a:1}], path: "[0].a", expected: 1},
+    { name: "path is just an array index for top level array direct value", obj: ["first", "second"], path: "[1]", expected: "second"},
+    { name: "path to a value that is explicitly undefined", obj: { user: { name: undefined } }, path: "user.name", expected: undefined },
+    { name: "path with leading/trailing dots", obj: { user: "John" }, path: ".user.", expected: undefined },
+    { name: "path with multiple consecutive dots", obj: { user: "John" }, path: "user..name", expected: undefined },
+];
+
+  for (const tc of testCases) {
+    await t.step(tc.name, () => {
+      assertEquals(resolvePath(tc.obj, tc.path), tc.expected);
+    });
+  }
+
+   await t.step("empty path returns undefined (current behavior)", () => {
+    const obj = {a:1};
+    assertEquals(resolvePath(obj, ""), undefined);
+  });
+
+  await t.step("path is just an array index for top level array (direct object access)", () => {
+    assertEquals(resolvePath([{a:1}], "[0]"), {a:1});
+  });
+});
 
 
 Deno.test("[generateMCPToolPlan] should generate a plan successfully", async () => {
@@ -93,15 +134,14 @@ Deno.test("[generateMCPToolPlan] should generate a plan successfully", async () 
     const mockSupabase = createMockSupabaseClient();
     insertSpy = mockSupabase.from("llm_logs").insert;
 
-    const plan = await generateMCPToolPlan("Test email body", mockAvailableMcps, mockApiKey, mockSupabase as any, "user1", "email1");
+    const plan = await generateMCPToolPlan("Test email body", "sender@example.com", "Sender Name", mockAvailableMcps, mockApiKey, mockSupabase as any, "user1", "email1");
     assertEquals(plan, expectedPlan);
     assertEquals(insertSpy.calls.length, 1);
-    const logData = insertSpy.calls[0].args[0][0]; // insert takes an array of records
+    const logData = insertSpy.calls[0].args[0][0];
     assertEquals(logData.model_used, "gemini-1.5-pro");
   } finally {
     envGetStubInstance?.restore();
     fetchStubInstance?.restore();
-    // Spies on objects returned by createMockSupabaseClient don't need individual restore if client is recreated
   }
 });
 
@@ -119,7 +159,7 @@ Deno.test("[generateMCPToolPlan] should handle Gemini API error", async () => {
     const mockSupabase = createMockSupabaseClient();
     insertSpy = mockSupabase.from("llm_logs").insert;
 
-    const plan = await generateMCPToolPlan("Test email body", mockAvailableMcps, mockApiKey, mockSupabase as any, "user1", "email1");
+    const plan = await generateMCPToolPlan("Test email body", "sender@example.com", "Sender Name", mockAvailableMcps, mockApiKey, mockSupabase as any, "user1", "email1");
     assertEquals(plan, null);
     assertEquals(insertSpy.calls.length, 1);
     assert(insertSpy.calls[0].args[0][0].error_message?.includes("Gemini API error"));
@@ -128,9 +168,6 @@ Deno.test("[generateMCPToolPlan] should handle Gemini API error", async () => {
     fetchStubInstance?.restore();
   }
 });
-
-// ... (similar refactor for other generateMCPToolPlan tests: empty array, invalid JSON, SAFETY block) ...
-// For brevity, I will show one more generateMCPToolPlan test and then skip to executeMCPPlan tests
 
 Deno.test("[generateMCPToolPlan] should return empty array if no tools needed", async () => {
     let envGetStubInstance: Stub<Deno.Env> | undefined;
@@ -144,7 +181,7 @@ Deno.test("[generateMCPToolPlan] should return empty array if no tools needed", 
         fetchStubInstance = mockGeminiFetch(async () => Promise.resolve(new Response(JSON.stringify(geminiResponse), { status: 200 })));
         const mockSupabase = createMockSupabaseClient();
         insertSpy = mockSupabase.from("llm_logs").insert;
-        const plan = await generateMCPToolPlan("Thank you email", mockAvailableMcps, mockApiKey, mockSupabase as any, "user1", "email1");
+        const plan = await generateMCPToolPlan("Thank you email", "sender@example.com", "Sender Name", mockAvailableMcps, mockApiKey, mockSupabase as any, "user1", "email1");
         assertEquals(plan, []);
         assertEquals(insertSpy.calls.length, 1);
     } finally {
@@ -181,14 +218,11 @@ Deno.test("[executeMCPPlan] successful execution of a single action", async () =
     assertEquals(results[0].status, "success");
     assertEquals(results[0].response?.paymentId, "pi_123");
     assertEquals(activityLogSpy.calls.length, 1);
-    // The first argument to insert is the array of records, or a single record.
-    // In executeMCPPlan, activity_logs are inserted as single records.
     const logEntryArg = activityLogSpy.calls[0].args[0] as any;
     assertEquals(logEntryArg.details.target_url, `${TEST_MCP_SERVER_BASE_URL}/mcp/stripe/createPayment`);
   } finally {
     envGetStubInstance?.restore();
     if (originalGlobalFetch) globalThis.fetch = originalGlobalFetch;
-    // Spies on mockSupabase are part of the object, no separate restore needed if mockSupabase is test-scoped
   }
 });
 
@@ -201,7 +235,7 @@ Deno.test("[executeMCPPlan] multi-step plan with output/input chaining (placehol
   try {
     envGetStubInstance = stub(Deno.env, "get", (key: string) => {
       if (key === 'MCP_SERVER_INTERNAL_API_KEY') return "test_internal_key";
-      if (key === 'GEMINI_MODEL') return "gemini-1.5-pro"; // For consistency if any part of execute calls generate
+      if (key === 'GEMINI_MODEL') return "gemini-1.5-pro";
       return undefined;
     });
     consoleLogSpyInstance = stub(console, "log");
@@ -260,8 +294,6 @@ Deno.test("[executeMCPPlan] multi-step plan with output/input chaining (placehol
   }
 });
 
-
-// Minimal placeholder for other executeMCPPlan tests to be refactored similarly
 Deno.test("[executeMCPPlan] other error condition (example - to be filled/refactored)", async () => {
     let envGetStubInstance: Stub<Deno.Env> | undefined;
     try {
@@ -269,10 +301,8 @@ Deno.test("[executeMCPPlan] other error condition (example - to be filled/refact
         const mcpPlan = [{ tool: "mcp:failing.tool", args: {data: "any"}}];
         const availableMcps: KnowReplyAgentConfig['mcp_endpoints'] = [{id: "id1", name: "mcp:failing.tool", provider_name: "failing", action_name: "action", active: true}];
         const mockSupabase = createMockSupabaseClient({mcpConnectionParamsData: {"failing": {connection_values: {token: "tok"}}}});
-        // specific fetch mock for this error condition
         const results = await executeMCPPlan(mcpPlan, availableMcps, mockSupabase as any, "user1", "email1");
-        // assertions
-        assert(results[0].status === "error"); // Example
+        assert(results[0].status === "error");
     } finally {
         envGetStubInstance?.restore();
     }
