@@ -157,15 +157,15 @@ ${JSON.stringify(
 
 Planning Sequences and Using Outputs:
 If the user's request requires multiple actions, you can plan a sequence of tool calls.
-To use an output from a previous step (e.g., `steps[0]`, `steps[1]`) as an argument for a subsequent step, use the placeholder syntax: `{{steps[INDEX].outputs.FIELD_NAME}}`.
-- `INDEX` is the 0-based index of the step in the plan array whose output you want to use.
-- `FIELD_NAME` is the specific field name from that step's `output_schema`. This field name must exactly match a key present in the `output_schema` of the tool at `steps[INDEX]`.
-The `output_schema` provided for each tool in the "Available Tools" list shows what `FIELD_NAME`s it will return.
+To use an output from a previous step (e.g., 'steps[0]', 'steps[1]') as an argument for a subsequent step, use the placeholder syntax: '{{steps[INDEX].outputs.FIELD_NAME}}'.
+- 'INDEX' is the 0-based index of the step in the plan array whose output you want to use.
+- 'FIELD_NAME' is the specific field name from that step's 'output_schema'. This field name must exactly match a key present in the 'output_schema' of the tool at 'steps[INDEX]'.
+The 'output_schema' provided for each tool in the "Available Tools" list shows what 'FIELD_NAME's it will return.
 
 Important Note on Arguments:
 When constructing the "args" object for a chosen tool:
-- You MUST use the argument names as provided in that tool's "args_schema_keys" list for direct inputs.
-- For arguments that depend on previous steps, use the `{{steps[INDEX].outputs.FIELD_NAME}}` syntax. Ensure `FIELD_NAME` matches the `output_schema` of the source step.
+- You MUST use the argument names as provided in that tool's 'args_schema_keys' list for direct inputs.
+- For arguments that depend on previous steps, use the '{{steps[INDEX].outputs.FIELD_NAME}}' syntax. Ensure 'FIELD_NAME' matches the 'output_schema' of the source step.
 
 Output format constraints:
 Respond ONLY with a valid JSON array. Do not add any other text before or after the array.
