@@ -78,13 +78,14 @@ interface DiscoveredProviderAction {
   description?: string;
   sample_payload?: any;
   output_schema?: any;
-  args_schema?: any;  // Already added, ensure it's used
+  args_schema?: any;   // This is the field to be added/ensured
 }
 
 interface DiscoveredProvider {
   provider_name: string;
   display_name: string;
   description?: string;
+  // mcp_server_type field removed
   actions: DiscoveredProviderAction[];
   connection_schema?: any;
 }
@@ -124,7 +125,7 @@ interface ConfiguredActionData {
   sample_payload?: string;
   display_name?: string;
   output_schema?: any;
-  args_schema?: any; // Added args_schema to ConfiguredActionData
+  args_schema?: any; // Ensure this is present for ConfiguredActionData
 }
 
 
@@ -307,10 +308,10 @@ export function MCPManagement() {
           provider_name: editingCategory, // Lowercase provider name for DB 'provider_name' field
           action_name: discoveredAction.action_name,
           action_display_name: discoveredAction.display_name || discoveredAction.action_name,
-          expected_format: discoveredAction.args_schema || {}, // Changed to args_schema
+          expected_format: discoveredAction.args_schema || {},
           instructions: discoveredAction.description || '',
           output_schema: discoveredAction.output_schema || {},
-          active: true, // If selected in UI, it's active
+          active: true,
           user_id: user.id,
         };
         if (existingSavedAction) { // Update existing
@@ -463,10 +464,10 @@ export function MCPManagement() {
           action_name: discoveredAction.action_name,
           provider_name: selectedDiscoveredProvider.provider_name,
           instructions: discoveredAction.description || "No specific instructions.",
-          sample_payload: JSON.stringify(discoveredAction.sample_payload || {}, null, 2), // Keep for UI
+          sample_payload: JSON.stringify(discoveredAction.sample_payload || {}, null, 2),
           display_name: discoveredAction.display_name || discoveredAction.action_name,
           output_schema: discoveredAction.output_schema,
-          args_schema: discoveredAction.args_schema, // Propagate args_schema
+          args_schema: discoveredAction.args_schema,
         };
       });
     }
@@ -564,7 +565,7 @@ export function MCPManagement() {
           action_name: actionConfig.action_name,
           action_display_name: actionConfig.display_name,
           instructions: actionConfig.instructions,
-          expected_format: actionConfig.args_schema || {}, // Use args_schema for expected_format
+          expected_format: actionConfig.args_schema || {},
           output_schema: actionConfig.output_schema || {},
           active: actionConfig.is_selected,
           user_id: user.id,
@@ -939,15 +940,15 @@ export function MCPManagement() {
                         <h4 className="text-md font-semibold text-gray-700">
                           Connection Parameters for {providerData.display_name}
                         </h4>
-                        {Object.entries(connectionSchema).map(([key, schemaValue]: [string, any]) => (
+                        {Object.entries(connectionSchema.shape || {}).map(([key, schemaValue]: [string, any]) => (
                           <div key={key}>
                             <Label htmlFor={`form-conn-param-${key}`}>
-                              {schemaValue?.display_name || key}
-                              {schemaValue?.required && <span className="text-red-500 ml-1">*</span>}
+                              {schemaValue?.description || key.replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase())}
+                              {schemaValue?.typeName && !schemaValue.typeName.startsWith('ZodOptional') && !schemaValue.typeName.startsWith('ZodDefault') && <span className="text-red-500 ml-1">*</span>}
                             </Label>
                             <Input
                               id={`form-conn-param-${key}`}
-                              type={schemaValue?.type === 'password' ? 'password' : 'text'}
+                              type={(key.toLowerCase().includes('secret') || key.toLowerCase().includes('token') || key.toLowerCase().includes('key')) ? 'password' : 'text'}
                               value={formData.connectionParams[key] || ''}
                               onChange={(e) =>
                                 setFormData(prev => ({
@@ -955,17 +956,18 @@ export function MCPManagement() {
                                   connectionParams: { ...prev.connectionParams, [key]: e.target.value },
                                 }))
                               }
-                              placeholder={schemaValue?.placeholder || `Enter ${schemaValue?.display_name || key}`}
+                              placeholder={schemaValue?.description || `Enter ${key}`}
                               className="mt-1 bg-white"
                             />
-                            {schemaValue?.description && (
+                            {/* Using description for placeholder now, so this might be redundant or show more details */}
+                            {/* {schemaValue?.description && (
                               <p className="text-xs text-gray-500 mt-1">{schemaValue.description}</p>
-                            )}
+                            )} */}
                           </div>
                         ))}
                       </div>
                     );
-                  } else if (providerData && (!connectionSchema || Object.keys(connectionSchema || {}).length === 0)) {
+                  } else if (providerData && (!connectionSchema?.shape || Object.keys(connectionSchema.shape || {}).length === 0)) {
                     return (
                         <div className="p-4 border rounded-md bg-gray-50/50">
                             <p className="text-sm text-gray-600">This provider ({providerData.display_name}) does not require additional connection parameters.</p>
@@ -1089,30 +1091,31 @@ export function MCPManagement() {
                           return (
                             <div className="space-y-3">
                               <h4 className="text-md font-semibold mb-2">Connection Parameters:</h4>
-                              {Object.entries(connectionSchema).map(([key, schemaValue]: [string, any]) => (
+                        {Object.entries(connectionSchema.shape || {}).map(([key, schemaValue]: [string, any]) => (
                                 <div key={key}>
                                   <Label htmlFor={`conn-param-${key}`}>
-                                    {schemaValue?.display_name || key}
-                                    {schemaValue?.required && <span className="text-red-500 ml-1">*</span>}
+                              {schemaValue?.description || key.replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase())}
+                              {schemaValue?.typeName && !schemaValue.typeName.startsWith('ZodOptional') && !schemaValue.typeName.startsWith('ZodDefault') && <span className="text-red-500 ml-1">*</span>}
                                   </Label>
                                   <Input
                                     id={`conn-param-${key}`}
-                                    type={schemaValue?.type === 'password' ? 'password' : 'text'}
+                              type={(key.toLowerCase().includes('secret') || key.toLowerCase().includes('token') || key.toLowerCase().includes('key')) ? 'password' : 'text'}
                                     value={editingConnectionParams[key] || ''}
                                     onChange={(e) =>
                                       setEditingConnectionParams(prev => ({ ...prev, [key]: e.target.value }))
                                     }
-                                    placeholder={schemaValue?.placeholder || `Enter ${schemaValue?.display_name || key}`}
+                              placeholder={schemaValue?.description || `Enter ${key}`}
                                     className="mt-1"
                                   />
-                                  {schemaValue?.description && (
+                             {/* Using description for placeholder now, so this might be redundant or show more details */}
+                            {/* {schemaValue?.description && (
                                     <p className="text-xs text-gray-500 mt-1">{schemaValue.description}</p>
-                                  )}
+                            )} */}
                                 </div>
                               ))}
                             </div>
                           );
-                        } else if (providerData && (!connectionSchema || Object.keys(connectionSchema || {}).length === 0)) {
+                  } else if (providerData && (!connectionSchema?.shape || Object.keys(connectionSchema.shape || {}).length === 0)) {
                            return <p className="text-sm text-gray-500">This provider does not require additional connection parameters.</p>;
                         }
                         return null;
