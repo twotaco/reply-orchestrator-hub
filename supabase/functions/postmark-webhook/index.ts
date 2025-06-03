@@ -523,7 +523,7 @@ async function processEmailWithKnowReply(
       }
     }
 
-    console.log(`🔗 Found ${mcpEndpoints.length} MCP endpoint(s)`)
+    console.log(`🔗 Found ${mcpEndpoints.length} MCP endpoints`)
 
     // Group MCP endpoints by agent_id
     const agentConfigs: Record<string, KnowReplyAgentConfig> = {}
