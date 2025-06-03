@@ -65,7 +65,7 @@ interface KnowReplyAgentConfig {
     name: string // This is the unique AI name for the action
     provider_name: string // e.g., "stripe", "hubspot"
     action_name: string // e.g., "getCustomerByEmail", "createTicket"
-    auth_token: string | null // API key for the target provider
+    // auth_token: string | null; // Removed, as auth is now handled by mcp_connection_params
     instructions?: string
     expected_format?: any
     // mcp_server_base_url is removed, post_url is also removed
@@ -316,7 +316,44 @@ async function executeMCPPlan(
     return results;
   }
 
+  const mcpServerInternalApiKey = Deno.env.get('MCP_SERVER_INTERNAL_API_KEY');
+
   for (const actionToExecute of mcpPlan) {
+    if (!mcpServerInternalApiKey || mcpServerInternalApiKey.trim() === '') {
+      const errorMsg = 'MCP_SERVER_INTERNAL_API_KEY is not configured. Cannot make call to MCP server.';
+      console.error(`❌ ${errorMsg}`);
+      results.push({
+        tool_name: actionToExecute.tool || 'unknown_tool',
+        status: 'error',
+        response: null,
+        raw_response: '',
+        error_message: errorMsg,
+      });
+      // Do not log to activity_logs here as this is a system config error, not specific to this action execution attempt.
+      // Consider a more global way to flag this system error if it persists.
+      // For now, we'll push an error for each action that couldn't be executed.
+      // If we want to stop all execution, we could return results here or throw an error.
+      // For now, let's assume we want to record an error for each planned action that fails due to this.
+      // However, it's better to fail fast for a system-level misconfiguration.
+      // Let's log one error and then prevent further attempts in this run.
+      if (!results.find(r => r.error_message === errorMsg)) { // Log this system error only once per plan execution
+         await supabaseClient.from('activity_logs').insert({
+            user_id: userId,
+            email_interaction_id: emailInteractionId,
+            action: 'mcp_execution_system_error',
+            status: 'error',
+            details: { error: errorMsg },
+        });
+      }
+      // To prevent executing further actions if the key is missing:
+      // return results; // Or throw new Error(errorMsg);
+      // For now, as per original thought, let's mark this action as failed and continue (though this is debatable for a system key)
+      // Corrected approach: Fail the specific action and log, but allow loop to continue if other actions might not need this key (future proofing)
+      // However, for MCP server, this key is likely always needed. So, let's refine:
+      // If the key is missing, it's a setup error. We should probably stop processing this plan.
+      // But the request asks to push an error and continue. Let's stick to that for now but note it.
+    }
+
     if (!actionToExecute.tool || typeof actionToExecute.tool !== 'string') {
       console.warn('⚠️ Skipping invalid action in plan (missing or invalid tool name):', actionToExecute);
       results.push({
@@ -363,12 +400,46 @@ async function executeMCPPlan(
 
     console.log(`⚙️ Executing MCP: ${mcpConfig.name} via URL: ${targetUrl}`);
 
+    // Fetch connection parameters for this provider
+    const { data: connParamsResult, error: connParamsError } = await supabaseClient
+      .from('mcp_connection_params')
+      .select('connection_values')
+      .eq('user_id', userId)
+      .eq('provider_name', mcpConfig.provider_name)
+      .single();
+
+    if (connParamsError || !connParamsResult || !connParamsResult.connection_values || Object.keys(connParamsResult.connection_values).length === 0) {
+      let errorDetail = `Connection parameters not found or empty for provider: ${mcpConfig.provider_name}.`;
+      if (connParamsError && connParamsError.code !== 'PGRST116') { // PGRST116 means no row found
+        console.error(`❌ Error fetching connection params for ${mcpConfig.provider_name}:`, connParamsError);
+        errorDetail = `Error fetching connection params for ${mcpConfig.provider_name}: ${connParamsError.message}`;
+      } else {
+        console.warn(`⚠️ ${errorDetail}`);
+      }
+      results.push({
+        tool_name: actionToExecute.tool,
+        status: 'error',
+        response: null,
+        raw_response: '',
+        error_message: errorDetail,
+      });
+      await supabaseClient.from('activity_logs').insert({
+        user_id: userId,
+        email_interaction_id: emailInteractionId,
+        action: 'mcp_execution_error',
+        status: 'error',
+        details: { tool_name: actionToExecute.tool, error: errorDetail, request_args: actionToExecute.args },
+      });
+      continue; // Skip to the next action
+    }
+
+    const actualConnectionParams = connParamsResult.connection_values;
+    console.log(`🔐 Using connection parameters for provider: ${mcpConfig.provider_name}`);
+
     // Structure the request body
     const requestPayload = {
       args: actionToExecute.args || {},
-      auth: {
-        token: mcpConfig.auth_token || null, // Pass the target provider's API key
-      },
+      auth: actualConnectionParams, // Use fetched connection_values directly
     };
 
     // Placeholder detection for argument values (remains useful)
@@ -383,9 +454,33 @@ async function executeMCPPlan(
     let status: 'success' | 'error' = 'error';
     let errorMessage: string | null = null;
 
+    // Check for MCP_SERVER_INTERNAL_API_KEY before each fetch
+    if (!mcpServerInternalApiKey || mcpServerInternalApiKey.trim() === '') {
+      const errorMsg = 'MCP_SERVER_INTERNAL_API_KEY is not configured. MCP call cannot proceed.';
+      console.error(`❌ ${errorMsg} for tool ${actionToExecute.tool}`);
+      results.push({
+        tool_name: actionToExecute.tool,
+        status: 'error',
+        response: null,
+        raw_response: '',
+        error_message: errorMsg,
+      });
+      // Log this specific action failure to activity_logs
+      await supabaseClient.from('activity_logs').insert({
+        user_id: userId,
+        email_interaction_id: emailInteractionId,
+        action: 'mcp_execution_error', // Re-use existing for specific action failure
+        status: 'error',
+        details: { tool_name: actionToExecute.tool, error: errorMsg, request_args: actionToExecute.args },
+      });
+      continue; // Skip to next action
+    }
+
     try {
-      const headers: HeadersInit = { 'Content-Type': 'application/json' };
-      // No Authorization header here; token is in the body.
+      const headers: HeadersInit = {
+        'Content-Type': 'application/json',
+        'x-internal-api-key': mcpServerInternalApiKey,
+      };
 
       console.log(`📤 Making POST request to ${targetUrl} for tool ${actionToExecute.tool}`);
       // console.log(`📦 Request payload for ${actionToExecute.tool}:`, JSON.stringify(requestPayload, null, 2)); // Be careful logging tokens
@@ -511,7 +606,8 @@ async function processEmailWithKnowReply(
       const { data: endpoints, error: endpointsError } = await supabase
         .from('mcp_endpoints')
         // Removed mcp_server_base_url and post_url from select. Added provider_name, action_name.
-        .select('id, name, provider_name, action_name, auth_token, instructions, expected_format, active')
+        // Also removed auth_token as it's now in mcp_connection_params
+        .select('id, name, provider_name, action_name, instructions, expected_format, active')
         .in('id', mcpEndpointIds)
         .eq('active', true)
 
