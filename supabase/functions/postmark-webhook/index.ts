@@ -863,10 +863,11 @@ async function processWithAgent(
       // These might be duplicative or distinct depending on how KnowReply is configured.
       // For now, we are storing our locally executed mcpResults in email_interactions.mcp_results.
       // And also in email_interactions.knowreply_request.mcp_plan (the plan itself).
-      // The field email_interactions.knowreply_mcp_results is for results returned BY KnowReply service.
-      knowreply_mcp_results: responseData.mcp_results || null,
+      // The field email_interactions.mcp_results is now intended to store results returned BY KnowReply service.
+      mcp_results: responseData.mcp_results || null, // Changed from knowreply_mcp_results
       mcp_plan: mcpPlan, // Storing the generated plan
-      // mcp_results: mcpResults, // We are NOT adding our execution results to the knowreply_response update here.
+      // The locally executed mcpResults were already stored in email_interactions.mcp_results prior to this update.
+      // This update will overwrite it with results from KnowReply, if any.
                                 // This is because `responseData` is the response from KnowReply service.
                                 // Our `mcpResults` are stored separately above.
       intent: responseData.intent || null,
