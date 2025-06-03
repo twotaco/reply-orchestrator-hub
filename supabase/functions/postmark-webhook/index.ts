@@ -78,16 +78,18 @@ export interface KnowReplyAgentConfig { // Added export
 // Function to generate MCP Tool Plan using OpenAI
 export async function generateMCPToolPlan(
   emailBody: string,
+  senderEmail: string, // New parameter
+  senderName: string,   // New parameter
   availableMcps: KnowReplyAgentConfig['mcp_endpoints'],
-  geminiApiKey: string, // Changed from openAIApiKey
-  supabaseClient: any, // For logging
+  geminiApiKey: string,
+  supabaseClient: any,
   userId: string | null,
   emailInteractionId: string | null
 ): Promise<object[] | null> {
   const envModel = Deno.env.get('GEMINI_MODEL');
   const modelName = (envModel && envModel.trim() !== '') ? envModel.trim() : 'gemini-1.5-pro';
   console.log(`🤖 Generating MCP Tool Plan using Google Gemini model: ${modelName}...`);
-  // const modelName = 'gemini-pro'; // Old hardcoded value
+
   if (!emailBody || emailBody.trim() === '') {
     console.warn('✉️ Email body is empty. Skipping MCP plan generation.');
     return [];
@@ -98,39 +100,16 @@ export async function generateMCPToolPlan(
     return [];
   }
 
-  const simplifiedMcps = availableMcps.map(mcp => ({
-    name: mcp.name,
-    description: mcp.instructions || 'No specific instructions provided.',
-    // Later, we can try to derive args_schema from mcp.expected_format
-    // args_schema: mcp.expected_format ? { type: "object", properties: { example_param: { type: "string" } } } : {}
-  }));
-
-  const systemPrompt = `You are an intent and action planner. Your goal is to identify which tools (MCPs) are needed to answer a customer's email and what arguments they need.
-Only use tools from the 'Available Tools' list provided.
-Return a JSON array of planned tool calls. Each object in the array must have a "tool" key (the MCP name) and an "args" key (an object of arguments for the MCP).
-Ensure the "tool" name in your output matches exactly a name from the 'Available Tools' list.
-If no tools are needed, or if the email does not require any actions, return an empty array [].
-If the email is a simple thank you, an out-of-office reply, or spam, return an empty array [].`;
-
-  const userPrompt = `Customer Email:
----
-${emailBody.substring(0, 4000)}
----
-
-Available Tools:
----
-${JSON.stringify(simplifiedMcps, null, 2)}
----
-
-Output Format guidance (ensure output is ONLY the JSON array, do not add any other text before or after the array):
-[
-  { "tool": "mcp:example.toolName", "args": { "parameter": "value" } }
-]`;
-
   // Construct the prompt for Gemini
-  const geminiPrompt = `You are an intent and action planner. Based on the customer email below, determine which external tools (MCPs) are needed to answer or fulfill the request.
+  const geminiPrompt = `You are an intent and action planner. Based on the email sender information and customer email content below, determine which external tools (MCPs) are needed to answer or fulfill the request.
 
-Customer Email:
+Email Sender Information:
+---
+Sender Name: ${senderName}
+Sender Email: ${senderEmail}
+---
+
+Customer Email Content:
 ---
 ${emailBody.substring(0, 8000)}
 ---
@@ -166,6 +145,11 @@ Important Note on Arguments:
 When constructing the "args" object for a chosen tool:
 - You MUST use the argument names as provided in that tool's 'args_schema_keys' list for direct inputs.
 - For arguments that depend on previous steps, use the '{{steps[INDEX].outputs.FIELD_NAME}}' syntax. Ensure 'FIELD_NAME' matches the 'output_schema' of the source step.
+
+Important Instructions for Using Sender Information:
+- When planning actions, especially the first action in a sequence or any action that requires identifying the customer (e.g., fetching orders, customer details), you **must** consider using the details from the 'Email Sender Information' section (like 'Sender Email' or 'Sender Name') as arguments if the tool accepts them. For example, if a tool like 'getOrders' or 'getCustomerDetails' accepts an 'email' argument, use the 'Sender Email' provided.
+- Even if a tool argument (like 'email' or 'customerId') is marked as optional (e.g., in 'args_schema_keys' or its description implies it's optional), if the 'Email Sender Information' provides relevant data for that argument, you **should** include it in the plan to ensure the action is specific and effective.
+- Do not leave critical identifying arguments (like 'email' for a customer-specific lookup) as null or unprovided if the sender's information is available and directly applicable to fulfilling the user's request based on the email content.
 
 Output format constraints:
 Respond ONLY with a valid JSON array. Do not add any other text before or after the array.
@@ -846,8 +830,10 @@ async function processWithAgent(
       console.log(`🗺️ Agent ${agentConfig.agent_id} has ${agentConfig.mcp_endpoints.length} MCPs. Attempting to generate plan with Gemini.`);
       mcpPlan = await generateMCPToolPlan(
         emailBodyContent,
+        payload.FromFull.Email, // senderEmail
+        payload.FromName,       // senderName
         agentConfig.mcp_endpoints,
-        geminiApiKey, // Pass Gemini API key
+        geminiApiKey,
         supabase,
         userId,
         emailInteractionId
