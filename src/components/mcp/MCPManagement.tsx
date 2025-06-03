@@ -27,6 +27,7 @@ const categoryMapUtil: { [key: string]: string } = { // Renamed to avoid conflic
   'klaviyo': 'Klaviyo',
   'shopify': 'Shopify',
   'stripe': 'Stripe',
+  'woocommerce': 'WooCommerce',
   'zendesk': 'Zendesk',
   'supabase': 'Supabase',
   'mailchimp': 'Mailchimp',
