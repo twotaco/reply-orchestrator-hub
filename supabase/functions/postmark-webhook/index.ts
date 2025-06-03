@@ -154,7 +154,7 @@ ${JSON.stringify(
 ---
 
 Important Note on Arguments:
-When constructing the `args` object for a chosen tool, you MUST use the argument names as provided in that tool's `args_schema_keys` list. For example, if a tool's definition includes `"args_schema_keys": ["orderId", "email"]`, then the `args` object in your plan for that tool should use `orderId` and/or `email` as keys, not generic names like \\`id\\` or \\`searchTerm\\` unless those specific names are in the `args_schema_keys`.
+When constructing the `args` object for a chosen tool, you MUST use the argument names as provided in that tool's `args_schema_keys` list. For example, if a tool's definition includes `"args_schema_keys": ["orderId", "email"]`, then the `args` object in your plan for that tool should use `orderId` and/or `email` as keys, not generic names like 'id' or 'searchTerm' unless those specific names are in the `args_schema_keys`.
 
 Output format constraints:
 Respond ONLY with a valid JSON array in the following format:
