@@ -21,17 +21,19 @@ import { toast } from '@/hooks/use-toast';
 import { Plus, Edit, Trash2, TestTube, Save, X } from 'lucide-react';
 import { Checkbox } from '@/components/ui/checkbox';
 
-const categoryMapUtil: { [key: string]: string } = { // Renamed to avoid conflict if any other 'categoryMap' exists in global scope for some reason
+const categoryMapUtil: { [key: string]: string } = {
   'calendly': 'Calendly',
+  'custom': 'Custom',
   'hubspot': 'HubSpot',
+  'intercom': 'Intercom',
   'klaviyo': 'Klaviyo',
+  'mailchimp': 'Mailchimp',
   'shopify': 'Shopify',
   'stripe': 'Stripe',
-  'zendesk': 'Zendesk',
   'supabase': 'Supabase',
-  'mailchimp': 'Mailchimp',
-  'intercom': 'Intercom',
-  'custom': 'Custom'
+  'woocommerce': 'WooCommerce', // Added
+  'wordpress': 'WordPress',   // Added
+  'zendesk': 'Zendesk'
 };
 
 function getPascalCaseCategory(providerName: string): string {
