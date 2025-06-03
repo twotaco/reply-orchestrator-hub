@@ -1302,7 +1302,7 @@ export function MCPManagement() {
                 <Label htmlFor="test-response-area">Test Response</Label>
                 <pre
                   id="test-response-area"
-                  className="mt-1 p-2 text-xs bg-gray-100 rounded-md overflow-x-auto h-40 border"
+                  className="mt-1 p-2 text-xs bg-gray-100 rounded-md h-40 border whitespace-pre-wrap break-words overflow-y-auto"
                 >
                   {testResponse}
                 </pre>
