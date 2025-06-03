@@ -61,6 +61,7 @@ interface MCPEndpoint {
   provider_name?: string; // e.g., "stripe", "hubspot"
   action_name?: string; // e.g., "getCustomerByEmail", "createTicket"
   action_display_name?: string; // User-friendly display name for the action
+  auth_token?: string; // API key for the target provider
   expected_format?: any;
   instructions?: string;
   active: boolean;
@@ -83,16 +84,6 @@ interface DiscoveredProvider {
   description?: string;
   mcp_server_type: 'knowreply_managed' | 'self_hosted'; // To know if it's a standard one we might pre-fill base URL for
   actions: DiscoveredProviderAction[];
-  connection_schema?: any;
-}
-
-interface MCPConnectionParamRecord {
-  id: string;
-  user_id: string;
-  provider_name: string;
-  connection_values: Record<string, any>; // Represents the JSONB content
-  created_at: string;
-  updated_at: string;
 }
 
 interface MCPForm {
@@ -101,8 +92,7 @@ interface MCPForm {
   mcp_server_base_url: string;
   provider_name: string; // This will be set from selected_provider_name, or manually if custom
   action_name: string;
-  // auth_token: string; // API key for the target provider - Now part of connectionParams
-  connectionParams: Record<string, string>;
+  auth_token: string; // API key for the target provider
   expected_format: string;
   instructions: string;
   // active: boolean; // Removed: Top-level active is deprecated
@@ -160,10 +150,8 @@ export function MCPManagement() {
 
   // State for Inline Provider Editing
   const [editingCategory, setEditingCategory] = useState<string | null>(null);
-  const [editingApiKey, setEditingApiKey] = useState<string>(''); // This will be deprecated by editingConnectionParams
+  const [editingApiKey, setEditingApiKey] = useState<string>('');
   const [editingActionsSelection, setEditingActionsSelection] = useState<Record<string, boolean>>({});
-  const [editingConnectionParams, setEditingConnectionParams] = useState<Record<string, string>>({});
-  const [loadingConnectionParams, setLoadingConnectionParams] = useState<boolean>(false);
 
   // New state for discovery client
   const [discoveredProviders, setDiscoveredProviders] = useState<DiscoveredProvider[] | null>(null);
@@ -179,12 +167,11 @@ export function MCPManagement() {
     mcp_server_base_url: '',
     provider_name: '', // Actual provider name (e.g. if selected_provider_name is 'custom')
     action_name: '', // Deprecated at this level
-    connectionParams: {}, // Provider-level connection parameters
+    auth_token: '', // Provider-level default auth token
     expected_format: '{}', // Deprecated at this level
     instructions: '', // Deprecated at this level
     active: true, // Deprecated at this level, active is per configured action
   });
-  const [loadingMainFormConnectionParams, setLoadingMainFormConnectionParams] = useState<boolean>(false);
 
   useEffect(() => {
     if (user) {
@@ -240,50 +227,6 @@ export function MCPManagement() {
       return;
     }
 
-    // Validation for connection parameters
-    const anyActionSelected = Object.values(editingActionsSelection).some(isSelected => isSelected);
-    if (anyActionSelected && providerData.connection_schema && typeof providerData.connection_schema === 'object') {
-      const schemaKeys = Object.keys(providerData.connection_schema);
-      const missingRequiredParam = schemaKeys.find(key => {
-        const schemaField = providerData.connection_schema[key];
-        // Simple check: if schema defines it as required (e.g. has a 'required: true' property)
-        // For now, let's assume all schema fields are required if actions are selected, unless explicitly optional.
-        // A more robust solution would be to check a `required` flag in the schema.
-        // For this iteration, we'll check if any param defined in schema is empty.
-        return !editingConnectionParams[key]?.trim();
-      });
-
-      if (missingRequiredParam) {
-        const fieldDetails = providerData.connection_schema[missingRequiredParam];
-        const displayName = fieldDetails?.display_name || missingRequiredParam;
-        toast({
-          title: "Validation Error",
-          description: `Connection parameter "${displayName}" is required when actions are selected for this provider.`,
-          variant: "destructive"
-        });
-        return;
-      }
-    }
-
-    // Upsert connection parameters
-    if (user && editingCategory) {
-      const { error: connParamError } = await supabase
-        .from('mcp_connection_params')
-        .upsert({
-          user_id: user.id,
-          provider_name: editingCategory,
-          connection_values: editingConnectionParams,
-          updated_at: new Date().toISOString(),
-        }, { onConflict: 'user_id, provider_name' });
-
-      if (connParamError) {
-        console.error('Error saving connection parameters:', connParamError);
-        toast({ title: "Error", description: `Failed to save connection parameters: ${connParamError.message}`, variant: "destructive" });
-        return; // Stop if connection params fail to save
-      }
-    }
-
-
     const currentSavedActionsInThisCategory = savedConfiguredActions.filter(
       sa => sa.provider_name === editingCategory // provider_name is lowercase from DB
     );
@@ -305,7 +248,7 @@ export function MCPManagement() {
           provider_name: editingCategory, // Lowercase provider name for DB 'provider_name' field
           action_name: discoveredAction.action_name,
           action_display_name: discoveredAction.display_name || discoveredAction.action_name,
-          // auth_token: editingApiKey.trim(), // Removed: API key is now provider-level via mcp_connection_params
+          auth_token: editingApiKey.trim(),
           expected_format: discoveredAction.sample_payload || {},
           instructions: discoveredAction.description || '',
           active: true, // If selected in UI, it's active
@@ -342,17 +285,16 @@ export function MCPManagement() {
       results.forEach(result => {
         if (result.error) throw result.error;
       });
-      toast({ title: "Success", description: `Successfully updated ${getPascalCaseCategory(editingCategory)}: ${itemsAdded} added, ${itemsUpdated} updated, ${itemsDeleted} removed. Connection parameters saved.` });
+      toast({ title: "Success", description: `Successfully updated ${getPascalCaseCategory(editingCategory)}: ${itemsAdded} added, ${itemsUpdated} updated, ${itemsDeleted} removed.` });
       fetchEndpoints(); // Refresh the main list
-      setEditingCategory(null); // Close inline editor on success
-      setEditingConnectionParams({});
-      setEditingActionsSelection({});
     } catch (error: any) {
-      console.error('Error saving inline MCP configurations:', error); // Changed from 'or connection params' as conn params save is tried first
+      console.error('Error saving inline MCP configurations:', error);
       toast({ title: "Error", description: `Failed to save configurations: ${error.message}`, variant: "destructive" });
-      // Do not close/reset form on error, user might want to retry if only action saving failed
+    } finally {
+      setEditingCategory(null);
+      setEditingApiKey('');
+      setEditingActionsSelection({});
     }
-    // finally block removed as success/error handles reset if all operations succeed.
   };
 
   const fetchEndpoints = async () => { // Renamed to reflect it fetches saved configured actions
@@ -361,7 +303,7 @@ export function MCPManagement() {
     try {
       const { data, error } = await supabase
         .from('mcp_endpoints')
-        .select('id, name, category, mcp_server_base_url, provider_name, action_name, action_display_name, expected_format, instructions, active, created_at, updated_at') // Explicitly select columns
+        .select('*')
         .eq('user_id', user.id)
         .order('created_at', { ascending: false });
 
@@ -386,7 +328,7 @@ export function MCPManagement() {
       mcp_server_base_url: '',
       provider_name: '',
       action_name: '',
-      connectionParams: {}, // Reset connection params
+      auth_token: '',
       expected_format: '{}',
       instructions: '',
       // active: true, // Removed
@@ -396,62 +338,19 @@ export function MCPManagement() {
     setShowAddForm(false);
   };
 
-  const handleProviderSelect = async (selectedProviderNameValue: string) => {
+  const handleProviderSelect = (selectedProviderNameValue: string) => {
     const selectedDiscoveredProvider = discoveredProviders?.find(p => p.provider_name === selectedProviderNameValue);
 
-    // Initial form data update, clear previous connection params
     setFormData(prev => ({
       ...prev,
       selected_provider_name: selectedProviderNameValue,
       provider_name: selectedProviderNameValue === 'custom' ? '' : selectedProviderNameValue,
-      action_name: '', // Deprecated at this level
-      mcp_server_base_url: 'https://mcp.knowreply.email', // Default MCP server
-      connectionParams: {}, // Clear previous params
+      action_name: '',
+      mcp_server_base_url: 'https://mcp.knowreply.email',
+      auth_token: '',
       instructions: selectedDiscoveredProvider?.description || (selectedProviderNameValue === 'custom' ? 'Define your custom provider.' : 'Select actions below.'),
-      expected_format: '{}', // Deprecated at this level
+      expected_format: '{}',
     }));
-
-    setActionFormsData({}); // Clear previous action forms data
-
-    if (selectedProviderNameValue && selectedProviderNameValue !== 'custom' && user) {
-      setLoadingMainFormConnectionParams(true);
-      try {
-        const { data: connParamsData, error: connParamsError } = await supabase
-          .from('mcp_connection_params')
-          .select('connection_values')
-          .eq('user_id', user.id)
-          .eq('provider_name', selectedProviderNameValue)
-          .single();
-
-        let initialParams: Record<string, string> = {};
-        if (connParamsData && connParamsData.connection_values) {
-          initialParams = connParamsData.connection_values as Record<string, string>;
-        }
-
-        // Ensure all schema fields are present in initialParams, defaulting to empty string
-        const providerSchema = selectedDiscoveredProvider?.connection_schema;
-        if (providerSchema && typeof providerSchema === 'object' && providerSchema !== null) {
-          Object.keys(providerSchema).forEach(key => {
-            if (!(key in initialParams)) {
-              initialParams[key] = '';
-            }
-          });
-        }
-
-        setFormData(prev => ({ ...prev, connectionParams: initialParams }));
-
-        if (connParamsError && connParamsError.code !== 'PGRST116') { // PGRST116: single row not found
-          console.error("Error fetching main form connection params:", connParamsError);
-          toast({ title: "Error", description: "Could not load existing connection parameters for this provider.", variant: "destructive" });
-        }
-      } catch (e) {
-        console.error("Exception fetching main form connection params:", e);
-        toast({ title: "Error", description: "An unexpected error occurred while loading connection parameters.", variant: "destructive" });
-      } finally {
-        setLoadingMainFormConnectionParams(false);
-      }
-    }
-
 
     const newActionFormsData: Record<string, ConfiguredActionData> = {};
     if (selectedDiscoveredProvider && selectedDiscoveredProvider.actions) {
@@ -507,51 +406,14 @@ export function MCPManagement() {
 
     // Check if any action is selected
     const anyActionSelected = Object.values(actionFormsData).some(action => action.is_selected);
-    const currentProviderData = discoveredProviders?.find(p => p.provider_name === formData.selected_provider_name);
 
-    // Validation for connection parameters in the main form
-    if (anyActionSelected &&
-        formData.selected_provider_name &&
-        formData.selected_provider_name !== 'custom' &&
-        currentProviderData?.connection_schema &&
-        typeof currentProviderData.connection_schema === 'object') {
-
-      const schemaKeys = Object.keys(currentProviderData.connection_schema);
-      const missingRequiredParam = schemaKeys.find(key => {
-        const schemaField = currentProviderData.connection_schema[key];
-        // Basic check: if schema defines it, assume it's required for now if actions are selected
-        // A more robust check would use a 'required' flag in schemaField
-        return !formData.connectionParams[key]?.trim();
+    if (anyActionSelected && (!formData.auth_token || formData.auth_token.trim() === '')) {
+      toast({
+        title: "Validation Error",
+        description: "Provider API Key is required when actions are selected.",
+        variant: "destructive"
       });
-
-      if (missingRequiredParam) {
-        const fieldDetails = currentProviderData.connection_schema[missingRequiredParam];
-        const displayName = fieldDetails?.display_name || missingRequiredParam;
-        toast({
-          title: "Validation Error",
-          description: `Connection parameter "${displayName}" for ${currentProviderData.display_name} is required when actions are selected.`,
-          variant: "destructive"
-        });
-        return;
-      }
-    }
-
-    // Upsert connection parameters for the main form
-    if (user && formData.selected_provider_name && formData.selected_provider_name !== 'custom' && Object.keys(formData.connectionParams).length > 0) {
-      const { error: connParamError } = await supabase
-        .from('mcp_connection_params')
-        .upsert({
-          user_id: user.id,
-          provider_name: formData.selected_provider_name, // Use selected_provider_name as it's the actual provider identifier
-          connection_values: formData.connectionParams,
-          updated_at: new Date().toISOString(),
-        }, { onConflict: 'user_id, provider_name' });
-
-      if (connParamError) {
-        console.error('Error saving connection parameters from main form:', connParamError);
-        toast({ title: "Error", description: `Failed to save connection parameters: ${connParamError.message}`, variant: "destructive" });
-        return; // Stop if connection params fail to save
-      }
+      return;
     }
 
     const operations: Promise<any>[] = [];
@@ -585,7 +447,7 @@ export function MCPManagement() {
           provider_name: actionConfig.provider_name,
           action_name: actionConfig.action_name,
           action_display_name: actionConfig.display_name, // Save the display name
-          // auth_token: formData.auth_token || null, // Removed: Handled by mcp_connection_params
+          auth_token: formData.auth_token || null, // Use provider-level auth_token
           instructions: actionConfig.instructions,
           expected_format: parsedSamplePayload, // Save parsed JSON
           active: actionConfig.is_selected, // Active status is based on selection
@@ -681,19 +543,10 @@ export function MCPManagement() {
   };
 
   const handleTest = async (endpointToTest: MCPEndpoint, payloadString: string) => {
-    setTestingId(endpointToTest.id);
-    setTestResponse(null); // Clear previous test response
-
-    if (!user) {
-      toast({ title: "Test Error", description: "User not available. Please login again.", variant: "destructive" });
-      setTestingId(null);
-      return;
-    }
+    setTestingId(endpointToTest.id); // For main button spinner & to disable "Run Test" in modal
 
     if (!endpointToTest.mcp_server_base_url || !endpointToTest.provider_name || !endpointToTest.action_name) {
-      const errorMsg = "Endpoint configuration is incomplete (missing URL, provider, or action).";
-      toast({ title: "Test Error", description: errorMsg, variant: "destructive" });
-      setTestResponse(errorMsg);
+      toast({ title: "Test Error", description: "Endpoint configuration is incomplete (missing URL, provider, or action).", variant: "destructive" });
       setTestingId(null);
       return;
     }
@@ -727,32 +580,13 @@ export function MCPManagement() {
     }
 
     try {
-      // Fetch connection parameters
-      const providerNameForTest = endpointToTest.provider_name; // Assuming this is lowercase and correct
-      const { data: connParamsRecord, error: connParamsError } = await supabase
-        .from('mcp_connection_params')
-        .select('connection_values')
-        .eq('user_id', user.id)
-        .eq('provider_name', providerNameForTest)
-        .single();
-
-      if (connParamsError || !connParamsRecord || !connParamsRecord.connection_values || Object.keys(connParamsRecord.connection_values).length === 0) {
-        let errorMsg = `Connection parameters not configured for provider: ${providerNameForTest}.`;
-        if(connParamsError && connParamsError.code !== 'PGRST116'){ // PGRST116 means no row found, which is handled by the main check.
-          console.error("Error fetching connection params for test:", connParamsError);
-          errorMsg = `Error fetching connection parameters: ${connParamsError.message}`;
-        }
-        toast({ title: "Test Error", description: errorMsg, variant: "destructive" });
-        setTestResponse(errorMsg);
-        setTestingId(null);
-        return;
-      }
-
-      const testUrl = `${endpointToTest.mcp_server_base_url}/mcp/${providerNameForTest}/${endpointToTest.action_name}`;
+      const testUrl = `${endpointToTest.mcp_server_base_url}/mcp/${endpointToTest.provider_name}/${endpointToTest.action_name}`;
       
       const newTestPayload = {
-        args: payloadForArgs,
-        auth: connParamsRecord.connection_values
+        args: payloadForArgs, // Use the parsed payload from the modal
+        auth: {
+          token: endpointToTest.auth_token || null // The provider-specific API key
+        }
       };
 
       const headers: any = {
@@ -966,61 +800,23 @@ export function MCPManagement() {
               </>
             )}
 
-            {/* Connection Parameters Section for Main Form */}
-            {formData.selected_provider_name && formData.selected_provider_name !== 'custom' && (
-              loadingMainFormConnectionParams ? (
-                <div className="flex items-center p-4">
-                  <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-blue-600 mr-2"></div>
-                  <span>Loading connection details...</span>
+            {/* The old top-level fields like instructions, expected_format, action_name, auth_token are now mostly per-action or deprecated */}
+            {/* For example, a global auth_token might still be useful if all actions for a provider share one */}
+             {formData.selected_provider_name && formData.selected_provider_name !== 'custom' && (
+                <div>
+                  <Label htmlFor="provider_auth_token">Provider API Key *</Label>
+                  <Input
+                    id="provider_auth_token"
+                    type="password"
+                    value={formData.auth_token} // This is the top-level auth_token now
+                    onChange={(e) => setFormData({ ...formData, auth_token: e.target.value })}
+                    placeholder={`API Key for ${formData.selected_provider_name} actions`}
+                  />
+                  {/* Descriptive paragraph removed */}
                 </div>
-              ) : (
-                (() => {
-                  const providerData = discoveredProviders?.find(p => p.provider_name === formData.selected_provider_name);
-                  const connectionSchema = providerData?.connection_schema;
-                  if (connectionSchema && typeof connectionSchema === 'object' && Object.keys(connectionSchema).length > 0) {
-                    return (
-                      <div className="space-y-3 p-4 border rounded-md bg-gray-50/50">
-                        <h4 className="text-md font-semibold text-gray-700">
-                          Connection Parameters for {providerData.display_name}
-                        </h4>
-                        {Object.entries(connectionSchema).map(([key, schemaValue]: [string, any]) => (
-                          <div key={key}>
-                            <Label htmlFor={`form-conn-param-${key}`}>
-                              {schemaValue?.display_name || key}
-                              {schemaValue?.required && <span className="text-red-500 ml-1">*</span>}
-                            </Label>
-                            <Input
-                              id={`form-conn-param-${key}`}
-                              type={schemaValue?.type === 'password' ? 'password' : 'text'}
-                              value={formData.connectionParams[key] || ''}
-                              onChange={(e) =>
-                                setFormData(prev => ({
-                                  ...prev,
-                                  connectionParams: { ...prev.connectionParams, [key]: e.target.value },
-                                }))
-                              }
-                              placeholder={schemaValue?.placeholder || `Enter ${schemaValue?.display_name || key}`}
-                              className="mt-1 bg-white"
-                            />
-                            {schemaValue?.description && (
-                              <p className="text-xs text-gray-500 mt-1">{schemaValue.description}</p>
-                            )}
-                          </div>
-                        ))}
-                      </div>
-                    );
-                  } else if (providerData && (!connectionSchema || Object.keys(connectionSchema || {}).length === 0)) {
-                    return (
-                        <div className="p-4 border rounded-md bg-gray-50/50">
-                            <p className="text-sm text-gray-600">This provider ({providerData.display_name}) does not require additional connection parameters.</p>
-                        </div>
-                    );
-                  }
-                  return null;
-                })()
-              )
-            )}
-            {/* End Connection Parameters Section for Main Form */}
+             )}
+
+            {/* Top-level active switch and its comment removed */}
 
             <div className="flex gap-2">
               <Button onClick={handleSave}>
@@ -1060,57 +856,18 @@ export function MCPManagement() {
                     onClick={() => {
                       const lowerCategory = category.toLowerCase(); // Key for discoveredProviders is lowercase
                       setEditingCategory(lowerCategory);
-                      setLoadingConnectionParams(true);
-                      setEditingConnectionParams({}); // Clear previous params immediately
-
-                      // Fetch connection params
-                      if (user) {
-                        supabase
-                          .from('mcp_connection_params')
-                          .select('connection_values')
-                          .eq('user_id', user.id)
-                          .eq('provider_name', lowerCategory)
-                          .single()
-                          .then(({ data, error }) => {
-                            let initialParams: Record<string, string> = {};
-                            const providerSchema = discoveredProviders?.find(p => p.provider_name === lowerCategory)?.connection_schema;
-
-                            if (data && data.connection_values) {
-                              initialParams = data.connection_values as Record<string, string>;
-                            }
-
-                            // Ensure all schema fields are present in initialParams, defaulting to empty string
-                            if (providerSchema && typeof providerSchema === 'object' && providerSchema !== null) {
-                              Object.keys(providerSchema).forEach(key => {
-                                if (!(key in initialParams)) {
-                                  initialParams[key] = '';
-                                }
-                              });
-                            }
-                            setEditingConnectionParams(initialParams);
-                            if (error && error.code !== 'PGRST116') { // PGRST116: single row not found
-                                console.error("Error fetching connection params:", error);
-                                toast({ title: "Error", description: "Could not load existing connection parameters.", variant: "destructive"});
-                            }
-                          })
-                          .finally(() => {
-                            setLoadingConnectionParams(false);
-                          });
-                      } else {
-                        setLoadingConnectionParams(false); // Should not happen if user is viewing this page
-                        toast({ title: "Error", description: "User not found, cannot load connection parameters.", variant: "destructive"});
-                      }
-
-                      // const currentProviderApiKey = actionsInGroup.length > 0 ? (actionsInGroup[0].auth_token || '') : '';
-                      // setEditingApiKey(currentProviderApiKey); // Deprecated by connection_params
+                      const currentProviderApiKey = actionsInGroup.length > 0 ? (actionsInGroup[0].auth_token || '') : '';
+                      setEditingApiKey(currentProviderApiKey);
 
                       const initialSelections: Record<string, boolean> = {};
                       const providerData = discoveredProviders?.find(p => p.provider_name === lowerCategory);
                       if (providerData && providerData.actions) {
                         providerData.actions.forEach(discoveredAction => {
+                          // actionsInGroup are already filtered for the current category (PascalCase key from groupedEndpoints)
+                          // and their provider_name field should be lowercase.
                           const savedAction = actionsInGroup.find(sa =>
                             sa.action_name === discoveredAction.action_name &&
-                            sa.provider_name === lowerCategory
+                            sa.provider_name === lowerCategory // Ensure we are matching against the lowercase provider_name
                           );
                           initialSelections[discoveredAction.action_name] = savedAction ? savedAction.active : false;
                         });
@@ -1125,48 +882,17 @@ export function MCPManagement() {
                 </div>
                 {editingCategory === category.toLowerCase() ? ( // Compare with lowercase editingCategory
                   <div className="p-4 border-t border-dashed mt-2 space-y-4">
-                    {loadingConnectionParams ? (
-                      <div className="flex items-center justify-center p-4">
-                        <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-600"></div>
-                        <p className="ml-2 text-sm text-gray-500">Loading connection details...</p>
-                      </div>
-                    ) : (
-                      (() => {
-                        const providerData = discoveredProviders?.find(p => p.provider_name === editingCategory);
-                        const connectionSchema = providerData?.connection_schema;
-                        if (connectionSchema && typeof connectionSchema === 'object' && Object.keys(connectionSchema).length > 0) {
-                          return (
-                            <div className="space-y-3">
-                              <h4 className="text-md font-semibold mb-2">Connection Parameters:</h4>
-                              {Object.entries(connectionSchema).map(([key, schemaValue]: [string, any]) => (
-                                <div key={key}>
-                                  <Label htmlFor={`conn-param-${key}`}>
-                                    {schemaValue?.display_name || key}
-                                    {schemaValue?.required && <span className="text-red-500 ml-1">*</span>}
-                                  </Label>
-                                  <Input
-                                    id={`conn-param-${key}`}
-                                    type={schemaValue?.type === 'password' ? 'password' : 'text'}
-                                    value={editingConnectionParams[key] || ''}
-                                    onChange={(e) =>
-                                      setEditingConnectionParams(prev => ({ ...prev, [key]: e.target.value }))
-                                    }
-                                    placeholder={schemaValue?.placeholder || `Enter ${schemaValue?.display_name || key}`}
-                                    className="mt-1"
-                                  />
-                                  {schemaValue?.description && (
-                                    <p className="text-xs text-gray-500 mt-1">{schemaValue.description}</p>
-                                  )}
-                                </div>
-                              ))}
-                            </div>
-                          );
-                        } else if (providerData && (!connectionSchema || Object.keys(connectionSchema || {}).length === 0)) {
-                           return <p className="text-sm text-gray-500">This provider does not require additional connection parameters.</p>;
-                        }
-                        return null; // Should not happen if discovery data is consistent
-                      })()
-                    )}
+                    <div>
+                      <Label htmlFor={`edit-apikey-${category}`}>Provider API Key *</Label>
+                      <Input
+                        id={`edit-apikey-${category}`}
+                        type="password"
+                        value={editingApiKey}
+                        onChange={(e) => setEditingApiKey(e.target.value)}
+                        placeholder={`Enter API Key for ${categoryMapUtil[category.toLowerCase()] || category}`}
+                        className="mt-1"
+                      />
+                    </div>
 
                     <div>
                       <h4 className="text-md font-semibold mb-2">Configure Actions:</h4>
@@ -1197,15 +923,13 @@ export function MCPManagement() {
                     <div className="flex justify-end gap-2 mt-4">
                       <Button variant="outline" onClick={() => {
                         setEditingCategory(null);
-                        // setEditingApiKey(''); // Deprecated
-                        setEditingConnectionParams({});
+                        setEditingApiKey('');
                         setEditingActionsSelection({});
-                        setLoadingConnectionParams(false); // Ensure loading is stopped if cancel is hit during load
                       }}>
                         Cancel
                       </Button>
-                      <Button onClick={handleInlineProviderSave} disabled={loadingConnectionParams}>
-                        {loadingConnectionParams ? 'Loading...' : 'Save Changes'}
+                      <Button onClick={handleInlineProviderSave}>
+                        Save Changes
                       </Button>
                     </div>
                   </div>
@@ -1302,7 +1026,7 @@ export function MCPManagement() {
                 <Label htmlFor="test-response-area">Test Response</Label>
                 <pre
                   id="test-response-area"
-                  className="mt-1 p-2 text-xs bg-gray-100 rounded-md h-40 border whitespace-pre-wrap break-words overflow-y-auto"
+                  className="mt-1 p-2 text-xs bg-gray-100 rounded-md overflow-x-auto h-40 border"
                 >
                   {testResponse}
                 </pre>
