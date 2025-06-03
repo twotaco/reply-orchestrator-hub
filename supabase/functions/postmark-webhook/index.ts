@@ -83,8 +83,10 @@ async function generateMCPToolPlan(
   userId: string | null,
   emailInteractionId: string | null
 ): Promise<object[] | null> {
-  console.log('🤖 Generating MCP Tool Plan using Google Gemini...');
-  const modelName = 'gemini-pro'; // Define model name for logging and use
+  const envModel = Deno.env.get('GEMINI_MODEL');
+  const modelName = (envModel && envModel.trim() !== '') ? envModel.trim() : 'gemini-1.5-pro';
+  console.log(`🤖 Generating MCP Tool Plan using Google Gemini model: ${modelName}...`);
+  // const modelName = 'gemini-pro'; // Old hardcoded value
   if (!emailBody || emailBody.trim() === '') {
     console.warn('✉️ Email body is empty. Skipping MCP plan generation.');
     return [];
@@ -296,7 +298,6 @@ Your entire response must be only the JSON array.`;
     return null;
   }
   return parsedPlan; // Return the validated plan (could be empty array)
-  }
 }
 
 // Function to execute the MCP plan
@@ -523,7 +524,7 @@ async function processEmailWithKnowReply(
       }
     }
 
-    console.log(`🔗 Found ${mcpEndpoints.length} MCP endpoints`)
+    console.log(`🔗 Found ${mcpEndpoints.length} MCP endpoint(s)`)
 
     // Group MCP endpoints by agent_id
     const agentConfigs: Record<string, KnowReplyAgentConfig> = {}
