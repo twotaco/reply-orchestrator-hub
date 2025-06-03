@@ -542,15 +542,164 @@ Deno.test("[executeMCPPlan] Placeholder argument warning", async () => {
 // export async function executeMCPPlan(...) { ... }
 //
 // To run these tests:
-// deno test supabase/functions/postmark-webhook/index.test.ts --allow-env --allow-net=api.openai.com,mcp.example.com
+// deno test supabase/functions/postmark-webhook/index.test.ts --allow-env --allow-net=generativelanguage.googleapis.com,mcp.knowreply.email
 // (Adjust --allow-net as needed for actual MCP endpoints if not fully mocked)
 // If functions are not exported, this file will fail to import them.
-// The current implementation of index.ts does not export these functions.
-// That would be the first modification needed in index.ts itself.
+// The current implementation of index.ts DOES export them, so this note might be outdated.
 
-console.log("NOTE: For these tests to run, `generateMCPToolPlan` and `executeMCPPlan` must be exported from `./index.ts`.");
-console.log("The current `index.ts` in the prompt context does not export them. This needs to be addressed first.");
-console.log("Example export in index.ts: `export async function generateMCPToolPlan(...) { ... }`");
+Deno.test("[executeMCPPlan] multi-step plan with output/input chaining (placeholder resolution)", async () => {
+  const testUserId = "test_user_output_chain";
+  const testEmailInteractionId = "email_interaction_chain";
+
+  const availableMcps = [
+    {
+      id: "mcp1",
+      name: "stripe.getCustomerByEmail",
+      provider_name: "stripe",
+      action_name: "getCustomerByEmail",
+      instructions: "Get customer by email from Stripe.",
+      expected_format: { email: "string" }, // Simplified for test
+      output_schema: { id: "string", email: "string", name: "string" },
+      active: true,
+    },
+    {
+      id: "mcp2",
+      name: "stripe.getInvoices",
+      provider_name: "stripe",
+      action_name: "getInvoices",
+      instructions: "Get invoices for a customer ID.",
+      expected_format: { customerId: "string", status: "string" }, // Simplified
+      output_schema: { data: "array", has_more: "boolean" },
+      active: true,
+    },
+  ];
+
+  const mockPlan = [
+    { tool: "stripe.getCustomerByEmail", args: { email: "customer@example.com" } },
+    { tool: "stripe.getInvoices", args: { customerId: "{{steps[0].outputs.id}}", status: "paid" } }
+  ];
+
+  // Mock Deno.env.get for MCP_SERVER_INTERNAL_API_KEY
+  const envGetStub = stub(Deno.env, "get", (key) => {
+    if (key === 'MCP_SERVER_INTERNAL_API_KEY') return "test_internal_key";
+    if (key === 'GEMINI_MODEL') return "gemini-pro"; // Or any default model used
+    // Add other env vars if your function directly uses them and they affect the test
+    return undefined;
+  });
+
+  // Mock fetch
+  const originalGlobalFetch = globalThis.fetch;
+  let getInvoicesCallArgs: any = null; // To store args passed to getInvoices
+
+  globalThis.fetch = async (url: URL | Request | string, options?: RequestInit): Promise<Response> => {
+    const urlString = url.toString();
+    const body = options?.body ? JSON.parse(options.body.toString()) : {};
+
+    if (urlString.endsWith("/mcp/stripe/getCustomerByEmail")) {
+      assertEquals(body.args.email, "customer@example.com");
+      return Promise.resolve(new Response(
+        JSON.stringify({ id: "cus_test_123", email: "customer@example.com", name: "Test Customer" }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } }
+      ));
+    } else if (urlString.endsWith("/mcp/stripe/getInvoices")) {
+      getInvoicesCallArgs = body.args; // Store args for later assertion
+      // Assertions for arguments will be done after executeMCPPlan call for more clarity
+      return Promise.resolve(new Response(
+        JSON.stringify({ data: [{ id: "inv_abc", amount: 1000, currency: "usd" }], has_more: false }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } }
+      ));
+    }
+    console.error("Mock fetch received unexpected URL:", urlString);
+    return Promise.resolve(new Response(JSON.stringify({ error: "Mock Not Found" }), { status: 404 }));
+  };
+
+  // Mock Supabase client
+  const mockSupabaseClientWithConnParams = {
+    from: (tableName: string) => {
+      if (tableName === 'mcp_connection_params') {
+        return {
+          select: () => ({
+            eq: (_field: string, _value: string) => ({ // for user_id
+              eq: (_field2: string, _value2: string) => ({ // for provider_name
+                single: async () => ({
+                  data: { connection_values: { token: "dummy_stripe_token" } },
+                  error: null,
+                }),
+              }),
+            }),
+          }),
+        };
+      }
+      if (tableName === 'activity_logs') {
+        return {
+          insert: async (data: any) => ({ error: null, data: data }), // No-op or simple mock
+        };
+      }
+      // Fallback to a generic mock for other tables if needed
+      return {
+        insert: async (data: any) => ({ error: null, data: data }),
+        select: () => ({ eq: () => ({ single: async () => ({ data: {}, error: "Not implemented in mock" }) }) }),
+      };
+    },
+  };
+  const activityLogSpy = spy(mockSupabaseClientWithConnParams.from("activity_logs"), "insert");
+  const consoleLogSpy = spy(console, "log"); // To check placeholder resolution logs
+
+  try {
+    const results = await executeMCPPlan(
+      mockPlan,
+      availableMcps as any, // Cast as any if KnowReplyAgentConfig['mcp_endpoints'] is too strict for test setup
+      mockSupabaseClientWithConnParams as any, // Cast as any for simplicity
+      testUserId,
+      testEmailInteractionId
+    );
+
+    // Assert outcomes
+    assertEquals(results.length, 2, "Should have results for two actions.");
+
+    // Check getCustomerByEmail result
+    assertEquals(results[0].tool_name, "stripe.getCustomerByEmail");
+    assertEquals(results[0].status, "success");
+    assertEquals(results[0].response?.id, "cus_test_123");
+
+    // Check getInvoices result
+    assertEquals(results[1].tool_name, "stripe.getInvoices");
+    assertEquals(results[1].status, "success");
+    assertExists(results[1].response?.data, "Invoice data should exist");
+    assertEquals(results[1].response?.data[0]?.id, "inv_abc");
+
+    // Assert that getInvoices was called with the correct, resolved customerId
+    assertExists(getInvoicesCallArgs, "getInvoices was not called or its args were not captured.");
+    assertEquals(getInvoicesCallArgs.customerId, "cus_test_123", "customerId was not correctly substituted.");
+    assertEquals(getInvoicesCallArgs.status, "paid", "status argument was not passed correctly.");
+
+    // Check activity logs
+    assertEquals(activityLogSpy.calls.length, 2, "Activity log should be called for each step.");
+    assertEquals(activityLogSpy.calls[0].args[0][0].details.step, 0);
+    assertEquals(activityLogSpy.calls[0].args[0][0].details.request_args.email, "customer@example.com");
+    assertEquals(activityLogSpy.calls[1].args[0][0].details.step, 1);
+    assertEquals(activityLogSpy.calls[1].args[0][0].details.request_args.customerId, "cus_test_123");
+
+
+    // Check console logs for placeholder resolution
+    let placeholderResolutionLogged = false;
+    for (const call of consoleLogSpy.calls) {
+        const arg = call.args[0];
+        if (typeof arg === 'string' && arg.includes("[Step 1] Resolved placeholder '{{steps[0].outputs.id}}' to: cus_test_123")) {
+            placeholderResolutionLogged = true;
+            break;
+        }
+    }
+    assert(placeholderResolutionLogged, "Placeholder resolution log message not found.");
+
+  } finally {
+    // Teardown
+    globalThis.fetch = originalGlobalFetch;
+    envGetStub.restore();
+    activityLogSpy.restore();
+    consoleLogSpy.restore();
+  }
+});
 
 // Add a simple test to ensure the file is processed by Deno test runner
 Deno.test("Test suite placeholder", () => {

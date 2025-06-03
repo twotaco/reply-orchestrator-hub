@@ -71,6 +71,7 @@ interface KnowReplyAgentConfig {
     // mcp_server_base_url is removed, post_url is also removed
     // active status is also needed if we filter by it before passing to executeMCPPlan
     active?: boolean
+    output_schema?: any
   }>
 }
 
@@ -146,6 +147,7 @@ ${JSON.stringify(
       name: mcp.name,
       description: mcp.instructions || 'No specific instructions provided.',
       args_schema_keys: argsSchemaKeys,
+      output_schema: mcp.output_schema || null, // Include output_schema
     };
   }),
   null,
@@ -153,16 +155,38 @@ ${JSON.stringify(
 )}
 ---
 
+Planning Sequences and Using Outputs:
+If the user's request requires multiple actions, you can plan a sequence of tool calls.
+To use an output from a previous step (e.g., `steps[0]`, `steps[1]`) as an argument for a subsequent step, use the placeholder syntax: `{{steps[INDEX].outputs.FIELD_NAME}}`.
+- `INDEX` is the 0-based index of the step in the plan array whose output you want to use.
+- `FIELD_NAME` is the specific field name from that step's `output_schema`. This field name must exactly match a key present in the `output_schema` of the tool at `steps[INDEX]`.
+The `output_schema` provided for each tool in the "Available Tools" list shows what `FIELD_NAME`s it will return.
+
 Important Note on Arguments:
-When constructing the "args" object for a chosen tool, you MUST use the argument names as provided in that tool's "args_schema_keys" list. For example, if a tool's definition includes "args_schema_keys": ["orderId", "email"], then the "args" object in your plan for that tool should use "orderId" and/or "email" as keys, not generic names like 'id' or 'searchTerm' unless those specific names are in the "args_schema_keys".
+When constructing the "args" object for a chosen tool:
+- You MUST use the argument names as provided in that tool's "args_schema_keys" list for direct inputs.
+- For arguments that depend on previous steps, use the `{{steps[INDEX].outputs.FIELD_NAME}}` syntax. Ensure `FIELD_NAME` matches the `output_schema` of the source step.
 
 Output format constraints:
-Respond ONLY with a valid JSON array in the following format:
-[
-  { "tool": "mcp:example.toolName", "args": { "parameter": "value" } }
-]
+Respond ONLY with a valid JSON array. Do not add any other text before or after the array.
 If no tools are needed, or if the email content does not require any actionable steps, return an empty array [].
-Only use tools from the 'Available Tools' list. Ensure the tool name in your output matches exactly a name from the 'Available Tools' list. Do not include any explanatory text, markdown formatting, or anything else before or after the JSON array itself.
+Only use tools from the 'Available Tools' list. Ensure the tool name in your output matches exactly a name from the 'Available Tools' list.
+
+Example of a multi-step plan:
+[
+  {
+    "tool": "user.getCustomerByEmail",
+    "args": { "email": "customer@example.com" }
+  },
+  {
+    "tool": "orders.getLatestOrder",
+    "args": { "customerId": "{{steps[0].outputs.id}}" }
+  },
+  {
+    "tool": "shipping.getTrackingInfo",
+    "args": { "orderId": "{{steps[1].outputs.order_id}}" }
+  }
+]
 Your entire response must be only the JSON array.`;
 
   console.log('📝 Constructed Prompt for Gemini (first 200 chars):', geminiPrompt.substring(0,200));
@@ -330,6 +354,7 @@ async function executeMCPPlan(
 ): Promise<any[]> {
   console.log('🚀 Starting MCP Plan Execution (Fixed Base URL)...');
   const results: any[] = [];
+  const executionOutputs: any[] = []; // Stores outputs of successfully executed actions
 
   if (!mcpPlan || mcpPlan.length === 0) {
     console.log('ℹ️ No MCP plan provided or plan is empty. Skipping execution.');
@@ -337,8 +362,12 @@ async function executeMCPPlan(
   }
 
   const mcpServerInternalApiKey = Deno.env.get('MCP_SERVER_INTERNAL_API_KEY');
+  const placeholderRegex = /^{{steps\[(\d+)]\.outputs\.([\w.-]+)}}$/;
 
-  for (const actionToExecute of mcpPlan) {
+  for (let i = 0; i < mcpPlan.length; i++) {
+    const actionToExecute = mcpPlan[i];
+    let currentActionFailed = false; // Flag to track if current action fails
+
     if (!mcpServerInternalApiKey || mcpServerInternalApiKey.trim() === '') {
       const errorMsg = 'MCP_SERVER_INTERNAL_API_KEY is not configured. Cannot make call to MCP server.';
       console.error(`❌ ${errorMsg}`);
@@ -349,14 +378,9 @@ async function executeMCPPlan(
         raw_response: '',
         error_message: errorMsg,
       });
-      // Do not log to activity_logs here as this is a system config error, not specific to this action execution attempt.
-      // Consider a more global way to flag this system error if it persists.
-      // For now, we'll push an error for each action that couldn't be executed.
-      // If we want to stop all execution, we could return results here or throw an error.
-      // For now, let's assume we want to record an error for each planned action that fails due to this.
-      // However, it's better to fail fast for a system-level misconfiguration.
-      // Let's log one error and then prevent further attempts in this run.
-      if (!results.find(r => r.error_message === errorMsg)) { // Log this system error only once per plan execution
+      executionOutputs[i] = { error: errorMsg };
+      // Log system error only once per plan execution attempt
+      if (!results.find(r => r.error_message === errorMsg && r.tool_name !== (actionToExecute.tool || 'unknown_tool'))) {
          await supabaseClient.from('activity_logs').insert({
             user_id: userId,
             email_interaction_id: emailInteractionId,
@@ -365,35 +389,30 @@ async function executeMCPPlan(
             details: { error: errorMsg },
         });
       }
-      // To prevent executing further actions if the key is missing:
-      // return results; // Or throw new Error(errorMsg);
-      // For now, as per original thought, let's mark this action as failed and continue (though this is debatable for a system key)
-      // Corrected approach: Fail the specific action and log, but allow loop to continue if other actions might not need this key (future proofing)
-      // However, for MCP server, this key is likely always needed. So, let's refine:
-      // If the key is missing, it's a setup error. We should probably stop processing this plan.
-      // But the request asks to push an error and continue. Let's stick to that for now but note it.
+      continue; // Skip to next action, this one is marked as failed
     }
 
     if (!actionToExecute.tool || typeof actionToExecute.tool !== 'string') {
+      const errorMsg = 'Invalid action: tool name missing or not a string.';
       console.warn('⚠️ Skipping invalid action in plan (missing or invalid tool name):', actionToExecute);
       results.push({
         tool_name: actionToExecute.tool || 'unknown_tool',
         status: 'error',
         response: null,
         raw_response: '',
-        error_message: 'Invalid action: tool name missing or not a string.',
+        error_message: errorMsg,
       });
+      executionOutputs[i] = { error: errorMsg };
       continue;
     }
 
-    console.log(`🔎 Looking for MCP configuration for tool: ${actionToExecute.tool}`);
+    console.log(`🔎 [Step ${i}] Looking for MCP configuration for tool: ${actionToExecute.tool}`);
     // .tool from plan is the unique AI name, which is mcpConfig.name
     const mcpConfig = availableMcps.find(mcp => mcp.name === actionToExecute.tool);
 
-    // mcp_server_base_url is now fixed, so not needed in mcpConfig for URL construction
     if (!mcpConfig || !mcpConfig.provider_name || !mcpConfig.action_name) {
       const errorMsg = `MCP configuration incomplete or not found for tool: ${actionToExecute.tool}. Required fields from DB: provider_name, action_name.`;
-      console.error(`❌ ${errorMsg}`);
+      console.error(`❌ [Step ${i}] ${errorMsg}`);
       results.push({
         tool_name: actionToExecute.tool,
         status: 'error',
@@ -401,12 +420,13 @@ async function executeMCPPlan(
         raw_response: '',
         error_message: errorMsg,
       });
+      executionOutputs[i] = { error: errorMsg };
       await supabaseClient.from('activity_logs').insert({
         user_id: userId,
         email_interaction_id: emailInteractionId,
         action: 'mcp_execution_error',
         status: 'error',
-        details: { tool_name: actionToExecute.tool, error: errorMsg, request_args: actionToExecute.args },
+        details: { step: i, tool_name: actionToExecute.tool, error: errorMsg, request_args: actionToExecute.args },
       });
       continue;
     }
@@ -418,7 +438,7 @@ async function executeMCPPlan(
     }
     const targetUrl = `${tempBaseUrl}/mcp/${mcpConfig.provider_name}/${mcpConfig.action_name}`;
 
-    console.log(`⚙️ Executing MCP: ${mcpConfig.name} via URL: ${targetUrl}`);
+    console.log(`⚙️ [Step ${i}] Executing MCP: ${mcpConfig.name} via URL: ${targetUrl}`);
 
     // Fetch connection parameters for this provider
     const { data: connParamsResult, error: connParamsError } = await supabaseClient
@@ -431,10 +451,10 @@ async function executeMCPPlan(
     if (connParamsError || !connParamsResult || !connParamsResult.connection_values || Object.keys(connParamsResult.connection_values).length === 0) {
       let errorDetail = `Connection parameters not found or empty for provider: ${mcpConfig.provider_name}.`;
       if (connParamsError && connParamsError.code !== 'PGRST116') { // PGRST116 means no row found
-        console.error(`❌ Error fetching connection params for ${mcpConfig.provider_name}:`, connParamsError);
+        console.error(`❌ [Step ${i}] Error fetching connection params for ${mcpConfig.provider_name}:`, connParamsError);
         errorDetail = `Error fetching connection params for ${mcpConfig.provider_name}: ${connParamsError.message}`;
       } else {
-        console.warn(`⚠️ ${errorDetail}`);
+        console.warn(`⚠️ [Step ${i}] ${errorDetail}`);
       }
       results.push({
         tool_name: actionToExecute.tool,
@@ -443,101 +463,150 @@ async function executeMCPPlan(
         raw_response: '',
         error_message: errorDetail,
       });
+      executionOutputs[i] = { error: errorDetail };
       await supabaseClient.from('activity_logs').insert({
         user_id: userId,
         email_interaction_id: emailInteractionId,
         action: 'mcp_execution_error',
         status: 'error',
-        details: { tool_name: actionToExecute.tool, error: errorDetail, request_args: actionToExecute.args },
+        details: { step: i, tool_name: actionToExecute.tool, error: errorDetail, request_args: actionToExecute.args },
       });
-      continue; // Skip to the next action
+      continue;
     }
 
     const actualConnectionParams = connParamsResult.connection_values;
-    console.log(`🔐 Using connection parameters for provider: ${mcpConfig.provider_name}`);
+    console.log(`🔐 [Step ${i}] Using connection parameters for provider: ${mcpConfig.provider_name}`);
 
-    // Structure the request body
-    const requestPayload = {
-      args: actionToExecute.args || {},
-      auth: actualConnectionParams, // Use fetched connection_values directly
-    };
+    // Resolve arguments with placeholder substitution
+    const resolvedArgs: { [key: string]: any } = {};
+    let placeholderError = null;
 
-    // Placeholder detection for argument values (remains useful)
-    for (const key in requestPayload.args) {
-      if (typeof requestPayload.args[key] === 'string' && requestPayload.args[key].startsWith('{{') && requestPayload.args[key].endsWith('}}')) {
-        console.warn(`⚠️ Placeholder argument detected for ${actionToExecute.tool} - ${key}: ${requestPayload.args[key]}. Using as literal string for now.`);
+    for (const key in actionToExecute.args) {
+      const value = actionToExecute.args[key];
+      if (typeof value === 'string') {
+        const match = value.match(placeholderRegex);
+        if (match) {
+          console.log(`[Step ${i}] Found placeholder for arg '${key}': ${value}`);
+          const refStepIndex = parseInt(match[1], 10);
+          const refFieldName = match[2];
+
+          if (refStepIndex < 0 || refStepIndex >= i) { // Cannot reference future steps or self
+            placeholderError = `Invalid placeholder: step index ${refStepIndex} is out of bounds for current step ${i}.`;
+            console.error(`❌ [Step ${i}] ${placeholderError}`);
+            break;
+          }
+          const referencedOutput = executionOutputs[refStepIndex];
+          if (!referencedOutput || referencedOutput.error) { // Check if referenced step failed or had no output
+            placeholderError = `Invalid placeholder: step ${refStepIndex} for '${value}' failed or produced no output.`;
+            console.error(`❌ [Step ${i}] ${placeholderError} Output was:`, referencedOutput);
+            break;
+          }
+          if (referencedOutput.hasOwnProperty(refFieldName)) {
+            resolvedArgs[key] = referencedOutput[refFieldName];
+            console.log(`[Step ${i}] Resolved placeholder '${value}' to:`, resolvedArgs[key]);
+          } else {
+            placeholderError = `Invalid placeholder: field '${refFieldName}' not found in output of step ${refStepIndex} for '${value}'. Available fields: ${Object.keys(referencedOutput || {}).join(', ')}`;
+            console.error(`❌ [Step ${i}] ${placeholderError}`);
+            break;
+          }
+        } else {
+          resolvedArgs[key] = value; // Not a placeholder
+        }
+      } else {
+        resolvedArgs[key] = value; // Not a string, so not a placeholder
       }
     }
+
+    if (placeholderError) {
+      results.push({
+        tool_name: actionToExecute.tool,
+        status: 'error',
+        response: null,
+        raw_response: '',
+        error_message: placeholderError,
+      });
+      executionOutputs[i] = { error: placeholderError };
+      await supabaseClient.from('activity_logs').insert({
+        user_id: userId,
+        email_interaction_id: emailInteractionId,
+        action: 'mcp_execution_error',
+        status: 'error',
+        details: { step: i, tool_name: actionToExecute.tool, error: placeholderError, request_args: actionToExecute.args },
+      });
+      continue;
+    }
+
+    const requestPayload = {
+      args: resolvedArgs,
+      auth: actualConnectionParams,
+    };
 
     let responseData: any = null;
     let rawResponseText = '';
     let status: 'success' | 'error' = 'error';
     let errorMessage: string | null = null;
 
-    // Check for MCP_SERVER_INTERNAL_API_KEY before each fetch
     if (!mcpServerInternalApiKey || mcpServerInternalApiKey.trim() === '') {
+       // This check is technically redundant here due to the loop start check, but good for safety.
       const errorMsg = 'MCP_SERVER_INTERNAL_API_KEY is not configured. MCP call cannot proceed.';
-      console.error(`❌ ${errorMsg} for tool ${actionToExecute.tool}`);
+      console.error(`❌ [Step ${i}] ${errorMsg} for tool ${actionToExecute.tool}`);
       results.push({
         tool_name: actionToExecute.tool,
-        status: 'error',
-        response: null,
-        raw_response: '',
-        error_message: errorMsg,
+        status: 'error', response: null, raw_response: '', error_message: errorMsg,
       });
-      // Log this specific action failure to activity_logs
-      await supabaseClient.from('activity_logs').insert({
-        user_id: userId,
-        email_interaction_id: emailInteractionId,
-        action: 'mcp_execution_error', // Re-use existing for specific action failure
-        status: 'error',
-        details: { tool_name: actionToExecute.tool, error: errorMsg, request_args: actionToExecute.args },
-      });
-      continue; // Skip to next action
+      executionOutputs[i] = { error: errorMsg };
+      currentActionFailed = true; // Mark current action as failed
     }
 
-    try {
-      const headers: HeadersInit = {
-        'Content-Type': 'application/json',
-        'x-internal-api-key': mcpServerInternalApiKey,
-      };
-
-      console.log(`📤 Making POST request to ${targetUrl} for tool ${actionToExecute.tool}`);
-      // console.log(`📦 Request payload for ${actionToExecute.tool}:`, JSON.stringify(requestPayload, null, 2)); // Be careful logging tokens
-
-      const response = await fetch(targetUrl, {
-        method: 'POST',
-        headers: headers,
-        body: JSON.stringify(requestPayload),
-      });
-
-      rawResponseText = await response.text();
-
-      if (response.ok) {
-        status = 'success';
+    if (!currentActionFailed) { // Proceed only if no errors so far for this action
         try {
-          responseData = JSON.parse(rawResponseText);
-          console.log(`✅ MCP call successful for ${actionToExecute.tool}. Response:`, responseData);
+          const headers: HeadersInit = {
+            'Content-Type': 'application/json',
+            'x-internal-api-key': mcpServerInternalApiKey,
+          };
+
+          console.log(`📤 [Step ${i}] Making POST request to ${targetUrl} for tool ${actionToExecute.tool}`);
+          // console.log(`📦 [Step ${i}] Request payload for ${actionToExecute.tool}:`, JSON.stringify(requestPayload, null, 2));
+
+          const response = await fetch(targetUrl, {
+            method: 'POST',
+            headers: headers,
+            body: JSON.stringify(requestPayload),
+          });
+
+          rawResponseText = await response.text();
+
+          if (response.ok) {
+            status = 'success';
+            try {
+              responseData = JSON.parse(rawResponseText);
+              executionOutputs[i] = responseData; // Store successful response
+              console.log(`✅ [Step ${i}] MCP call successful for ${actionToExecute.tool}. Response:`, responseData);
+            } catch (e) {
+              errorMessage = `MCP call for ${actionToExecute.tool} was successful (status ${response.status}) but response was not valid JSON. Raw: ${rawResponseText.substring(0,100)}...`;
+              console.warn(`⚠️ [Step ${i}] ${errorMessage}`);
+              responseData = null; // Keep responseData null
+              executionOutputs[i] = { error: errorMessage, raw_response: rawResponseText }; // Store error info
+            }
+          } else {
+            errorMessage = `MCP call failed for ${actionToExecute.tool} to ${targetUrl}: ${response.status} - ${response.statusText}. Raw: ${rawResponseText.substring(0, 200)}`;
+            console.error(`❌ [Step ${i}] ${errorMessage}`);
+            executionOutputs[i] = { error: errorMessage, raw_response: rawResponseText };
+          }
         } catch (e) {
-          console.warn(`⚠️ MCP call for ${actionToExecute.tool} was successful (status ${response.status}) but response was not valid JSON. Raw response: ${rawResponseText.substring(0,100)}...`);
-          responseData = null;
+          errorMessage = `Network or fetch error for MCP ${actionToExecute.tool} to ${targetUrl}: ${e.message}`;
+          console.error(`❌ [Step ${i}] ${errorMessage}`, e);
+          rawResponseText = e.message;
+          executionOutputs[i] = { error: errorMessage, raw_response: rawResponseText };
         }
-      } else {
-        errorMessage = `MCP call failed for ${actionToExecute.tool} to ${targetUrl}: ${response.status} - ${response.statusText}. Raw: ${rawResponseText.substring(0, 200)}`;
-        console.error(`❌ ${errorMessage}`);
-      }
-    } catch (e) {
-      errorMessage = `Network or fetch error for MCP ${actionToExecute.tool} to ${targetUrl}: ${e.message}`;
-      console.error(`❌ ${errorMessage}`, e);
-      rawResponseText = e.message;
-    }
+    } // End if (!currentActionFailed)
 
     results.push({
       tool_name: actionToExecute.tool,
-      status: status,
-      response: responseData,
+      status: status, // This will be 'error' if currentActionFailed or if try-catch failed
+      response: responseData, // This will be null if parsing failed or error occurred
       raw_response: rawResponseText,
-      error_message: errorMessage,
+      error_message: errorMessage, // This will contain the error message if any
     });
 
     await supabaseClient.from('activity_logs').insert({
@@ -546,16 +615,18 @@ async function executeMCPPlan(
       action: 'mcp_execution_attempt',
       status: status,
       details: {
+        step: i,
         tool_name: actionToExecute.tool,
-        target_url: targetUrl, // Log the constructed URL
-        request_args: actionToExecute.args, // Args sent to the MCP server (within the larger payload)
-        response_status_code: status === 'success' && !errorMessage ? 200 : (errorMessage ? 'N/A' : 500) , // Approximate
+        target_url: targetUrl,
+        request_args: resolvedArgs, // Log resolved args
+        response_status_code: status === 'success' && !errorMessage ? 200 : (errorMessage ? 'N/A' : 500),
         error: errorMessage,
       },
     });
   }
 
-  console.log('🏁 MCP Plan Execution Finished (New Structure). Results:', results.length > 0 ? results : "No results");
+  console.log('🏁 MCP Plan Execution Finished. Results:', results.length > 0 ? results : "No results");
+  console.log('📦 Execution Outputs (for placeholder resolution):', executionOutputs);
   return results;
 }
 
@@ -627,7 +698,7 @@ async function processEmailWithKnowReply(
         .from('mcp_endpoints')
         // Removed mcp_server_base_url and post_url from select. Added provider_name, action_name.
         // Also removed auth_token as it's now in mcp_connection_params
-        .select('id, name, provider_name, action_name, instructions, expected_format, active')
+        .select('id, name, provider_name, action_name, instructions, expected_format, active, output_schema')
         .in('id', mcpEndpointIds)
         .eq('active', true)
 
