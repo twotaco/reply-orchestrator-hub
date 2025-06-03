@@ -136,8 +136,25 @@ ${emailBody.substring(0, 8000)}
 
 Available Tools:
 ---
-${JSON.stringify(availableMcps.map(mcp => ({ name: mcp.name, description: mcp.instructions || 'No specific instructions provided.' })), null, 2)}
+${JSON.stringify(
+  availableMcps.map(mcp => {
+    let argsSchemaKeys: string[] = [];
+    if (mcp.expected_format && typeof mcp.expected_format === 'object' && !Array.isArray(mcp.expected_format)) {
+      argsSchemaKeys = Object.keys(mcp.expected_format);
+    }
+    return {
+      name: mcp.name,
+      description: mcp.instructions || 'No specific instructions provided.',
+      args_schema_keys: argsSchemaKeys,
+    };
+  }),
+  null,
+  2
+)}
 ---
+
+Important Note on Arguments:
+When constructing the `args` object for a chosen tool, you MUST use the argument names as provided in that tool's `args_schema_keys` list. For example, if a tool's definition includes `"args_schema_keys": ["orderId", "email"]`, then the `args` object in your plan for that tool should use `orderId` and/or `email` as keys, not generic names like `id` or `searchTerm` unless those specific names are in the `args_schema_keys`.
 
 Output format constraints:
 Respond ONLY with a valid JSON array in the following format:
@@ -240,10 +257,13 @@ Your entire response must be only the JSON array.`;
     }
 
     // Further validation: check if tool names in the plan are valid
-    const validToolNames = new Set(simplifiedMcps.map(mcp => mcp.name));
+    // Use availableMcps directly for validation source, not simplifiedMcps which is not used by geminiPrompt
+    const validToolNames = new Set(availableMcps.map(mcp => mcp.name));
     // Validation of the parsed plan (if no error occurred before this)
     if (!llmError && parsedPlan) {
-      const validToolNames = new Set(simplifiedMcps.map(mcp => mcp.name));
+      // const validToolNames = new Set(simplifiedMcps.map(mcp => mcp.name)); // Old line
+      // Re-declare validToolNames based on availableMcps if not already in scope or if simplifiedMcps was the source
+      // It's already declared above, so this is fine.
       parsedPlan = parsedPlan.filter(step => {
         if (step && typeof step.tool === 'string' && validToolNames.has(step.tool)) {
           return true;
