@@ -361,7 +361,7 @@ export function MCPManagement() {
     try {
       const { data, error } = await supabase
         .from('mcp_endpoints')
-        .select('*')
+        .select('id, name, category, mcp_server_base_url, provider_name, action_name, action_display_name, expected_format, instructions, active, created_at, updated_at') // Explicitly select columns
         .eq('user_id', user.id)
         .order('created_at', { ascending: false });
 
