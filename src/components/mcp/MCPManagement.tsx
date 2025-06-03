@@ -31,8 +31,8 @@ const categoryMapUtil: { [key: string]: string } = {
   'shopify': 'Shopify',
   'stripe': 'Stripe',
   'supabase': 'Supabase',
-  'woocommerce': 'WooCommerce', // Added
-  'wordpress': 'WordPress',   // Added
+  'woocommerce': 'WooCommerce',
+  'wordpress': 'WordPress',
   'zendesk': 'Zendesk'
 };
 
@@ -76,16 +76,15 @@ interface DiscoveredProviderAction {
   action_name: string;
   display_name: string;
   description?: string;
-  sample_payload?: any; // Added for displaying sample payload
-  output_schema?: any; // Added output_schema
-  // We might add expected_payload_schema and response_schema here later
+  sample_payload?: any;
+  output_schema?: any;
+  args_schema?: any;  // Already added, ensure it's used
 }
 
 interface DiscoveredProvider {
   provider_name: string;
   display_name: string;
   description?: string;
-  mcp_server_type: 'knowreply_managed' | 'self_hosted'; // To know if it's a standard one we might pre-fill base URL for
   actions: DiscoveredProviderAction[];
   connection_schema?: any;
 }
@@ -124,7 +123,8 @@ interface ConfiguredActionData {
   instructions?: string;
   sample_payload?: string;
   display_name?: string;
-  output_schema?: any; // Added output_schema
+  output_schema?: any;
+  args_schema?: any; // Added args_schema to ConfiguredActionData
 }
 
 
@@ -307,9 +307,9 @@ export function MCPManagement() {
           provider_name: editingCategory, // Lowercase provider name for DB 'provider_name' field
           action_name: discoveredAction.action_name,
           action_display_name: discoveredAction.display_name || discoveredAction.action_name,
-          expected_format: discoveredAction.sample_payload || {},
+          expected_format: discoveredAction.args_schema || {}, // Changed to args_schema
           instructions: discoveredAction.description || '',
-          output_schema: discoveredAction.output_schema || {}, // Added output_schema
+          output_schema: discoveredAction.output_schema || {},
           active: true, // If selected in UI, it's active
           user_id: user.id,
         };
@@ -463,9 +463,10 @@ export function MCPManagement() {
           action_name: discoveredAction.action_name,
           provider_name: selectedDiscoveredProvider.provider_name,
           instructions: discoveredAction.description || "No specific instructions.",
-          sample_payload: JSON.stringify(discoveredAction.sample_payload || {}, null, 2),
+          sample_payload: JSON.stringify(discoveredAction.sample_payload || {}, null, 2), // Keep for UI
           display_name: discoveredAction.display_name || discoveredAction.action_name,
-          output_schema: discoveredAction.output_schema, // Added output_schema
+          output_schema: discoveredAction.output_schema,
+          args_schema: discoveredAction.args_schema, // Propagate args_schema
         };
       });
     }
@@ -563,8 +564,8 @@ export function MCPManagement() {
           action_name: actionConfig.action_name,
           action_display_name: actionConfig.display_name,
           instructions: actionConfig.instructions,
-          expected_format: parsedSamplePayload,
-          output_schema: actionConfig.output_schema || {}, // Added output_schema
+          expected_format: actionConfig.args_schema || {}, // Use args_schema for expected_format
+          output_schema: actionConfig.output_schema || {},
           active: actionConfig.is_selected,
           user_id: user.id,
           category: getPascalCaseCategory(formData.selected_provider_name),
