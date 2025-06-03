@@ -471,7 +471,8 @@ export function MCPManagement() {
       )}
       <Card> {/* ... Configured Endpoints List ... */}
         <CardContent>
-          {Object.entries(groupedEndpoints).map(([category, actionsInGroup]) => (
+          {Object.entries(groupedEndpoints).map(([category, actionsInGroup]) => {
+            return (
             <div key={category} className="mb-8 p-4 border rounded-lg shadow-sm">
               {/* ... Category Header & Configure Button ... */}
               {editingCategory === category.toLowerCase() ? (
