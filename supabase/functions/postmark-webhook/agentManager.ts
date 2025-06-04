@@ -80,6 +80,33 @@ async function processWithAgent(
     console.log(`🚫 No MCP plan to execute for agent ${agentConfig.agent_id}.`);
   }
 
+  let mcpActionDigest = '';
+  if (mcpPlan && mcpResults && mcpPlan.length > 0 && mcpResults.length > 0 && mcpPlan.length === mcpResults.length) {
+    console.log(`🛠️ Generating MCP Action Digest for agent ${agentConfig.agent_id}`);
+    const digestParts: string[] = [];
+    for (let i = 0; i < mcpPlan.length; i++) {
+      const planStep = mcpPlan[i] as { tool: string; args: any };
+      const resultStep = mcpResults[i] as { tool_name: string; status: string; response: any; error_message: string };
+
+      const toolName = planStep.tool;
+      const mcpConfig = agentConfig.mcp_endpoints.find(mcp => mcp.name === toolName);
+      const toolDescription = mcpConfig?.instructions || 'No description found.';
+      const argsString = JSON.stringify(planStep.args);
+      const status = resultStep.status;
+      const outputString = status === 'success' ? JSON.stringify(resultStep.response) : resultStep.error_message;
+
+      digestParts.push(
+        `Action ${i + 1}: ${toolName}\nDescription: ${toolDescription}\nArguments: ${argsString}\nStatus: ${status}\nOutput: ${outputString}\n---`
+      );
+    }
+    mcpActionDigest = digestParts.join('\n');
+    console.log(`📄 MCP Action Digest generated for agent ${agentConfig.agent_id}:\n${mcpActionDigest}`);
+  } else if (mcpPlan && mcpResults && mcpPlan.length !== mcpResults.length) {
+    console.warn(`⚠️ MCP Plan and Results length mismatch for agent ${agentConfig.agent_id}. Cannot generate accurate digest.`);
+    mcpActionDigest = 'Error: MCP Plan and Results length mismatch. Digest could not be generated.';
+  }
+
+
   const knowReplyRequest = {
     agent_id: agentConfig.agent_id,
     email: {
@@ -99,7 +126,8 @@ async function processWithAgent(
       },
       raw: payload
     },
-    mcp_results: mcpResults || []
+    mcp_results: mcpResults || [],
+    mcp_action_digest: mcpActionDigest,
   };
 
   const knowReplyUrl = workspaceConfig.knowreply_webhook_url;

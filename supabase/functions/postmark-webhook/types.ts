@@ -50,6 +50,25 @@ export interface PostmarkWebhookPayload {
   }>
 }
 
+export interface KnowReplyRequestPayload {
+  agent_id: string;
+  email: {
+    provider: string;
+    sender: string;
+    recipient: string;
+    subject: string;
+    body: string;
+    headers: Record<string, string>;
+    authentication: {
+      spf_pass: boolean;
+      spam_score?: number;
+    };
+    raw: PostmarkWebhookPayload;
+  };
+  mcp_results: any[]; // Consider defining a more specific type for MCP results if possible
+  mcp_action_digest?: string;
+}
+
 export interface KnowReplyAgentConfig {
   agent_id: string
   mcp_endpoints: Array<{
