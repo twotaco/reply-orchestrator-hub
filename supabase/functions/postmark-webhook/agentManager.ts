@@ -138,6 +138,8 @@ async function processWithAgent(
     mcp_results_count: knowReplyRequest.mcp_results?.length || 0,
   });
   console.log('🔑 Using API token:', workspaceConfig.knowreply_api_token ? `${workspaceConfig.knowreply_api_token.substring(0, 10)}...` : 'MISSING');
+  // log the full request body before calling fetch
+  console.log('📦 KnowReply request body:', JSON.stringify(knowReplyRequest, null, 2));
 
   const response = await fetch(knowReplyUrl, {
     method: 'POST',
