@@ -42,12 +42,20 @@ interface MCPEndpoint {
   instructions?: string;
 }
 
+interface AgentEmailMapping {
+  id: string;
+  agent_id: string;
+  email_address: string;
+}
+
 interface AgentConfig {
   agent_id: string;
   agent_name: string;
   agent_role?: string;
   enabled: boolean;
   mcp_endpoints: string[];
+  email_addresses: string[];
+  email_errors?: string[];
 }
 
 const KNOWREPLY_GET_AGENTS_URL = 'https://schhqmadbetntdrhowgg.supabase.co/functions/v1/get-agents';
@@ -61,12 +69,18 @@ export function KnowReplySetup() {
   const [availableAgents, setAvailableAgents] = useState<Agent[]>([]);
   const [mcpEndpoints, setMCPEndpoints] = useState<MCPEndpoint[]>([]);
   const [agentConfigs, setAgentConfigs] = useState<AgentConfig[]>([]);
+  const [agentEmailMappings, setAgentEmailMappings] = useState<AgentEmailMapping[]>([]);
   
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [loadingAgents, setLoadingAgents] = useState(false);
   const [fetchError, setFetchError] = useState<string | null>(null);
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
+  const [currentEmailInput, setCurrentEmailInput] = useState<Record<string, string>>({});
+
+  const handleEmailInputChange = (agentId: string, value: string) => {
+    setCurrentEmailInput(prev => ({ ...prev, [agentId]: value }));
+  };
 
   useEffect(() => {
     if (user) {
@@ -135,16 +149,29 @@ export function KnowReplySetup() {
 
       if (error) throw error;
 
+      // Fetch Agent Email Mappings
+      const { data: emailData, error: emailError } = await supabase
+        .from('agent_email_mappings')
+        .select('id, agent_id, email_address')
+        .eq('user_id', user?.id);
+      if (emailError) throw emailError;
+      setAgentEmailMappings(emailData || []);
+
       // Group mappings by agent_id
       const configMap = new Map<string, AgentConfig>();
       
       data?.forEach(mapping => {
         if (!configMap.has(mapping.agent_id)) {
+          const currentAgentEmails = (emailData || [])
+            .filter(emailMapping => emailMapping.agent_id === mapping.agent_id)
+            .map(emailMapping => emailMapping.email_address);
           configMap.set(mapping.agent_id, {
             agent_id: mapping.agent_id,
             agent_name: '', // Will be filled when agents are loaded
             enabled: true,
-            mcp_endpoints: []
+            mcp_endpoints: [],
+            email_addresses: currentAgentEmails,
+            email_errors: [],
           });
         }
         
@@ -152,6 +179,42 @@ export function KnowReplySetup() {
           configMap.get(mapping.agent_id)!.mcp_endpoints.push(mapping.mcp_endpoint_id);
         }
       });
+
+      // Ensure agents from emailData are also included even if they don't have MCP mappings
+      (emailData || []).forEach(emailMapping => {
+        if (!configMap.has(emailMapping.agent_id)) {
+          const agent = availableAgents.find(a => a.id === emailMapping.agent_id) // availableAgents should be loaded before this or concurrently
+          configMap.set(emailMapping.agent_id, {
+            agent_id: emailMapping.agent_id,
+            agent_name: agent?.name || 'Unknown Agent', // Attempt to get name
+            enabled: true, // Or determine based on some logic if necessary
+            mcp_endpoints: [],
+            email_addresses: [emailMapping.email_address],
+            email_errors: [],
+          });
+        } else {
+          // If agent already in configMap (from MCP mappings), ensure email is added if not present
+          const existingConfig = configMap.get(emailMapping.agent_id)!;
+          if (!existingConfig.email_addresses.includes(emailMapping.email_address)) {
+            existingConfig.email_addresses.push(emailMapping.email_address);
+          }
+        }
+      });
+
+      // Update agent names for configs that might have been created solely from emailData
+      // This part might need adjustment based on when availableAgents are populated.
+      // If availableAgents isn't populated yet, agent_name might remain 'Unknown Agent' until fetchAgents completes.
+      // Consider moving the agent_name population logic to after fetchAgents if it's an issue.
+      configMap.forEach((config) => {
+        if (config.agent_name === 'Unknown Agent' || config.agent_name === '') {
+           const agentDetails = availableAgents.find(a => a.id === config.agent_id);
+           if (agentDetails) {
+             config.agent_name = agentDetails.name;
+             config.agent_role = agentDetails.role;
+           }
+        }
+      });
+
 
       setAgentConfigs(Array.from(configMap.values()));
       setHasUnsavedChanges(false);
@@ -243,7 +306,9 @@ export function KnowReplySetup() {
       agent_name: agent.name,
       agent_role: agent.role,
       enabled: true,
-      mcp_endpoints: []
+      mcp_endpoints: [],
+      email_addresses: [],
+      email_errors: [],
     };
 
     setAgentConfigs(prev => [...prev, newConfig]);
@@ -287,6 +352,51 @@ export function KnowReplySetup() {
 
     setSaving(true);
     try {
+      // Validate Email Addresses
+      const allEmailsFromEnabledAgents: string[] = [];
+      for (const agentConfig of agentConfigs) {
+        if (agentConfig.enabled) {
+          if (!agentConfig.email_addresses || agentConfig.email_addresses.length === 0) {
+            toast({
+              title: "Validation Error",
+              description: `Agent "${agentConfig.agent_name}" is enabled but has no email addresses assigned. Please add at least one email or disable the agent.`,
+              variant: "destructive",
+            });
+            setSaving(false);
+            return;
+          }
+          agentConfig.email_addresses.forEach(email => {
+            if (allEmailsFromEnabledAgents.includes(email.toLowerCase())) {
+              toast({
+                title: "Validation Error",
+                description: `Email address "${email}" is used by multiple enabled agents. Each email must be unique across all enabled agents.`,
+                variant: "destructive",
+              });
+              setSaving(false);
+              return;
+            }
+            allEmailsFromEnabledAgents.push(email.toLowerCase());
+          });
+        }
+      }
+      // Re-check for duplicates after collecting all emails, in case an agent has the same email twice (UI should prevent this though)
+      const emailCounts = allEmailsFromEnabledAgents.reduce((acc, email) => {
+        acc[email] = (acc[email] || 0) + 1;
+        return acc;
+      }, {} as Record<string, number>);
+
+      const duplicateEmails = Object.entries(emailCounts).filter(([_, count]) => count > 1).map(([email]) => email);
+      if (duplicateEmails.length > 0) {
+        toast({
+          title: "Validation Error",
+          description: `The following email addresses are duplicated: ${duplicateEmails.join(', ')}. Each email must be unique.`,
+          variant: "destructive",
+        });
+        setSaving(false);
+        return;
+      }
+
+
       // Check if workspace config exists first
       const { data: existingConfig } = await supabase
         .from('workspace_configs')
@@ -359,6 +469,39 @@ export function KnowReplySetup() {
 
         if (insertError) throw insertError;
       }
+
+      // --- Manage Agent Email Mappings ---
+      // Delete all existing email mappings for the user
+      const { error: deleteEmailError } = await supabase
+        .from('agent_email_mappings')
+        .delete()
+        .eq('user_id', user.id);
+
+      if (deleteEmailError) throw deleteEmailError;
+
+      // Prepare and insert new email mappings
+      const newEmailMappings = [];
+      for (const agentConfig of agentConfigs) {
+        if (agentConfig.enabled && agentConfig.email_addresses) {
+          for (const email of agentConfig.email_addresses) {
+            if (email && email.trim() !== "") { // Ensure email is not empty
+              newEmailMappings.push({
+                user_id: user.id,
+                agent_id: agentConfig.agent_id,
+                email_address: email.toLowerCase(),
+              });
+            }
+          }
+        }
+      }
+
+      if (newEmailMappings.length > 0) {
+        const { error: insertEmailError } = await supabase
+          .from('agent_email_mappings')
+          .insert(newEmailMappings);
+        if (insertEmailError) throw insertEmailError;
+      }
+      // --- End Manage Agent Email Mappings ---
 
       setHasUnsavedChanges(false);
       toast({
@@ -562,6 +705,77 @@ export function KnowReplySetup() {
                             {agentConfig.enabled && mcpEndpoints.length === 0 && (
                               <div className="text-sm text-gray-500 p-3 bg-gray-50 rounded">
                                 No MCP endpoints configured. Set up MCP endpoints first to connect them to agents.
+                              </div>
+                            )}
+
+                            {/* Email Addresses Configuration */}
+                            {agentConfig.enabled && (
+                              <div className="pt-4 mt-4 border-t">
+                                <Label className="text-sm font-medium mb-2 block">Associated Email Addresses</Label>
+                                <div className="flex items-center gap-2 mb-2">
+                                  <Input
+                                    type="email"
+                                    placeholder="Enter email address"
+                                    value={currentEmailInput[agentConfig.agent_id] || ''}
+                                    onChange={(e) => handleEmailInputChange(agentConfig.agent_id, e.target.value)}
+                                    className="flex-grow"
+                                  />
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    onClick={() => {
+                                      const emailToAdd = (currentEmailInput[agentConfig.agent_id] || '').trim().toLowerCase();
+                                      if (!emailToAdd) return;
+
+                                      // Basic email validation
+                                      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+                                      if (!emailRegex.test(emailToAdd)) {
+                                        toast({ title: "Invalid Email", description: "Please enter a valid email address.", variant: "destructive" });
+                                        return;
+                                      }
+
+                                      if (agentConfig.email_addresses.includes(emailToAdd)) {
+                                        toast({ title: "Duplicate Email", description: "This email address is already added for this agent.", variant: "destructive" });
+                                        return;
+                                      }
+
+                                      setAgentConfigs(prev => prev.map(ac =>
+                                        ac.agent_id === agentConfig.agent_id
+                                          ? { ...ac, email_addresses: [...ac.email_addresses, emailToAdd] }
+                                          : ac
+                                      ));
+                                      handleEmailInputChange(agentConfig.agent_id, '');
+                                      setHasUnsavedChanges(true);
+                                    }}
+                                  >
+                                    Add Email
+                                  </Button>
+                                </div>
+                                <div className="space-y-2">
+                                  {agentConfig.email_addresses.map((email) => (
+                                    <div key={email} className="flex items-center justify-between p-2 border rounded-md bg-gray-50">
+                                      <span className="text-sm text-gray-700">{email}</span>
+                                      <Button
+                                        variant="ghost"
+                                        size="icon"
+                                        onClick={() => {
+                                          setAgentConfigs(prev => prev.map(ac =>
+                                            ac.agent_id === agentConfig.agent_id
+                                              ? { ...ac, email_addresses: ac.email_addresses.filter(e => e !== email) }
+                                              : ac
+                                          ));
+                                          setHasUnsavedChanges(true);
+                                        }}
+                                        className="text-gray-500 hover:text-red-500"
+                                      >
+                                        <Trash2 className="h-4 w-4" />
+                                      </Button>
+                                    </div>
+                                  ))}
+                                  {agentConfig.email_addresses.length === 0 && (
+                                    <p className="text-xs text-gray-500 text-center py-2">No email addresses associated with this agent yet.</p>
+                                  )}
+                                </div>
                               </div>
                             )}
                           </div>

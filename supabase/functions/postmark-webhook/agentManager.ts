@@ -5,6 +5,7 @@ import { executeMCPPlan } from './mcpExecutor.ts';
 import { isSenderVerified } from './handlerUtils.ts'; // Added import
 // Deno object is globally available in Deno runtime
 // SupabaseClient type is not strictly needed as supabase is 'any'
+import { getAgentIdsByEmails } from './db.ts';
 
 async function processWithAgent(
   workspaceConfig: any,
@@ -236,10 +237,28 @@ export async function processEmailWithKnowReply(
   payload: PostmarkWebhookPayload,
   emailInteractionId: string
 ): Promise<{ success: boolean; warnings: string[]; errors: string[] }> {
-  console.log('🤖 Starting KnowReply processing for user:', userId)
+  console.log('🤖 Starting KnowReply processing for user:', userId, 'Interaction ID:', emailInteractionId);
 
-  const warnings: string[] = []
-  const errors: string[] = []
+  const warnings: string[] = [];
+  const errors: string[] = [];
+  const processingErrors: string[] = []; // For Promise.allSettled results
+
+  // 1. Extract Recipient Emails from payload
+  const toEmails = payload.ToFull?.map(recipient => recipient.Email.toLowerCase()) || [];
+  const ccEmails = payload.CcFull?.map(recipient => recipient.Email.toLowerCase()) || [];
+  const bccEmails = payload.BccFull?.map(recipient => recipient.Email.toLowerCase()) || []; // BCC is available in type
+
+  const allRecipientEmails = [...new Set([...toEmails, ...ccEmails, ...bccEmails])];
+
+  if (allRecipientEmails.length === 0) {
+    const msg = `No recipient emails found in To, Cc, or Bcc fields for interaction ${emailInteractionId}. Cannot determine agent mapping.`;
+    console.log('⚠️', msg);
+    // This might not be an error if the webhook is for other purposes, but for agent processing, it's a dead end.
+    // Depending on strictness, could be errors.push(msg) and return success:false
+    warnings.push(msg);
+    return { success: true, warnings, errors }; // No agents to process, but not a system error.
+  }
+  console.log(`📧 Extracted recipient emails for interaction ${emailInteractionId}: ${allRecipientEmails.join(', ')}`);
 
   try {
     const { data: workspaceConfig, error: configError } = await supabase
@@ -258,38 +277,63 @@ export async function processEmailWithKnowReply(
     console.log('✅ Found KnowReply config:', workspaceConfig.knowreply_webhook_url)
     console.log('✅ Found KnowReply API token:', workspaceConfig.knowreply_api_token ? 'Yes' : 'No')
 
-    interface AgentMapping { // This interface can be moved to types.ts if used elsewhere or kept local
+    interface AgentMcpMapping { // Renamed for clarity from generic AgentMapping
       agent_id: string;
       mcp_endpoint_id: string | null;
+      // active: boolean; // The query already filters by active=true for these
     }
 
-    const { data: agentMappingsData, error: mappingsError } = await supabase
+    // 2. Fetch Agent IDs by Email (using db.ts helper)
+    let matchedAgentIds: string[];
+    try {
+      // Note: getAgentIdsByEmails already ensures emails are lowercase if the input demands it,
+      // but allRecipientEmails are already lowercased at the start of this function.
+      matchedAgentIds = await getAgentIdsByEmails(supabase, userId, allRecipientEmails);
+    } catch (e) {
+      const error = `Error calling getAgentIdsByEmails for interaction ${emailInteractionId}: ${(e as Error).message}`;
+      console.error('❌', error);
+      errors.push(error); // The error from getAgentIdsByEmails is already logged by itself.
+      return { success: false, warnings, errors };
+    }
+
+    if (matchedAgentIds.length === 0) {
+      const message = `No agents found matching recipient emails (via db.ts) for interaction ${emailInteractionId}: ${allRecipientEmails.join(', ')}.`;
+      console.log('ℹ️', message);
+      warnings.push(message);
+      return { success: true, warnings, errors }; // No agents assigned to these emails.
+    }
+    console.log(`🤖 Agents matched by email via db.ts helper for interaction ${emailInteractionId}: ${matchedAgentIds.join(', ')}`);
+
+    // Fetch all active MCP mappings for the user (these will be filtered by matchedAgentIds later)
+    const { data: allAgentMcpMappingsData, error: mcpMappingsError } = await supabase
       .from('knowreply_agent_mcp_mappings')
-      .select('agent_id, mcp_endpoint_id')
+      .select('agent_id, mcp_endpoint_id') // Assuming 'active' is for the mapping itself
       .eq('user_id', userId)
-      .eq('active', true)
+      .eq('active', true);
 
-    if (mappingsError) {
-      const error = `Error fetching agent mappings: ${mappingsError.message}`
-      console.error('❌', error)
-      errors.push(error)
-      return { success: false, warnings, errors }
+    if (mcpMappingsError) {
+      const error = `Error fetching knowreply_agent_mcp_mappings for interaction ${emailInteractionId}: ${mcpMappingsError.message}`;
+      console.error('❌', error);
+      errors.push(error);
+      return { success: false, warnings, errors };
     }
 
-    const agentMappings: AgentMapping[] = agentMappingsData || [];
+    const allAgentMcpMappings: AgentMcpMapping[] = allAgentMcpMappingsData || [];
 
-    if (!agentMappings || agentMappings.length === 0) {
-      const error = 'No active agent configurations found for user.'
-      console.log('❌', error)
-      errors.push(error)
-      return { success: false, warnings, errors }
+    // Filter these MCP mappings to only include those for agents we've matched by email
+    const relevantAgentMcpMappings = allAgentMcpMappings.filter(mcpMapping => matchedAgentIds.includes(mcpMapping.agent_id));
+
+    if (relevantAgentMcpMappings.length === 0 && matchedAgentIds.length > 0) {
+      console.log(`ℹ️ Agents ${matchedAgentIds.join(', ')} were matched by email, but have no active MCP mappings for interaction ${emailInteractionId}.`);
+      // These agents might still be processed if processWithAgent can handle agents with no MCPs.
     }
 
-    console.log(`🎯 Found ${agentMappings.length} agent mapping(s)`)
-    const uniqueAgentIds = [...new Set(agentMappings.map(mapping => mapping.agent_id))]
-    console.log('🤖 Unique agents found:', uniqueAgentIds)
+    // uniqueAgentIdsToProcess is now just matchedAgentIds
+    const uniqueAgentIdsToProcess = matchedAgentIds;
+    console.log(`🤖 Unique agents to process for interaction ${emailInteractionId}: ${uniqueAgentIdsToProcess.join(', ')}`);
 
-    const mcpEndpointIds = agentMappings.map(mapping => mapping.mcp_endpoint_id).filter(Boolean);
+
+    const mcpEndpointIds = relevantAgentMcpMappings.map(mapping => mapping.mcp_endpoint_id).filter(Boolean);
     let mcpEndpoints: KnowReplyAgentConfig['mcp_endpoints'] = []
     if (mcpEndpointIds.length > 0) {
       const { data: endpoints, error: endpointsError } = await supabase
@@ -306,50 +350,86 @@ export async function processEmailWithKnowReply(
     }
     console.log(`🔗 Found ${mcpEndpoints.length} MCP endpoint(s)`)
 
-    const agentConfigs: Record<string, KnowReplyAgentConfig> = {}
-    uniqueAgentIds.forEach(agentId => {
-      agentConfigs[agentId] = { agent_id: agentId, mcp_endpoints: [] }
-    })
-    agentMappings.forEach(mapping => {
+    const agentConfigs: Record<string, KnowReplyAgentConfig> = {};
+    uniqueAgentIdsToProcess.forEach(agentId => {
+      agentConfigs[agentId] = { agent_id: agentId, mcp_endpoints: [] };
+    });
+
+    relevantAgentMcpMappings.forEach(mapping => {
       if (mapping.mcp_endpoint_id) {
-        const endpoint = mcpEndpoints.find(ep => ep.id === mapping.mcp_endpoint_id)
+        const endpoint = mcpEndpoints.find(ep => ep.id === mapping.mcp_endpoint_id);
+        // Ensure the agentConfig for this mapping.agent_id exists (it should, as it's from uniqueAgentIdsToProcess)
         if (endpoint && agentConfigs[mapping.agent_id]) {
-          agentConfigs[mapping.agent_id].mcp_endpoints.push(endpoint)
+          agentConfigs[mapping.agent_id].mcp_endpoints.push(endpoint);
         }
       }
-    })
-    console.log('🎯 Final agent configurations:', Object.keys(agentConfigs))
+    });
 
-    let processedSuccessfully = 0
-    let processingErrors: string[] = []
-    for (const [agentId, agentConfig] of Object.entries(agentConfigs)) {
-      console.log(`🚀 Processing with agent: ${agentId} (${agentConfig.mcp_endpoints.length} MCP endpoints)`)
-      try {
-        await processWithAgent(workspaceConfig, agentConfig, payload, supabase, userId, emailInteractionId)
-        processedSuccessfully++
-      } catch (error: any) {
-        const errorMsg = `Error processing with agent ${agentId}: ${error.message}`
-        console.error('❌', errorMsg)
-        processingErrors.push(errorMsg)
-        await supabase.from('activity_logs').insert({
-            user_id: userId, email_interaction_id: emailInteractionId,
-            action: 'knowreply_processing_error', status: 'error',
-            details: { agent_id: agentId, error: error.message }
-          })
-      }
+    console.log(`🎯 Constructed ${Object.keys(agentConfigs).length} final agent configurations for interaction ${emailInteractionId}:`, Object.keys(agentConfigs));
+
+    if (Object.keys(agentConfigs).length === 0) {
+      // This implies matchedAgentIds was not empty, but none of them resulted in a valid agentConfig.
+      // This case should ideally be covered by earlier checks like matchedAgentIds.length === 0.
+      warnings.push(`No agent configurations could be built for matched agents for interaction ${emailInteractionId}.`);
+      return { success: true, warnings, errors };
     }
 
-    if (processingErrors.length > 0) errors.push(...processingErrors)
-    if (processedSuccessfully > 0) {
-      warnings.push(`Successfully processed email with ${processedSuccessfully} agent(s)`)
-      return { success: true, warnings, errors }
+    // 4. Parallel Agent Processing
+    const processingPromises = Object.values(agentConfigs).map(agentConfig => {
+      console.log(`🚀 Queueing processing for agent: ${agentConfig.agent_id} (${agentConfig.mcp_endpoints.length} MCP endpoints) for interaction ${emailInteractionId}`);
+      return processWithAgent(workspaceConfig, agentConfig, payload, supabase, userId, emailInteractionId);
+    });
+
+    const results = await Promise.allSettled(processingPromises);
+
+    let processedSuccessfullyCount = 0;
+    results.forEach((result, index) => {
+      const agentId = Object.values(agentConfigs)[index].agent_id; // Get agent_id based on order
+      if (result.status === 'fulfilled') {
+        console.log(`✅ Agent ${agentId} processing promise fulfilled for interaction ${emailInteractionId}.`);
+        // Assuming processWithAgent throws on failure, so fulfillment means success for that agent.
+        processedSuccessfullyCount++;
+      } else {
+        const errorMsg = `Error processing with agent ${agentId} for interaction ${emailInteractionId}: ${result.reason?.message || result.reason}`;
+        console.error('❌', errorMsg);
+        processingErrors.push(errorMsg);
+        // Log this specific error to activity_logs
+        supabase.from('activity_logs').insert({
+          user_id: userId, email_interaction_id: emailInteractionId,
+          action: 'knowreply_processing_error', status: 'error',
+          details: { agent_id: agentId, error: result.reason?.message || String(result.reason) }
+        }).then().catch(err => console.error("Error logging to activity_logs for agent processing error:", err));
+      }
+    });
+
+    if (processingErrors.length > 0) errors.push(...processingErrors);
+
+    if (processedSuccessfullyCount > 0) {
+      const message = `Successfully processed email with ${processedSuccessfullyCount} out of ${uniqueAgentIdsToProcess.length} matched agent(s) for interaction ${emailInteractionId}.`;
+      console.log('✅', message);
+      if (processingErrors.length > 0) {
+         warnings.push(`${message} Some errors occurred with other agents.`);
+      } else {
+        warnings.push(message);
+      }
+      return { success: true, warnings, errors };
+    } else if (uniqueAgentIdsToProcess.length > 0) {
+      const message = `No agents processed the email successfully out of ${uniqueAgentIdsToProcess.length} matched for interaction ${emailInteractionId}.`;
+      console.warn('⚠️', message);
+      warnings.push(message);
+      // If there were matched agents but none succeeded, this could be success:false depending on requirements.
+      // For now, if there were processingErrors, errors array will reflect that, leading to overall failure.
+      // If no processingErrors but count is 0, it means processWithAgent itself didn't throw but didn't "succeed" - needs clarity on processWithAgent's return.
+      // Assuming for now that if processingErrors is empty and count is 0, it's a strange state but not a system error.
+      return { success: processingErrors.length === 0, warnings, errors };
     } else {
-      warnings.push('No agents processed the email successfully')
-      return { success: false, warnings, errors }
+      // Should have been caught by uniqueAgentIdsToProcess.length === 0 earlier
+      warnings.push(`No agents were matched or configured to process the email for interaction ${emailInteractionId}.`);
+      return { success: true, warnings, errors }; // No work to do.
     }
 
   } catch (error: any) {
-    const errorMsg = `KnowReply processing failed: ${error.message}`
+    const errorMsg = `KnowReply processing failed for interaction ${emailInteractionId}: ${error.message}`
     console.error('💥', errorMsg)
     errors.push(errorMsg)
     await supabase.from('activity_logs').insert({
