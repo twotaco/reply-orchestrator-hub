@@ -1,4 +1,5 @@
 
+import { useEffect } from 'react'; // Added useEffect
 import { useQuery, useMutation } from '@tanstack/react-query';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -34,7 +35,7 @@ export function TestRunsList({ testCaseId }: TestRunsListProps) {
   const { toast } = useToast();
 
   const { data: testRuns, isLoading, refetch } = useQuery({
-    queryKey: ['test-runs', testCaseId],
+    queryKey: ['test-runs', testCaseId], // This queryKey is used for invalidation from TestCaseList
     queryFn: async () => {
       const { data, error } = await supabase
         .from('email_test_runs')
@@ -48,6 +49,45 @@ export function TestRunsList({ testCaseId }: TestRunsListProps) {
     },
     enabled: !!user?.id && !!testCaseId
   });
+
+  // Realtime subscription for test runs
+  useEffect(() => {
+    if (!testCaseId || !user?.id) return;
+
+    const channel = supabase
+      .channel(`test-runs-list-${testCaseId}`) // Unique channel name per instance
+      .on(
+        'postgres_changes',
+        {
+          event: '*', // Listen to all changes (inserts, updates, deletes)
+          schema: 'public',
+          table: 'email_test_runs',
+          filter: `test_case_id=eq.${testCaseId}`,
+        },
+        (payload) => {
+          console.log(`Realtime event for test_case_id ${testCaseId}:`, payload);
+          // When a change is detected, refetch the data for this list
+          refetch();
+        }
+      )
+      .subscribe((status, err) => {
+        if (status === 'SUBSCRIBED') {
+          console.log(`Subscribed to realtime for test_case_id ${testCaseId}`);
+        }
+        if (status === 'CHANNEL_ERROR') {
+          console.error(`Realtime channel error for test_case_id ${testCaseId}:`, err);
+        }
+        if (status === 'TIMED_OUT') {
+          console.warn(`Realtime subscription timed out for test_case_id ${testCaseId}`);
+        }
+      });
+
+    // Cleanup function to remove the channel subscription when the component unmounts or testCaseId changes
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [testCaseId, user?.id, refetch]); // Dependencies for the useEffect
+
 
   const deleteMutation = useMutation({
     mutationFn: async (testRunId: string) => {

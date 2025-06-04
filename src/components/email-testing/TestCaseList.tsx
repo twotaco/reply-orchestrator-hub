@@ -1,16 +1,16 @@
 
 import { useState } from 'react';
-import { useQuery, useMutation } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import {
   Accordion,
   AccordionContent,
-  AccordionItem,
-  AccordionTrigger,
-} from '@/components/ui/accordion';
+  AccordionItem, // To be removed
+  AccordionTrigger, // To be removed
+} from '@/components/ui/accordion'; // Accordion itself to be removed
 import { Badge } from '@/components/ui/badge';
-import { Play, Edit, Trash2, X } from 'lucide-react';
+import { Play, Edit, Trash2, History, X } from 'lucide-react'; // Added History
 import { useToast } from '@/hooks/use-toast';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
@@ -25,6 +25,15 @@ interface TestCaseListProps {
 export function TestCaseList({ testCases, onEdit, onRefresh }: TestCaseListProps) {
   const { user } = useAuth();
   const { toast } = useToast();
+  const queryClient = useQueryClient();
+  const [expandedRunHistory, setExpandedRunHistory] = useState<Record<string, boolean>>({});
+
+  const toggleRunHistory = (testCaseId: string) => {
+    setExpandedRunHistory(prev => ({
+      ...prev,
+      [testCaseId]: !prev[testCaseId]
+    }));
+  };
 
   const deleteMutation = useMutation({
     mutationFn: async (testCaseId: string) => {
@@ -124,7 +133,9 @@ export function TestCaseList({ testCases, onEdit, onRefresh }: TestCaseListProps
           : `Test failed with status ${result.status}`,
         variant: result.success ? 'default' : 'destructive'
       });
-      onRefresh();
+      onRefresh(); // Keep for now, might refresh other aspects of the test case list
+      // Invalidate the query for the specific test case's runs
+      queryClient.invalidateQueries({ queryKey: ['test-runs', testCase.id] });
     },
     onError: (error) => {
       toast({
@@ -156,72 +167,65 @@ export function TestCaseList({ testCases, onEdit, onRefresh }: TestCaseListProps
       <CardHeader>
         <CardTitle>Test Cases</CardTitle>
         <CardDescription>
-          Click on a test case to view its details and run history. Test results now include KnowReply processing outcomes.
+          View your configured test cases. Click the history icon to see run history. Test results now include KnowReply processing outcomes.
         </CardDescription>
       </CardHeader>
       <CardContent>
-        <Accordion type="single" collapsible className="space-y-4">
+        <div className="space-y-4">
           {testCases.map((testCase) => (
-            <AccordionItem key={testCase.id} value={testCase.id} className="border rounded-lg">
-              <AccordionTrigger className="px-4 py-3 hover:no-underline">
-                <div className="flex items-center justify-between w-full">
-                  <div className="text-left">
-                    <h3 className="font-medium">{testCase.title}</h3>
-                    {testCase.description && (
-                      <p className="text-sm text-gray-600 mt-1">{testCase.description}</p>
-                    )}
-                  </div>
-                  <div className="flex items-center gap-2 mr-4">
-                    <Button
-                      size="sm"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        runTestMutation.mutate(testCase);
-                      }}
-                      disabled={runTestMutation.isPending}
-                    >
-                      <Play className="h-3 w-3 mr-1" />
-                      Run
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        onEdit(testCase);
-                      }}
-                    >
-                      <Edit className="h-3 w-3" />
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleDelete(testCase.id);
-                      }}
-                      disabled={deleteMutation.isPending}
-                    >
-                      <Trash2 className="h-3 w-3" />
-                    </Button>
-                  </div>
+            <div key={testCase.id} className="border rounded-lg p-4">
+              <div className="flex items-center justify-between w-full">
+                <div className="text-left">
+                  <h3 className="font-medium">{testCase.title}</h3>
+                  {testCase.description && (
+                    <p className="text-sm text-gray-600 mt-1">{testCase.description}</p>
+                  )}
                 </div>
-              </AccordionTrigger>
-              <AccordionContent className="px-4 pb-4">
-                <div className="space-y-4">
-                  <div>
-                    <h4 className="font-medium mb-2">Incoming JSON:</h4>
-                    <pre className="bg-gray-50 p-3 rounded text-sm overflow-x-auto">
-                      {JSON.stringify(testCase.incoming_json, null, 2)}
-                    </pre>
-                  </div>
-                  
+                <div className="flex items-center gap-2">
+                  <Button
+                    size="sm"
+                    variant={expandedRunHistory[testCase.id] ? "secondary" : "outline"}
+                    onClick={() => toggleRunHistory(testCase.id)}
+                    title="Show/Hide Run History"
+                  >
+                    <History className="h-3 w-3" />
+                  </Button>
+                  <Button
+                    size="sm"
+                    onClick={() => runTestMutation.mutate(testCase)}
+                    disabled={runTestMutation.isPending}
+                    title="Run Test"
+                  >
+                    <Play className="h-3 w-3 mr-1" />
+                    Run
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => onEdit(testCase)}
+                    title="Edit Test Case"
+                  >
+                    <Edit className="h-3 w-3" />
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => handleDelete(testCase.id)}
+                    disabled={deleteMutation.isPending}
+                    title="Delete Test Case"
+                  >
+                    <Trash2 className="h-3 w-3" />
+                  </Button>
+                </div>
+              </div>
+              {expandedRunHistory[testCase.id] && (
+                <div className="mt-4 pt-4 border-t"> {/* Added border-t for visual separation */}
                   <TestRunsList testCaseId={testCase.id} />
                 </div>
-              </AccordionContent>
-            </AccordionItem>
+              )}
+            </div>
           ))}
-        </Accordion>
+        </div>
       </CardContent>
     </Card>
   );
