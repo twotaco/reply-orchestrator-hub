@@ -27,6 +27,12 @@ export async function generateMCPToolPlan(
     return [];
   }
 
+  availableMcps.forEach(mcp => {
+    console.log(`Tool: ${mcp.name}`);
+    console.log(`  Expected Args: ${JSON.stringify(mcp.expected_format)}`);
+    console.log(`  Output Schema: ${JSON.stringify(mcp.output_schema)}`);
+  });
+
   // Construct the prompt for Gemini
   const geminiPrompt = `You are an intent and action planner. Based on the email sender information and customer email content below, determine which external tools (MCPs) are needed to answer or fulfill the request.
 
@@ -68,10 +74,11 @@ To use an output from a previous step (e.g., 'steps[0]', 'steps[1]') as an argum
 - 'FIELD_NAME' is the specific field name from that step's 'output_schema'. This field name must exactly match a key present in the 'output_schema' of the tool at 'steps[INDEX]'.
 The 'output_schema' provided for each tool in the "Available Tools" list shows what 'FIELD_NAME's it will return.
 
-Important Note on Arguments:
-When constructing the "args" object for a chosen tool:
-- You MUST use the argument names as provided in that tool's 'args_schema_keys' list for direct inputs.
-- For arguments that depend on previous steps, use the '{{steps[INDEX].outputs.FIELD_NAME}}' syntax. Ensure 'FIELD_NAME' matches the 'output_schema' of the source step.
+IMPORTANT: When constructing the "args" object for any tool:
+- You must use the exact argument names listed in its args_schema_keys.
+- You must not invent, rename, or assume alternative argument names like order_id when the schema says orderId.
+- When referencing previous outputs, map the exact args_schema_keys name to a compatible field in a previous step's output_schema, even if they differ (e.g., orderId ← steps[0].outputs.id).
+- Do not rename keys. Do not use snake_case instead of camelCase. Do not change anything about the argument name.
 
 When referencing data from previous MCP calls, use the exact JSON path that matches the output structure:
 - If the response is an object with a field like 'orders: Order[]', use: 'steps[0].outputs.orders[0].id'
