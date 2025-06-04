@@ -2,6 +2,7 @@
 import type { PostmarkWebhookPayload, KnowReplyAgentConfig } from './types.ts';
 import { generateMCPToolPlan } from './llmPlanner.ts';
 import { executeMCPPlan } from './mcpExecutor.ts';
+import { isSenderVerified } from './handlerUtils.ts'; // Added import
 // Deno object is globally available in Deno runtime
 // SupabaseClient type is not strictly needed as supabase is 'any'
 
@@ -14,98 +15,111 @@ async function processWithAgent(
   emailInteractionId: string
 ) {
   console.log(`📨 Processing email with agent ${agentConfig.agent_id}`);
+  let mcpActionDigest = ""; // Initialize mcpActionDigest
 
-  const geminiApiKey = Deno.env.get('GEMINI_API_KEY');
+  // Perform sender verification
+  const senderIsVerified = isSenderVerified(payload.Headers, payload.FromFull.Email);
+
   let mcpPlan: object[] | null = null;
+  let mcpResults: any[] | null = null;
 
-  if (!geminiApiKey) {
-    console.error('❌ GEMINI_API_KEY is not set. Skipping MCP planning.');
-    await supabase
-      .from('activity_logs')
-      .insert({
-        user_id: userId,
-        email_interaction_id: emailInteractionId,
-        action: 'mcp_planning_skipped',
-        status: 'warning',
+  if (!senderIsVerified) {
+    console.warn(`⚠️ Sender ${payload.FromFull.Email} NOT VERIFIED. Skipping MCP planning and execution.`);
+    mcpActionDigest = "MCP actions skipped: Sender email could not be verified based on SPF/DKIM policies. No automated actions were taken.";
+
+    await supabase.from('activity_logs').insert({
+      user_id: userId,
+      email_interaction_id: emailInteractionId,
+      action: 'sender_verification_failed',
+      status: 'warning',
+      details: {
+        agent_id: agentConfig.agent_id,
+        from_email: payload.FromFull.Email,
+        reason: 'SPF/DKIM checks failed or indicated potential spoofing.'
+      }
+    });
+    // mcpPlan and mcpResults remain null as initialized
+
+  } else { // Sender IS VERIFIED
+    console.log(`✅ Sender ${payload.FromFull.Email} VERIFIED. Proceeding with MCP planning.`);
+    const geminiApiKey = Deno.env.get('GEMINI_API_KEY');
+
+    if (!geminiApiKey) {
+      console.error('❌ GEMINI_API_KEY is not set. Skipping MCP planning.');
+      mcpActionDigest = "MCP planning skipped: GEMINI_API_KEY not set.";
+      await supabase.from('activity_logs').insert({
+        user_id: userId, email_interaction_id: emailInteractionId,
+        action: 'mcp_planning_skipped', status: 'warning',
         details: { agent_id: agentConfig.agent_id, reason: 'GEMINI_API_KEY not set' }
       });
-  } else {
-    const emailBodyContent = payload.TextBody || payload.HtmlBody || payload.StrippedTextReply || "";
-    if (agentConfig.mcp_endpoints && agentConfig.mcp_endpoints.length > 0) {
+      // mcpPlan remains null
+    } else if (!agentConfig.mcp_endpoints || agentConfig.mcp_endpoints.length === 0) {
+      console.log(`🤔 Agent ${agentConfig.agent_id} has no MCP endpoints. Skipping MCP planning.`);
+      mcpActionDigest = "MCP planning skipped: Agent has no MCP endpoints configured.";
+      // mcpPlan remains null
+    } else {
+      // Has API Key and Endpoints, proceed to generate plan
+      const emailBodyContent = payload.TextBody || payload.HtmlBody || payload.StrippedTextReply || "";
       console.log(`🗺️ Agent ${agentConfig.agent_id} has ${agentConfig.mcp_endpoints.length} MCPs. Attempting to generate plan with Gemini.`);
       mcpPlan = await generateMCPToolPlan(
-        emailBodyContent,
-        payload.FromFull.Email,
-        payload.FromName,
-        agentConfig.mcp_endpoints,
-        geminiApiKey,
-        supabase,
-        userId,
-        emailInteractionId
+        emailBodyContent, payload.FromFull.Email, payload.FromName,
+        agentConfig.mcp_endpoints, geminiApiKey, supabase, userId, emailInteractionId
       );
 
-      if (mcpPlan) {
+      if (mcpPlan && mcpPlan.length > 0) {
         console.log(`✅ MCP Plan generated for agent ${agentConfig.agent_id}:`, JSON.stringify(mcpPlan, null, 2));
-      } else {
-        console.warn(`⚠️ MCP Plan generation returned null or empty for agent ${agentConfig.agent_id}.`);
+        console.log(`▶️ Executing MCP Plan for agent ${agentConfig.agent_id}:`, mcpPlan);
+        mcpResults = await executeMCPPlan(mcpPlan, agentConfig.mcp_endpoints, supabase, userId, emailInteractionId);
+        console.log(`📝 MCP Results for agent ${agentConfig.agent_id}:`, mcpResults);
+
+        // Store raw mcpResults in email_interactions (this is an intermediate update)
+        const { error: updateError } = await supabase
+          .from('email_interactions')
+          .update({ mcp_results: mcpResults, updated_at: new Date().toISOString() })
+          .eq('id', emailInteractionId);
+        if (updateError) {
+          console.error('❌ Failed to store MCP results in email_interactions:', updateError);
+          await supabase.from('activity_logs').insert({
+            user_id: userId, email_interaction_id: emailInteractionId,
+            action: 'mcp_result_storage_error', status: 'error',
+            details: { agent_id: agentConfig.agent_id, error: updateError.message },
+          });
+        } else {
+          console.log('✅ Successfully stored MCP results in email_interactions.');
+        }
+
+        // Now, generate the detailed mcpActionDigest from mcpPlan and mcpResults
+        if (mcpResults && mcpPlan.length === mcpResults.length) {
+          console.log(`🛠️ Generating MCP Action Digest for agent ${agentConfig.agent_id}`);
+          const digestParts: string[] = [];
+          for (let i = 0; i < mcpPlan.length; i++) {
+            const planStep = mcpPlan[i] as { tool: string; args: any };
+            const resultStep = mcpResults[i] as { tool_name: string; status: string; response: any; error_message: string };
+            const mcpConfigMatched = agentConfig.mcp_endpoints.find(mcp => mcp.name === planStep.tool);
+            const toolDescription = mcpConfigMatched?.instructions || 'No description found.';
+            const argsString = JSON.stringify(planStep.args);
+            const status = resultStep.status;
+            const outputString = status === 'success' ? JSON.stringify(resultStep.response) : resultStep.error_message;
+            digestParts.push(
+              `Action ${i + 1}: ${planStep.tool}\nDescription: ${toolDescription}\nArguments: ${argsString}\nStatus: ${status}\nOutput: ${outputString}\n---`
+            );
+          }
+          mcpActionDigest = digestParts.join('\n');
+          console.log(`📄 MCP Action Digest generated for agent ${agentConfig.agent_id}:\n${mcpActionDigest}`);
+        } else {
+          console.warn(`⚠️ MCP Plan and Results length mismatch for agent ${agentConfig.agent_id}. Cannot generate accurate digest.`);
+          mcpActionDigest = 'Error: MCP Plan and Results length mismatch. Digest could not be generated.';
+        }
+      } else if (mcpPlan === null) {
+        // Plan generation failed (e.g., Gemini error)
+        console.warn(`⚠️ MCP Plan generation returned null for agent ${agentConfig.agent_id}.`);
+        mcpActionDigest = "MCP plan generation failed.";
+      } else { // mcpPlan is an empty array
+        console.log(`ℹ️ MCP Plan is empty for agent ${agentConfig.agent_id}. No actions to execute.`);
+        mcpActionDigest = "No MCP actions were deemed necessary based on the email content.";
       }
-    } else {
-      console.log(`🤔 Agent ${agentConfig.agent_id} has no MCP endpoints. Skipping MCP planning.`);
     }
-  }
-
-  let mcpResults: any[] | null = null;
-  if (mcpPlan && mcpPlan.length > 0) {
-    console.log(`▶️ Executing MCP Plan for agent ${agentConfig.agent_id}:`, mcpPlan);
-    mcpResults = await executeMCPPlan(mcpPlan, agentConfig.mcp_endpoints, supabase, userId, emailInteractionId);
-    console.log(`📝 MCP Results for agent ${agentConfig.agent_id}:`, mcpResults);
-
-    const { error: updateError } = await supabase
-      .from('email_interactions')
-      .update({ mcp_results: mcpResults, updated_at: new Date().toISOString() }) // This was the original line for mcp_results
-      .eq('id', emailInteractionId);
-    if (updateError) {
-      console.error('❌ Failed to store MCP results in email_interactions:', updateError);
-      await supabase.from('activity_logs').insert({
-        user_id: userId,
-        email_interaction_id: emailInteractionId,
-        action: 'mcp_result_storage_error',
-        status: 'error',
-        details: { agent_id: agentConfig.agent_id, error: updateError.message },
-      });
-    } else {
-      console.log('✅ Successfully stored MCP results in email_interactions.');
-    }
-  } else {
-    console.log(`🚫 No MCP plan to execute for agent ${agentConfig.agent_id}.`);
-  }
-
-  let mcpActionDigest = '';
-  if (mcpPlan && mcpResults && mcpPlan.length > 0 && mcpResults.length > 0 && mcpPlan.length === mcpResults.length) {
-    console.log(`🛠️ Generating MCP Action Digest for agent ${agentConfig.agent_id}`);
-    const digestParts: string[] = [];
-    for (let i = 0; i < mcpPlan.length; i++) {
-      const planStep = mcpPlan[i] as { tool: string; args: any };
-      const resultStep = mcpResults[i] as { tool_name: string; status: string; response: any; error_message: string };
-
-      const toolName = planStep.tool;
-      const mcpConfig = agentConfig.mcp_endpoints.find(mcp => mcp.name === toolName);
-      const toolDescription = mcpConfig?.instructions || 'No description found.';
-      const argsString = JSON.stringify(planStep.args);
-      const status = resultStep.status;
-      const outputString = status === 'success' ? JSON.stringify(resultStep.response) : resultStep.error_message;
-
-      digestParts.push(
-        `Action ${i + 1}: ${toolName}\nDescription: ${toolDescription}\nArguments: ${argsString}\nStatus: ${status}\nOutput: ${outputString}\n---`
-      );
-    }
-    mcpActionDigest = digestParts.join('\n');
-    console.log(`📄 MCP Action Digest generated for agent ${agentConfig.agent_id}:\n${mcpActionDigest}`);
-  } else if (mcpPlan && mcpResults && mcpPlan.length !== mcpResults.length) {
-    console.warn(`⚠️ MCP Plan and Results length mismatch for agent ${agentConfig.agent_id}. Cannot generate accurate digest.`);
-    mcpActionDigest = 'Error: MCP Plan and Results length mismatch. Digest could not be generated.';
-  }
-
+  } // Closing the main 'else' for senderIsVerified
 
   const knowReplyRequest = {
     agent_id: agentConfig.agent_id,
@@ -126,8 +140,8 @@ async function processWithAgent(
       },
       raw: payload
     },
-    mcp_results: mcpResults || [],
-    mcp_action_digest: mcpActionDigest,
+    mcp_results: mcpResults || [], // mcpResults will be null/empty if sender not verified
+    mcp_action_digest: mcpActionDigest, // mcpActionDigest will have the appropriate message
   };
 
   const knowReplyUrl = workspaceConfig.knowreply_webhook_url;

@@ -9,9 +9,12 @@ import {
 import { stub, spy, type Stub, type Spy, returnsNext } from "https://deno.land/std@0.214.0/testing/mock.ts";
 import { generateMCPToolPlan, executeMCPPlan } from './index.ts'; // Assuming these are from mcpUtils or similar, not main index
 import { processEmailWithKnowReply } from './agentManager.ts';
+import { isSenderVerified } from './handlerUtils.ts'; // Import for direct testing
 import type { PostmarkWebhookPayload, KnowReplyAgentConfig, KnowReplyRequestPayload } from './types.ts';
 
 // Define McpEndpoint type based on KnowReplyAgentConfig
+// Define PostmarkHeader type for isSenderVerified tests
+type PostmarkHeader = { Name: string; Value: string };
 type McpEndpoint = KnowReplyAgentConfig['mcp_endpoints'][number];
 
 
@@ -304,3 +307,296 @@ Deno.test("[processEmailWithKnowReply] should result in empty mcpActionDigest if
 });
 // TODO: Add a test for plan/results length mismatch if time permits.
 // TODO: Add a test for a multi-step plan and digest.
+
+
+// --- Unit tests for isSenderVerified ---
+Deno.test("[isSenderVerified] various scenarios", async (t) => {
+  const baseFromEmail = 'user@example.com';
+
+  await t.step("fully verified email (SPF Pass, DKIM Pass & Aligned)", () => {
+    const headers: PostmarkHeader[] = [
+      { Name: 'Received-SPF', Value: 'pass (sender IP is 1.2.3.4) envelope-from=user@example.com' },
+      { Name: 'X-Spam-Tests', Value: 'DKIM_SIGNED,DKIM_VALID,DKIM_VALID_AU,OTHER_TEST' },
+      { Name: 'X-Spam-Status', Value: 'No' }
+    ];
+    assert(isSenderVerified(headers, baseFromEmail), "Should be verified");
+  });
+
+  await t.step("SPF fail", () => {
+    const headers: PostmarkHeader[] = [
+      { Name: 'Received-SPF', Value: 'fail (sender IP is 1.2.3.4) envelope-from=user@example.com' },
+      { Name: 'X-Spam-Tests', Value: 'DKIM_SIGNED,DKIM_VALID,DKIM_VALID_AU' },
+      { Name: 'X-Spam-Status', Value: 'No' }
+    ];
+    assert(!isSenderVerified(headers, baseFromEmail), "Should NOT be verified due to SPF fail");
+  });
+
+  await t.step("DKIM not signed", () => {
+    const headers: PostmarkHeader[] = [
+      { Name: 'Received-SPF', Value: 'pass (sender IP is 1.2.3.4) envelope-from=user@example.com' },
+      { Name: 'X-Spam-Tests', Value: 'DKIM_VALID,DKIM_VALID_AU' }, // Missing DKIM_SIGNED
+      { Name: 'X-Spam-Status', Value: 'No' }
+    ];
+    assert(!isSenderVerified(headers, baseFromEmail), "Should NOT be verified due to DKIM not signed");
+  });
+
+  await t.step("DKIM not valid", () => {
+    const headers: PostmarkHeader[] = [
+      { Name: 'Received-SPF', Value: 'pass (sender IP is 1.2.3.4) envelope-from=user@example.com' },
+      { Name: 'X-Spam-Tests', Value: 'DKIM_SIGNED,DKIM_VALID_AU' }, // Missing DKIM_VALID
+      { Name: 'X-Spam-Status', Value: 'No' }
+    ];
+    assert(!isSenderVerified(headers, baseFromEmail), "Should NOT be verified due to DKIM not valid");
+  });
+
+  await t.step("DKIM not aligned (DKIM_VALID_AU missing)", () => {
+    const headers: PostmarkHeader[] = [
+      { Name: 'Received-SPF', Value: 'pass (sender IP is 1.2.3.4) envelope-from=user@example.com' },
+      { Name: 'X-Spam-Tests', Value: 'DKIM_SIGNED,DKIM_VALID' },
+      { Name: 'X-Spam-Status', Value: 'No' }
+    ];
+    assert(!isSenderVerified(headers, baseFromEmail), "Should NOT be verified due to DKIM not aligned");
+  });
+
+  await t.step("X-Spam-Status is Yes", () => {
+    const headers: PostmarkHeader[] = [
+      { Name: 'Received-SPF', Value: 'pass (sender IP is 1.2.3.4) envelope-from=user@example.com' },
+      { Name: 'X-Spam-Tests', Value: 'DKIM_SIGNED,DKIM_VALID,DKIM_VALID_AU' },
+      { Name: 'X-Spam-Status', Value: 'Yes, score=7.0' }
+    ];
+    assert(!isSenderVerified(headers, baseFromEmail), "Should NOT be verified due to X-Spam-Status Yes");
+  });
+
+  await t.step("SPF domain misaligned (heuristic check)", () => {
+    const headers: PostmarkHeader[] = [
+      { Name: 'Received-SPF', Value: 'pass (sender IP is 1.2.3.4) envelope-from=user@another-domain.com' },
+      { Name: 'X-Spam-Tests', Value: 'DKIM_SIGNED,DKIM_VALID,DKIM_VALID_AU' },
+      { Name: 'X-Spam-Status', Value: 'No' }
+    ];
+    assert(!isSenderVerified(headers, baseFromEmail), "Should NOT be verified due to SPF domain misalignment");
+  });
+
+  await t.step("SPF domain aligned with subdomain", () => {
+    const headers: PostmarkHeader[] = [
+      { Name: 'Received-SPF', Value: 'pass (sender IP is 1.2.3.4) envelope-from=user@sub.example.com' },
+      { Name: 'X-Spam-Tests', Value: 'DKIM_SIGNED,DKIM_VALID,DKIM_VALID_AU' }, // Assuming DKIM d=sub.example.com or example.com
+      { Name: 'X-Spam-Status', Value: 'No' }
+    ];
+    // For this to pass, DKIM_VALID_AU implies alignment with From: header (user@example.com).
+    // The SPF alignment check in isSenderVerified is `receivedSpf.toLowerCase().includes(fromDomain)`.
+    // If fromDomain is 'example.com', and receivedSpf includes 'sub.example.com', this specific heuristic will pass.
+    // This might be acceptable or might need refinement in the main function if stricter subdomain matching is needed.
+    // For DKIM_VALID_AU to be true, Postmark would have ensured d= matches From's domain.
+    // Our SPF heuristic is `receivedSpf.includes(fromDomain)`. If fromDomain is 'example.com'
+    // and envelope-from is 'user@sub.example.com', `includes('example.com')` is true.
+    assert(isSenderVerified(headers, baseFromEmail), "Should be verified if DKIM aligns with example.com and SPF is heuristically aligned");
+  });
+
+
+  await t.step("missing Received-SPF header", () => {
+    const headers: PostmarkHeader[] = [
+      { Name: 'X-Spam-Tests', Value: 'DKIM_SIGNED,DKIM_VALID,DKIM_VALID_AU' },
+      { Name: 'X-Spam-Status', Value: 'No' }
+    ];
+    assert(!isSenderVerified(headers, baseFromEmail), "Should NOT be verified due to missing Received-SPF");
+  });
+
+  await t.step("missing X-Spam-Tests header", () => {
+    const headers: PostmarkHeader[] = [
+      { Name: 'Received-SPF', Value: 'pass (sender IP is 1.2.3.4) envelope-from=user@example.com' },
+      { Name: 'X-Spam-Status', Value: 'No' }
+    ];
+    assert(!isSenderVerified(headers, baseFromEmail), "Should NOT be verified due to missing X-Spam-Tests");
+  });
+
+  await t.step("X-Spam-Tests header present but empty", () => {
+    const headers: PostmarkHeader[] = [
+      { Name: 'Received-SPF', Value: 'pass (sender IP is 1.2.3.4) envelope-from=user@example.com' },
+      { Name: 'X-Spam-Tests', Value: '' },
+      { Name: 'X-Spam-Status', Value: 'No' }
+    ];
+    assert(!isSenderVerified(headers, baseFromEmail), "Should NOT be verified due to empty X-Spam-Tests");
+  });
+
+  await t.step("empty headers array", () => {
+    const headers: PostmarkHeader[] = [];
+    assert(!isSenderVerified(headers, baseFromEmail), "Should NOT be verified with empty headers array");
+  });
+
+  await t.step("empty fromEmail", () => {
+    const headers: PostmarkHeader[] = [
+      { Name: 'Received-SPF', Value: 'pass (sender IP is 1.2.3.4) envelope-from=user@example.com' },
+      { Name: 'X-Spam-Tests', Value: 'DKIM_SIGNED,DKIM_VALID,DKIM_VALID_AU' },
+      { Name: 'X-Spam-Status', Value: 'No' }
+    ];
+    assert(!isSenderVerified(headers, ""), "Should NOT be verified with empty fromEmail");
+  });
+   await t.step("null headers", () => {
+    assert(!isSenderVerified(null as any, baseFromEmail), "Should handle null headers gracefully");
+  });
+  await t.step("null fromEmail", () => {
+     const headers: PostmarkHeader[] = [ { Name: 'Received-SPF', Value: 'pass' }];
+    assert(!isSenderVerified(headers, null as any), "Should handle null fromEmail gracefully");
+  });
+});
+
+// --- Integration tests for processEmailWithKnowReply focusing on sender verification ---
+
+Deno.test("[processEmailWithKnowReply] Sender NOT Verified - skips MCP actions", async () => {
+  const activityLogsInsertSpy = spy(async (data: any) => ({ error: null, data }));
+  const mockSupabase = createMockSupabaseClient({
+    workspaceConfigData: mockWorkspaceConfig,
+    agentMappingsData: mockAgentMappings, // These won't be used if MCP is skipped
+    mcpEndpointsData: mockMcpEndpointConfigsList,
+    activityLogsInsertSpy: activityLogsInsertSpy, // Specific spy for this table
+    emailInteractionsUpdateResult: [{ id: MOCK_EMAIL_INTERACTION_ID }],
+    llmLogsInsertSpy: spy(async (data: any) => ({ error: null, data })), // Gemini won't be called
+  });
+
+  envGetStub = stub(Deno.env, "get", (key: string) => {
+    // GEMINI_API_KEY might be checked before sender verification, or not.
+    // For this test, we assume it's available, but sender verification will prevent its use.
+    if (key === 'GEMINI_API_KEY') return "test_gemini_api_key";
+    return undefined;
+  });
+
+  const unverifiedHeaders: PostmarkHeader[] = [
+    { Name: 'Received-SPF', Value: 'fail (bad IP)' },
+    { Name: 'X-Spam-Tests', Value: 'DKIM_SIGNED,DKIM_VALID,DKIM_VALID_AU' }, // DKIM might be fine
+    { Name: 'X-Spam-Status', Value: 'No' }
+  ];
+  const testPayloadUnverified: PostmarkWebhookPayload = {
+    ...mockPostmarkPayload, // Use base mock payload
+    Headers: unverifiedHeaders,
+    From: 'sender@unverified.com', // Ensure From matches FromFull.Email for consistency
+    FromFull: { Email: 'sender@unverified.com', Name: 'Unverified Sender', MailboxHash: '' },
+    MessageID: 'unverified-test-msg-id',
+  };
+
+  let geminiFetchCalled = false;
+  capturedKnowReplyPayload = null;
+
+  fetchStub = stub(globalThis, "fetch", async (url: URL | Request | string, options?: RequestInit): Promise<Response> => {
+    const urlString = url.toString();
+    if (urlString.includes("generativelanguage.googleapis.com")) {
+      geminiFetchCalled = true;
+      // This should ideally not be called. If it is, return empty plan.
+      return Promise.resolve(new Response(JSON.stringify({ candidates: [{ content: { parts: [{ text: JSON.stringify([]) }] } }] }), { status: 200 }));
+    } else if (urlString.includes("/mcp/")) { // Any MCP call
+      throw new Error("MCP execution fetch should not have been called for unverified sender!");
+    } else if (urlString === mockWorkspaceConfig.knowreply_webhook_url) {
+      capturedKnowReplyPayload = JSON.parse(options!.body!.toString());
+      return Promise.resolve(new Response(JSON.stringify({ message: "KnowReply OK" }), { status: 200 }));
+    }
+    return Promise.resolve(new Response(JSON.stringify({}), { status: 200, headers: { 'Content-Type': 'application/json' } }));
+  });
+
+  try {
+    await processEmailWithKnowReply(mockSupabase, MOCK_USER_ID, testPayloadUnverified, "emailInteractionUnverified");
+
+    assert(!geminiFetchCalled, "Gemini fetch for plan generation should NOT have been called for unverified sender.");
+    assertExists(capturedKnowReplyPayload);
+    assert(
+      capturedKnowReplyPayload?.mcp_action_digest?.includes("Sender email could not be verified"),
+      `Digest should indicate sender verification failed. Got: ${capturedKnowReplyPayload?.mcp_action_digest}`
+    );
+    assertEquals(capturedKnowReplyPayload?.mcp_results?.length, 0, "MCP results should be empty for unverified sender");
+
+    assert(activityLogsInsertSpy.calls.length >= 1, "Activity log should have at least one call");
+    const senderVerificationLog = activityLogsInsertSpy.calls.find(call => {
+        const logEntry = Array.isArray(call.args[0]) ? call.args[0][0] : call.args[0];
+        return logEntry?.action === 'sender_verification_failed';
+    });
+    assertExists(senderVerificationLog, "Activity log for 'sender_verification_failed' should exist.");
+    const logDetails = (Array.isArray(senderVerificationLog.args[0]) ? senderVerificationLog.args[0][0] : senderVerificationLog.args[0]).details;
+    assertEquals(logDetails?.from_email, 'sender@unverified.com');
+
+  } finally {
+    envGetStub?.restore();
+    fetchStub?.restore();
+    capturedKnowReplyPayload = null;
+  }
+});
+
+
+Deno.test("[processEmailWithKnowReply] Sender IS Verified - proceeds with MCP actions", async () => {
+  const activityLogsInsertSpy = spy(async (data: any) => ({ error: null, data }));
+  const mockSupabase = createMockSupabaseClient({
+    workspaceConfigData: mockWorkspaceConfig,
+    agentMappingsData: mockAgentMappings,
+    mcpEndpointsData: mockMcpEndpointConfigsList, // tool_fetch_order_details
+    mcpConnectionParamsData: { "test_shop": { connection_values: { api_key: "dummy_key" } } },
+    activityLogsInsertSpy: activityLogsInsertSpy,
+    emailInteractionsUpdateResult: [{ id: MOCK_EMAIL_INTERACTION_ID }],
+    llmLogsInsertSpy: spy(async (data: any) => ({ error: null, data })),
+  });
+
+  envGetStub = stub(Deno.env, "get", (key: string) => {
+    if (key === 'GEMINI_API_KEY') return "test_gemini_api_key";
+    if (key === 'MCP_SERVER_INTERNAL_API_KEY') return "test_mcp_internal_key";
+    return undefined;
+  });
+
+  const verifiedHeaders: PostmarkHeader[] = [
+    { Name: 'Received-SPF', Value: 'pass (sender IP is 1.2.3.4) envelope-from=sender@verified.com' },
+    { Name: 'X-Spam-Tests', Value: 'DKIM_SIGNED,DKIM_VALID,DKIM_VALID_AU' },
+    { Name: 'X-Spam-Status', Value: 'No' }
+  ];
+  const testPayloadVerified: PostmarkWebhookPayload = {
+    ...mockPostmarkPayload,
+    Headers: verifiedHeaders,
+    From: 'sender@verified.com',
+    FromFull: { Email: 'sender@verified.com', Name: 'Verified Sender', MailboxHash: '' },
+    MessageID: 'verified-test-msg-id',
+  };
+
+  const mcpPlan = [{ tool: "tool_fetch_order_details", args: { orderId: "VERIFIED123" } }];
+  const mcpExecutionResult = { orderId: "VERIFIED123", status: "processed" };
+  let geminiFetchCalled = false;
+  let mcpFetchCalled = false;
+  capturedKnowReplyPayload = null;
+
+  fetchStub = stub(globalThis, "fetch", async (url: URL | Request | string, options?: RequestInit): Promise<Response> => {
+    const urlString = url.toString();
+    if (urlString.includes("generativelanguage.googleapis.com")) {
+      geminiFetchCalled = true;
+      return Promise.resolve(new Response(JSON.stringify({ candidates: [{ content: { parts: [{ text: JSON.stringify(mcpPlan) }] } }] }), { status: 200 }));
+    } else if (urlString.includes("/mcp/test_shop/getOrder")) {
+      mcpFetchCalled = true;
+      return Promise.resolve(new Response(JSON.stringify(mcpExecutionResult), { status: 200 }));
+    } else if (urlString === mockWorkspaceConfig.knowreply_webhook_url) {
+      capturedKnowReplyPayload = JSON.parse(options!.body!.toString());
+      return Promise.resolve(new Response(JSON.stringify({ message: "KnowReply OK" }), { status: 200 }));
+    }
+    return Promise.resolve(new Response(JSON.stringify({}), { status: 200, headers: { 'Content-Type': 'application/json' } }));
+  });
+
+  try {
+    await processEmailWithKnowReply(mockSupabase, MOCK_USER_ID, testPayloadVerified, "emailInteractionVerified");
+
+    assert(geminiFetchCalled, "Gemini fetch for plan generation SHOULD have been called for verified sender.");
+    assert(mcpFetchCalled, "MCP fetch for plan execution SHOULD have been called for verified sender.");
+    assertExists(capturedKnowReplyPayload);
+    assert(
+      !capturedKnowReplyPayload?.mcp_action_digest?.includes("Sender email could not be verified"),
+      "Digest should NOT indicate sender verification failed."
+    );
+    assert(
+      capturedKnowReplyPayload?.mcp_action_digest?.includes("Action 1: tool_fetch_order_details"),
+      "Digest should contain MCP action details."
+    );
+    assertExists(capturedKnowReplyPayload?.mcp_results);
+    assertEquals(capturedKnowReplyPayload?.mcp_results?.length, 1);
+
+    const senderVerificationLogFound = activityLogsInsertSpy.calls.some(call => {
+        const logEntry = Array.isArray(call.args[0]) ? call.args[0][0] : call.args[0];
+        return logEntry?.action === 'sender_verification_failed';
+    });
+    assert(!senderVerificationLogFound, "Activity log for 'sender_verification_failed' should NOT exist for verified sender.");
+
+  } finally {
+    envGetStub?.restore();
+    fetchStub?.restore();
+    capturedKnowReplyPayload = null;
+  }
+});
