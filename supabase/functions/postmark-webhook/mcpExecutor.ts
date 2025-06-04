@@ -59,7 +59,7 @@ export async function executeMCPPlan(
   }
 
   const mcpServerInternalApiKey = Deno.env.get('MCP_SERVER_INTERNAL_API_KEY');
-  const placeholderRegex = /^{{steps\[(\d+)]\.outputs\.([\w.-]+)}}$/;
+  const placeholderRegex = /^{{steps\[(\d+)]\.outputs\.([\w.\[\]-]+)}}$/;
 
   for (let i = 0; i < mcpPlan.length; i++) {
     const actionToExecute = mcpPlan[i];
