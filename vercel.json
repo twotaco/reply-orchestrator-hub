@@ -1,0 +1,8 @@
+{
+  "rewrites": [
+    {
+      "source": "/postmark-webhook/:customer_api_key",
+      "destination": "https://gfabrnzppzorywipiwcm.supabase.co/functions/v1/postmark-webhook/:customer_api_key"
+    }
+  ]
+}
