@@ -10,7 +10,7 @@ import {
   AccordionTrigger, // To be removed
 } from '@/components/ui/accordion'; // Accordion itself to be removed
 import { Badge } from '@/components/ui/badge';
-import { Play, Edit, Trash2, History, X } from 'lucide-react'; // Added History
+import { Play, Edit, Trash2, History, X, Loader2 } from 'lucide-react'; // Added History and Loader2
 import { useToast } from '@/hooks/use-toast';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
