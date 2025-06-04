@@ -27,12 +27,6 @@ export async function generateMCPToolPlan(
     return [];
   }
 
-  availableMcps.forEach(mcp => {
-    console.log(`Tool: ${mcp.name}`);
-    console.log(`  Expected Args: ${JSON.stringify(mcp.expected_format)}`);
-    console.log(`  Output Schema: ${JSON.stringify(mcp.output_schema)}`);
-  });
-
   // Construct the prompt for Gemini
   const geminiPrompt = `You are an intent and action planner. Based on the email sender information and customer email content below, determine which external tools (MCPs) are needed to answer or fulfill the request.
 

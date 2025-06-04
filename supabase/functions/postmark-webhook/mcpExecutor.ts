@@ -13,7 +13,7 @@ function getValueByPath(source: any, path: string): any {
     // If part[0] is a string like "orders" and current doesn't have that as a property, but is an array
     if (!(parts[0] in current)) {
       // Treat the first key as a misnamed root, drop it, and try accessing from the array directly
-      console.warn(`⚠️ Detected array at root with invalid top-level key '${parts[0]}'. Adjusting path...`);
+      console.log(`⚠️ Detected array at root with invalid top-level key '${parts[0]}'. Adjusting path...`);
       parts.shift();
     }
   }
