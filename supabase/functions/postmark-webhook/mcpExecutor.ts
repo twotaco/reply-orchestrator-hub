@@ -3,41 +3,40 @@ import type { KnowReplyAgentConfig } from './types.ts';
 // Deno object is globally available in Deno runtime
 
 function getValueByPath(source: any, path: string): any {
-  if (!path) return undefined;
+  if (!path) return undefined; // Path must exist
 
+  // Converts path like "orders[0].id" to "orders.0.id", then splits to ["orders", "0", "id"]
+  // Filters out empty strings that might result from patterns like "..".
   const parts = path.replace(/\[(\d+)\]/g, '.$1').split('.').filter(p => p !== '');
+
   let current = source;
-
-  // If the source is an array and the path wrongly assumes it's wrapped in an object (like "orders[0].id")
-  if (Array.isArray(current) && parts.length > 0 && parts[0] !== '0') {
-    // If part[0] is a string like "orders" and current doesn't have that as a property, but is an array
-    if (!(parts[0] in current)) {
-      // Treat the first key as a misnamed root, drop it, and try accessing from the array directly
-      console.warn(`⚠️ Detected array at root with invalid top-level key '${parts[0]}'. Adjusting path...`);
-      parts.shift();
-    }
-  }
-
   for (const part of parts) {
-    if (current == null) return undefined;
-    if (typeof current !== 'object') return undefined;
+    if (current === null || current === undefined) {
+      return undefined; // Cannot traverse null or undefined
+    }
+
+    // If current is not an object or array, it cannot be traversed further.
+    if (typeof current !== 'object') {
+      return undefined;
+    }
 
     if (Array.isArray(current)) {
-      const index = Number(part);
+      const index = Number(part); // Convert string part to number for array indexing
       if (Number.isInteger(index) && index >= 0 && index < current.length) {
         current = current[index];
       } else {
+        // Part is not a valid integer index for the current array
         return undefined;
       }
-    } else {
-      if (part in current) {
+    } else { // Current is an object (and not null, checked above)
+      if (current.hasOwnProperty(part)) {
         current = current[part];
       } else {
+        // Part is not a property of the current object
         return undefined;
       }
     }
   }
-
   return current;
 }
 

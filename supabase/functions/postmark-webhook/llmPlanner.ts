@@ -73,6 +73,10 @@ When constructing the "args" object for a chosen tool:
 - You MUST use the argument names as provided in that tool's 'args_schema_keys' list for direct inputs.
 - For arguments that depend on previous steps, use the '{{steps[INDEX].outputs.FIELD_NAME}}' syntax. Ensure 'FIELD_NAME' matches the 'output_schema' of the source step.
 
+When referencing data from previous MCP calls, use the exact JSON path that matches the output structure:
+- If the response is an object with a field like 'orders: Order[]', use: 'steps[0].outputs.orders[0].id'
+- If the response is a plain array, use: 'steps[0].outputs[0].id'
+
 Important Instructions for Using Sender Information:
 - When planning actions, especially the first action in a sequence or any action that requires identifying the customer (e.g., fetching orders, customer details), you **must** consider using the details from the 'Email Sender Information' section (like 'Sender Email' or 'Sender Name') as arguments if the tool accepts them. For example, if a tool like 'getOrders' or 'getCustomerDetails' accepts an 'email' argument, use the 'Sender Email' provided.
 - Even if a tool argument (like 'email' or 'customerId') is marked as optional (e.g., in 'args_schema_keys' or its description implies it's optional), if the 'Email Sender Information' provides relevant data for that argument, you **should** include it in the plan to ensure the action is specific and effective.
@@ -95,7 +99,7 @@ Example of a multi-step plan:
   },
   {
     "tool": "shipping.getTrackingInfo",
-    "args": { "orderId": "{{steps[1].outputs.order_id}}" }
+    "args": { "orderId": "{{steps[1].outputs.id}}" }
   }
 ]
 Your entire response must be only the JSON array.`;
