@@ -2,16 +2,19 @@
 import type { PostmarkWebhookPayload } from './types.ts';
 // Deno object is globally available in Deno runtime
 // SupabaseClient type is not strictly needed as supabase is 'any'
+import type { WorkspaceConfigWithUser } from './types.ts'; // Import WorkspaceConfigWithUser
 
 export const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+  // Removed 'Access-Control-Allow-Methods' as OPTIONS is handled in index.ts
 };
 
 export async function handlePostmarkRequest(
-  req: Request,
-  supabase: any, // Keeping as 'any' as per current signature in index.ts
-  processEmailFn: ( // Type for processEmailWithKnowReply
+  supabase: any, // This is the admin client from index.ts
+  workspaceConfig: WorkspaceConfigWithUser, // Authenticated workspace config (includes user_id)
+  payload: PostmarkWebhookPayload, // Parsed payload from index.ts
+  processEmailFn: (
     supabase: any,
     userId: string,
     payload: PostmarkWebhookPayload,
@@ -20,30 +23,18 @@ export async function handlePostmarkRequest(
 ): Promise<Response> {
   const responseData = {
     status: 'success',
-    message: 'Email processed successfully',
+    message: `Email processed for user: ${workspaceConfig.user_id}`, // Updated message
     warnings: [] as string[],
     errors: [] as string[],
     processed_at: new Date().toISOString()
   };
 
   try {
-    // Note: Supabase client creation is now expected to be done in index.ts before calling this handler.
-    // The console.log for client creation can be removed or adapted if needed.
+    // User is already authenticated by API key in index.ts (via workspaceConfig)
+    // The payload is already parsed in index.ts
+    // Method check (POST) is already done in index.ts
 
-    if (req.method !== 'POST') {
-      console.log('❌ Method not allowed:', req.method);
-      responseData.status = 'error';
-      responseData.message = 'Method not allowed';
-      responseData.errors.push('Only POST method is allowed');
-      return new Response(JSON.stringify(responseData), {
-        status: 405,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-      });
-    }
-
-    console.log('📨 Parsing request body...');
-    const payload: PostmarkWebhookPayload = await req.json();
-    console.log('📧 Received Postmark webhook payload:');
+    console.log('📨 Processing payload in handlePostmarkRequest for user:', workspaceConfig.user_id);
     console.log('   From:', payload.From);
     console.log('   To:', payload.To);
     console.log('   Subject:', payload.Subject);
@@ -53,37 +44,20 @@ export async function handlePostmarkRequest(
     const spamScore = spamHeaders.find(h => h.Name === 'X-Spam-Score')?.Value;
     const spamStatus = spamHeaders.find(h => h.Name === 'X-Spam-Status')?.Value;
 
-    const toEmail = payload.ToFull?.[0]?.Email || payload.To;
-    const emailPart = toEmail.split('@')[0];
-    const inboundHash = emailPart.split('+')[0];
+    // Use the authenticated user_id from workspaceConfig
+    const userId = workspaceConfig.user_id;
+    const toEmailForStorage = payload.ToFull?.[0]?.Email || payload.To; // For storage purposes
 
-    console.log('🔍 Looking for user with inbound hash:', inboundHash);
+    // REMOVED: Old inbound hash logic for user identification
 
-    const { data: workspaceConfig, error: configError } = await supabase
-      .from('workspace_configs')
-      .select('user_id')
-      .eq('postmark_inbound_hash', inboundHash)
-      .single();
-
-    if (configError || !workspaceConfig) {
-      console.error('❌ Could not find workspace config for inbound hash:', inboundHash, configError);
-      responseData.status = 'error';
-      responseData.message = 'Inbound hash not found';
-      responseData.errors.push(`No workspace configuration found for inbound hash: ${inboundHash}`);
-      return new Response(JSON.stringify(responseData), {
-        status: 404,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-      });
-    }
-
-    console.log('✅ Found workspace config for user:', workspaceConfig.user_id);
-    responseData.message = `Email processed for user: ${workspaceConfig.user_id}`;
+    console.log(`✅ User authenticated via API key: ${userId}`);
+    // responseData.message is already set with user_id
 
     const { data: existingEmail, error: checkError } = await supabase
       .from('postmark_inbound_emails')
       .select('id, message_id')
       .eq('message_id', payload.MessageID)
-      .eq('user_id', workspaceConfig.user_id)
+      .eq('user_id', userId) // Use authenticated userId
       .single();
 
     if (checkError && checkError.code !== 'PGRST116') {
@@ -91,14 +65,13 @@ export async function handlePostmarkRequest(
       responseData.errors.push(`Database error checking existing email: ${checkError.message}`);
     }
 
-    // let emailRecord; // Not strictly needed if not used later in this function
     if (existingEmail) {
       console.log('📝 Updating existing email record for message_id:', payload.MessageID);
-      responseData.warnings.push(`Updated existing email record for message_id: ${payload.MessageID}`);
+      // responseData.warnings.push(`Updated existing email record for message_id: ${payload.MessageID}`); // This can be noisy
       const { error: updateError } = await supabase
         .from('postmark_inbound_emails')
         .update({
-          from_email: payload.From, from_name: payload.FromName, to_email: toEmail,
+          from_email: payload.From, from_name: payload.FromName, to_email: toEmailForStorage,
           cc_email: payload.Cc || null, bcc_email: payload.Bcc || null, subject: payload.Subject,
           text_body: payload.TextBody, html_body: payload.HtmlBody, stripped_text_reply: payload.StrippedTextReply,
           mailbox_hash: payload.MailboxHash, spam_score: spamScore ? parseFloat(spamScore) : null, spam_status: spamStatus,
@@ -113,13 +86,14 @@ export async function handlePostmarkRequest(
         console.log('✅ Successfully updated existing inbound email');
       }
     } else {
-      console.log('💾 Creating new inbound email record...');
-      responseData.warnings.push(`Created new email record for message_id: ${payload.MessageID}`);
+      console.log('💾 Creating new inbound email record for user:', userId);
+      // responseData.warnings.push(`Created new email record for message_id: ${payload.MessageID}`); // Can be noisy
       const { error: insertError } = await supabase
         .from('postmark_inbound_emails')
         .insert({
-          user_id: workspaceConfig.user_id, message_id: payload.MessageID, from_email: payload.From,
-          from_name: payload.FromName, to_email: toEmail, cc_email: payload.Cc || null, bcc_email: payload.Bcc || null,
+          user_id: userId, // Use authenticated userId
+          message_id: payload.MessageID, from_email: payload.From,
+          from_name: payload.FromName, to_email: toEmailForStorage, cc_email: payload.Cc || null, bcc_email: payload.Bcc || null,
           subject: payload.Subject, text_body: payload.TextBody, html_body: payload.HtmlBody,
           stripped_text_reply: payload.StrippedTextReply, mailbox_hash: payload.MailboxHash,
           spam_score: spamScore ? parseFloat(spamScore) : null, spam_status: spamStatus,
@@ -137,48 +111,69 @@ export async function handlePostmarkRequest(
       .from('email_interactions')
       .select('id')
       .eq('message_id', payload.MessageID)
-      .eq('user_id', workspaceConfig.user_id)
+      .eq('user_id', userId) // Use authenticated userId
       .single();
 
     let interactionRecordId;
-    if (existingInteraction) {
-      console.log('📝 Updating existing email interaction for message_id:', payload.MessageID);
+    // Refined logic for creating/updating interaction record
+    if (interactionCheckError && interactionCheckError.code === 'PGRST116') { // Not found, create new
+        console.log('📝 Creating new email interaction record for user:', userId);
+        const { data: newInteraction, error: interactionError } = await supabase
+        .from('email_interactions')
+        .insert({
+          user_id: userId, // Use authenticated userId
+          message_id: payload.MessageID,
+          from_email: payload.From,
+          to_email: toEmailForStorage,
+          subject: payload.Subject,
+          original_content: payload.TextBody || payload.HtmlBody,
+          status: 'pending', // Initial status for new interaction
+          postmark_request: payload,
+          source: 'postmark_webhook',
+        })
+        .select('id').single();
+      if (interactionError) {
+        console.error('⚠️ Error creating email interaction:', interactionError);
+        responseData.errors.push(`Database error creating email interaction: ${interactionError.message}`);
+      } else if (newInteraction) {
+        interactionRecordId = newInteraction.id;
+        console.log(`✅ New email interaction created with ID: ${interactionRecordId}`);
+      }
+    } else if (interactionCheckError) { // Some other DB error
+        console.error('⚠️ Database error checking for existing email interaction:', interactionCheckError);
+        responseData.errors.push(`Database error checking existing email interaction: ${interactionCheckError.message}`);
+    }
+     else if (existingInteraction) { // Found existing, update it
+      console.log('📝 Updating existing email interaction for message_id:', payload.MessageID, 'ID:', existingInteraction.id);
       const { error: updateInteractionError } = await supabase
         .from('email_interactions')
         .update({
-          from_email: payload.From, to_email: toEmail, subject: payload.Subject,
-          original_content: payload.TextBody || payload.HtmlBody, status: 'received',
-          postmark_request: payload, updated_at: new Date().toISOString()
+          from_email: payload.From, to_email: toEmailForStorage, subject: payload.Subject,
+          original_content: payload.TextBody || payload.HtmlBody,
+          status: 'pending', // Reset status for re-processing attempt
+          postmark_request: payload,
+          updated_at: new Date().toISOString()
         })
         .eq('id', existingInteraction.id);
-      if (updateInteractionError) console.error('⚠️ Error updating email interaction:', updateInteractionError);
-      else interactionRecordId = existingInteraction.id;
-    } else {
-      console.log('📝 Creating new email interaction record...');
-      const { data: newInteraction, error: interactionError } = await supabase
-        .from('email_interactions')
-        .insert({
-          user_id: workspaceConfig.user_id, message_id: payload.MessageID, from_email: payload.From,
-          to_email: toEmail, subject: payload.Subject, original_content: payload.TextBody || payload.HtmlBody,
-          status: 'received', postmark_request: payload
-        })
-        .select('id').single(); // Ensure 'id' is selected
-      if (interactionError) console.error('⚠️ Error creating email interaction:', interactionError);
-      else if (newInteraction) interactionRecordId = newInteraction.id;
+      if (updateInteractionError) {
+        console.error('⚠️ Error updating email interaction:', updateInteractionError);
+        // Not pushing to responseData.errors for now, as it might not be fatal for KnowReply call
+      }
+      interactionRecordId = existingInteraction.id;
     }
-     if (!interactionRecordId) { // If ID couldn't be obtained either from existing or new
-        console.error('❌ Failed to obtain interactionRecordId. Cannot proceed with KnowReply processing.');
+
+    if (!interactionRecordId) {
+        console.error(`❌ Failed to obtain interactionRecordId for user ${userId}. Cannot proceed with KnowReply processing.`);
         responseData.status = 'error';
         responseData.message = 'Failed to create or update email interaction record.';
         responseData.errors.push('Internal error: Could not obtain email interaction ID.');
     }
 
-
     if (interactionRecordId) {
-      console.log('🤖 Starting KnowReply processing for interaction ID:', interactionRecordId);
-      const knowReplyResult = await processEmailFn( // Using processEmailFn parameter
-        supabase,
-        workspaceConfig.user_id,
+      console.log(`🤖 Starting KnowReply processing for user ${userId}, interaction ID: ${interactionRecordId}`);
+      const knowReplyResult = await processEmailFn(
+        supabase, // Pass the admin client from index.ts
+        userId, // Pass the authenticated userId
         payload,
         interactionRecordId
       );

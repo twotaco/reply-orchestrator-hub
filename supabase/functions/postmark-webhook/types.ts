@@ -85,3 +85,21 @@ export interface KnowReplyAgentConfig {
     output_schema?: any
   }>
 }
+
+export interface WorkspaceConfigWithUser {
+  user_id: string;
+  // Assuming these are the fields selected with '*' in index.ts from workspace_configs
+  // Add or remove fields based on actual table structure and selection
+  id?: string; // The primary key of the workspace_configs table itself
+  created_at?: string;
+  updated_at?: string;
+  knowreply_api_token?: string | null;
+  knowreply_webhook_url?: string | null;
+  postmark_api_token?: string | null;
+  postmark_webhook_url?: string | null; // This might be the old one, or just a stored value
+  postmark_active?: boolean | null;
+  postmark_inbound_hash?: string | null;
+  postmark_server_id?: string | null;
+  webhook_api_key?: string | null; // The new key used for authentication
+  // Any other fields from workspace_configs that are relevant after a select '*'
+}

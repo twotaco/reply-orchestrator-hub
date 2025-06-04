@@ -25,6 +25,7 @@ interface WorkspaceConfig {
   postmark_active: boolean | null;
   postmark_inbound_hash: string | null;
   postmark_server_id: string | null;
+  webhook_api_key?: string | null;
 }
 
 export function PostmarkSetup() {
@@ -40,6 +41,7 @@ export function PostmarkSetup() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [testing, setTesting] = useState(false);
+  const [regeneratingKey, setRegeneratingKey] = useState(false);
 
   useEffect(() => {
     if (user) {
@@ -51,17 +53,51 @@ export function PostmarkSetup() {
     try {
       const { data, error } = await supabase
         .from('workspace_configs')
-        .select('postmark_api_token, postmark_webhook_url, postmark_active, postmark_inbound_hash, postmark_server_id')
+        .select('postmark_api_token, postmark_webhook_url, postmark_active, postmark_inbound_hash, postmark_server_id, webhook_api_key')
         .eq('user_id', user?.id)
         .single();
 
-      if (error && error.code !== 'PGRST116') {
+      if (error && error.code !== 'PGRST116' && error.code !== '42P01') { // 42P01: undefined_table (if column not yet there) - this might be too lenient.
+        // A better check might be to see if the column exists via a different query or handle specific error messages if possible.
+        // For now, let's assume the column might not be there yet in all environments.
+        // If the column is guaranteed to exist, PGRST116 is the main one for "no row".
         throw error;
       }
 
-      if (data) {
+      if (data && !data.webhook_api_key) {
+        console.log('Webhook API key not found for user, attempting to generate one...');
+        toast({ title: "Information", description: "Generating your unique webhook URL..." });
+        try {
+          const { data: keyData, error: keyError } = await supabase.functions.invoke('manage-webhook-key');
+          if (keyError) throw keyError; // Errors from function invocation itself
+          if (keyData.error) throw new Error(keyData.error); // Errors returned by function logic
+
+          if (keyData.webhook_api_key) {
+            const updatedConfig = { ...data, webhook_api_key: keyData.webhook_api_key };
+            setConfig(updatedConfig);
+            // The key is saved by the function, no need to call saveConfig here just for this.
+            // However, if other parts of `data` were partially set, this ensures they are retained.
+            toast({ title: "Information", description: "A unique webhook URL has been generated and saved for you." });
+          } else {
+            // Fallback to existing data if key generation didn't return a key, though it should throw an error.
+            setConfig(data);
+          }
+        } catch (e: any) {
+          console.error('Error generating webhook_api_key on load:', e);
+          toast({
+            title: "Webhook URL Generation Failed",
+            description: `Could not automatically generate your unique webhook URL: ${e.message}. You can try regenerating it manually.`,
+            variant: "destructive",
+          });
+          // Set config with existing data even if key generation failed, to show other loaded settings.
+          setConfig(data);
+        }
+      } else if (data) {
         setConfig(data);
       }
+      // If data is null (no row for user), config remains as initial state.
+      // The manage-webhook-key function called via button will handle insert if needed.
+
     } catch (error) {
       console.error('Error loading config:', error);
       toast({
@@ -88,6 +124,7 @@ export function PostmarkSetup() {
           postmark_active: config.postmark_active,
           postmark_inbound_hash: config.postmark_inbound_hash,
           postmark_server_id: config.postmark_server_id,
+          webhook_api_key: config.webhook_api_key, // Ensure webhook_api_key is preserved
           updated_at: new Date().toISOString()
         }, {
           onConflict: 'user_id'
@@ -167,7 +204,40 @@ export function PostmarkSetup() {
   };
 
   // Use the correct Supabase webhook URL
-  const webhookUrl = `https://gfabrnzppzorywipiwcm.supabase.co/functions/v1/postmark-webhook`;
+  const generatedWebhookUrl = config.webhook_api_key
+    ? `https://gfabrnzppzorywipiwcm.supabase.co/functions/v1/postmark-webhook/${config.webhook_api_key}`
+    : config.postmark_api_token // Only show generating if token exists, otherwise it's not relevant yet
+    ? 'Generating your unique webhook URL...'
+    : 'Please save API token to generate webhook URL.';
+
+
+  const handleRegenerateKey = async () => {
+    setRegeneratingKey(true);
+    try {
+      const { data: keyData, error: keyError } = await supabase.functions.invoke('manage-webhook-key');
+      if (keyError) throw keyError;
+      if (keyData.error) throw new Error(keyData.error); // Error from function logic
+
+      if (keyData.webhook_api_key) {
+        setConfig(prevConfig => ({ ...prevConfig, webhook_api_key: keyData.webhook_api_key }));
+        toast({
+          title: "Success",
+          description: "New webhook URL generated and saved.",
+        });
+      } else {
+        throw new Error("New API key was not returned by the function.");
+      }
+    } catch (e: any) {
+      console.error('Error regenerating webhook_api_key:', e);
+      toast({
+        title: "Error",
+        description: `Failed to regenerate webhook URL: ${e.message}`,
+        variant: "destructive",
+      });
+    } finally {
+      setRegeneratingKey(false);
+    }
+  };
 
   if (loading) {
     return (
@@ -265,24 +335,40 @@ export function PostmarkSetup() {
         </CardHeader>
         <CardContent className="space-y-4">
           <div>
-            <Label>Webhook URL</Label>
+            <Label>Your Unique Webhook URL</Label>
             <div className="flex items-center gap-2 mt-1">
               <Input 
-                value={webhookUrl} 
+                value={generatedWebhookUrl}
                 readOnly 
-                className="bg-gray-50"
+                className={`bg-gray-50 ${!config.webhook_api_key ? 'italic' : ''}`}
               />
               <Button 
                 variant="outline" 
                 size="icon"
-                onClick={() => copyToClipboard(webhookUrl)}
+                onClick={() => config.webhook_api_key && copyToClipboard(generatedWebhookUrl)}
+                disabled={!config.webhook_api_key}
               >
                 <Copy className="h-4 w-4" />
               </Button>
             </div>
-            <p className="text-sm text-gray-500 mt-1">
-              Copy this URL and paste it in your Postmark server's inbound webhook settings
+             <p className="text-sm text-gray-500 mt-1">
+              This URL is unique to your workspace. Use it in your Postmark server's inbound webhook settings.
             </p>
+            <Button
+              onClick={handleRegenerateKey}
+              disabled={regeneratingKey || !config.postmark_api_token} // Also disable if no main API token
+              variant="outline"
+              size="sm"
+              className="mt-2"
+            >
+              {regeneratingKey ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
+              Regenerate Webhook URL
+            </Button>
+            {!config.postmark_api_token && (
+                 <p className="text-xs text-orange-600 mt-1">
+                    Save your Postmark API token to enable webhook URL generation/regeneration.
+                 </p>
+            )}
           </div>
 
           <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
