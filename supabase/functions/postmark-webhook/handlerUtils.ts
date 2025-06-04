@@ -237,45 +237,38 @@ function extractDomain(email: string): string | null {
 }
 
 export function isSenderVerified(headers: PostmarkWebhookPayload['Headers'], fromEmail: string): boolean {
-  if (!headers || !fromEmail) return false; // Basic guard
+  // fromEmail is kept for potential future use or if a very detailed Authentication-Results header becomes available
+  if (!headers || !fromEmail) return false;
 
   const receivedSpf = getHeaderValue(headers, 'Received-SPF') || '';
   const spamTests = getHeaderValue(headers, 'X-Spam-Tests') || '';
-  const spamStatus = getHeaderValue(headers, 'X-Spam-Status'); // Used by SpamAssassin
+  const spamStatus = getHeaderValue(headers, 'X-Spam-Status');
 
-  // If SpamAssassin definitively marks as spam, treat as unverified.
-  // This is a strong signal.
   if (spamStatus && spamStatus.toLowerCase().startsWith('yes')) {
+    console.log(`Sender ${fromEmail} marked as spam by X-Spam-Status. Verification failed.`);
     return false;
   }
 
   const spfPass = receivedSpf.toLowerCase().includes('pass');
-  const dkimSigned = spamTests.includes('DKIM_SIGNED'); // Checks if a DKIM signature exists
-  const dkimValid = spamTests.includes('DKIM_VALID');   // Checks if the existing DKIM signature is valid
-
-  // DKIM_VALID_AU (Author Domain Alignment) means the domain in the DKIM signature (d= field)
-  // aligns with the domain in the From: header. This is a crucial check for authenticity.
-  const dkimAligned = spamTests.includes('DKIM_VALID_AU');
-
-  // For SPF, 'pass' indicates the message was sent from an IP authorized by the SPF record
-  // of the domain found in the SMTP MAIL FROM command (envelope sender).
-  // We need to check if this envelope sender's domain is aligned with the From: header domain.
-  // Postmark's 'Received-SPF' header often includes 'envelope-from=user@domain.com'.
-  const fromDomain = extractDomain(fromEmail);
-  let spfDomainAligned = false;
-  if (spfPass && fromDomain) {
-    // Check if the fromDomain is mentioned in the receivedSpf string.
-    // This is a heuristic. A more robust check would parse the Authentication-Results header
-    // or look for specific attributes like 'identity=mailfrom' and check that domain.
-    // Postmark's Received-SPF header is quite informative and often contains the envelope-from domain.
-    if (receivedSpf.toLowerCase().includes(fromDomain)) {
-      spfDomainAligned = true;
-    }
+  if (!spfPass) {
+    console.log(`Sender ${fromEmail} SPF check did not pass. Received-SPF: "${receivedSpf}". Verification failed.`);
+    // Not returning false immediately, as DKIM might still pass and be aligned,
+    // but the final condition will fail. This log helps debug SPF part.
   }
 
-  // All conditions must be met for high confidence verification:
-  // 1. SPF passed AND is aligned with the From: domain (checked heuristically).
-  // 2. DKIM signature exists AND is valid.
-  // 3. DKIM signature is aligned with the From: domain (DKIM_VALID_AU).
-  return spfDomainAligned && dkimSigned && dkimValid && dkimAligned;
+  const dkimSigned = spamTests.includes('DKIM_SIGNED');
+  const dkimValid = spamTests.includes('DKIM_VALID');
+  // DKIM_VALID_AU (Author Domain Alignment) means the domain in the DKIM signature (d= field)
+  // aligns with the domain in the From: header. This is crucial.
+  const dkimAligned = spamTests.includes('DKIM_VALID_AU');
+
+  if (!(dkimSigned && dkimValid && dkimAligned)) {
+    console.log(`Sender ${fromEmail} DKIM checks did not pass or align. SpamTests: "${spamTests}". Verification failed.`);
+    // Not returning false immediately, final condition handles it. This log helps debug DKIM part.
+  }
+
+  // For verification to pass:
+  // 1. SPF for the envelope sender must pass.
+  // 2. DKIM signature must exist, be valid, AND be aligned with the From: header domain.
+  return spfPass && dkimSigned && dkimValid && dkimAligned;
 }

@@ -313,13 +313,33 @@ Deno.test("[processEmailWithKnowReply] should result in empty mcpActionDigest if
 Deno.test("[isSenderVerified] various scenarios", async (t) => {
   const baseFromEmail = 'user@example.com';
 
-  await t.step("fully verified email (SPF Pass, DKIM Pass & Aligned)", () => {
+  await t.step("fully verified: SPF Pass (envelope aligned with From), DKIM Pass & Aligned (From)", () => {
     const headers: PostmarkHeader[] = [
-      { Name: 'Received-SPF', Value: 'pass (sender IP is 1.2.3.4) envelope-from=user@example.com' },
+      { Name: 'Received-SPF', Value: 'pass (sender IP is 1.2.3.4) envelope-from=user@example.com' }, // SPF domain matches From domain
       { Name: 'X-Spam-Tests', Value: 'DKIM_SIGNED,DKIM_VALID,DKIM_VALID_AU,OTHER_TEST' },
       { Name: 'X-Spam-Status', Value: 'No' }
     ];
     assert(isSenderVerified(headers, baseFromEmail), "Should be verified");
+  });
+
+  await t.step("fully verified: SPF Pass (envelope different from From), DKIM Pass & Aligned (From)", () => {
+    const fromEmail = 'sender@fromdomain.com';
+    const headers: PostmarkHeader[] = [
+      { Name: 'Received-SPF', Value: 'pass (sender IP is 1.2.3.4) envelope-from=user@envelopedomain.com' }, // SPF domain different from From domain
+      { Name: 'X-Spam-Tests', Value: 'DKIM_SIGNED,DKIM_VALID,DKIM_VALID_AU,OTHER_TEST' }, // DKIM_VALID_AU ensures d=fromdomain.com
+      { Name: 'X-Spam-Status', Value: 'No' }
+    ];
+    assert(isSenderVerified(headers, fromEmail), "Should be verified: SPF for envelope pass, DKIM for From pass & aligned");
+  });
+
+  await t.step("User's scenario: SPF Pass (envelope) and DKIM aligned (From)", () => {
+    const userFromEmail = 'demo@knowreply.email';
+    const headers: PostmarkHeader[] = [
+      { Name: 'X-Spam-Tests', Value: 'DKIM_SIGNED,DKIM_VALID,DKIM_VALID_AU,SPF_PASS' }, // SPF_PASS in X-Spam-Tests is informational
+      { Name: 'Received-SPF', Value: 'Pass (sender SPF authorized) identity=mailfrom; envelope-from=john@example.com;' },
+      { Name: 'X-Spam-Status', Value: 'No' } // Assuming this or missing
+    ];
+    assert(isSenderVerified(headers, userFromEmail), "Should be verified based on DKIM_VALID_AU and SPF Pass");
   });
 
   await t.step("SPF fail", () => {
@@ -349,13 +369,13 @@ Deno.test("[isSenderVerified] various scenarios", async (t) => {
     assert(!isSenderVerified(headers, baseFromEmail), "Should NOT be verified due to DKIM not valid");
   });
 
-  await t.step("DKIM not aligned (DKIM_VALID_AU missing)", () => {
+  await t.step("DKIM not aligned (DKIM_VALID_AU missing), SPF Pass", () => {
     const headers: PostmarkHeader[] = [
       { Name: 'Received-SPF', Value: 'pass (sender IP is 1.2.3.4) envelope-from=user@example.com' },
-      { Name: 'X-Spam-Tests', Value: 'DKIM_SIGNED,DKIM_VALID' },
+      { Name: 'X-Spam-Tests', Value: 'DKIM_SIGNED,DKIM_VALID' }, // DKIM_VALID_AU is missing
       { Name: 'X-Spam-Status', Value: 'No' }
     ];
-    assert(!isSenderVerified(headers, baseFromEmail), "Should NOT be verified due to DKIM not aligned");
+    assert(!isSenderVerified(headers, baseFromEmail), "Should NOT be verified due to DKIM not aligned, even if SPF passes");
   });
 
   await t.step("X-Spam-Status is Yes", () => {
@@ -367,31 +387,26 @@ Deno.test("[isSenderVerified] various scenarios", async (t) => {
     assert(!isSenderVerified(headers, baseFromEmail), "Should NOT be verified due to X-Spam-Status Yes");
   });
 
-  await t.step("SPF domain misaligned (heuristic check)", () => {
+  await t.step("SPF Pass (for envelope), DKIM Aligned (for From) - old 'misaligned SPF' case now passes", () => {
     const headers: PostmarkHeader[] = [
+      // SPF for envelope domain 'another-domain.com' passes.
       { Name: 'Received-SPF', Value: 'pass (sender IP is 1.2.3.4) envelope-from=user@another-domain.com' },
+      // DKIM is for 'user@example.com' (baseFromEmail) and is aligned.
       { Name: 'X-Spam-Tests', Value: 'DKIM_SIGNED,DKIM_VALID,DKIM_VALID_AU' },
       { Name: 'X-Spam-Status', Value: 'No' }
     ];
-    assert(!isSenderVerified(headers, baseFromEmail), "Should NOT be verified due to SPF domain misalignment");
+    // This should now be true because DKIM_VALID_AU authenticates the From header, and SPF authenticates the envelope.
+    assert(isSenderVerified(headers, baseFromEmail), "Should be verified: SPF for envelope passes, DKIM for From is aligned");
   });
 
-  await t.step("SPF domain aligned with subdomain", () => {
+  await t.step("SPF Pass (envelope), DKIM Aligned (From) - old 'subdomain SPF' case still passes", () => {
     const headers: PostmarkHeader[] = [
       { Name: 'Received-SPF', Value: 'pass (sender IP is 1.2.3.4) envelope-from=user@sub.example.com' },
-      { Name: 'X-Spam-Tests', Value: 'DKIM_SIGNED,DKIM_VALID,DKIM_VALID_AU' }, // Assuming DKIM d=sub.example.com or example.com
+      { Name: 'X-Spam-Tests', Value: 'DKIM_SIGNED,DKIM_VALID,DKIM_VALID_AU' }, // DKIM_VALID_AU authenticates baseFromEmail
       { Name: 'X-Spam-Status', Value: 'No' }
     ];
-    // For this to pass, DKIM_VALID_AU implies alignment with From: header (user@example.com).
-    // The SPF alignment check in isSenderVerified is `receivedSpf.toLowerCase().includes(fromDomain)`.
-    // If fromDomain is 'example.com', and receivedSpf includes 'sub.example.com', this specific heuristic will pass.
-    // This might be acceptable or might need refinement in the main function if stricter subdomain matching is needed.
-    // For DKIM_VALID_AU to be true, Postmark would have ensured d= matches From's domain.
-    // Our SPF heuristic is `receivedSpf.includes(fromDomain)`. If fromDomain is 'example.com'
-    // and envelope-from is 'user@sub.example.com', `includes('example.com')` is true.
-    assert(isSenderVerified(headers, baseFromEmail), "Should be verified if DKIM aligns with example.com and SPF is heuristically aligned");
+    assert(isSenderVerified(headers, baseFromEmail), "Should be verified: SPF for envelope passes, DKIM for From is aligned");
   });
-
 
   await t.step("missing Received-SPF header", () => {
     const headers: PostmarkHeader[] = [
