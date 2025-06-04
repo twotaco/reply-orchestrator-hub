@@ -66,8 +66,8 @@ export function MCPManagement() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-3xl font-bold">MCP Management</h1>
-          <p className="text-gray-600 mt-2">Manage your Model Context Protocol endpoints</p>
+          <h1 className="text-3xl font-bold">Agents & Tools Setup</h1>
+          <p className="text-gray-600 mt-2">Manage your Model Context Protocol (MCP) endpoints</p>
         </div>
         <Button onClick={() => setShowAddForm(true)} disabled={showAddForm}>
           <Plus className="h-4 w-4 mr-2" />

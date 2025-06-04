@@ -25,8 +25,8 @@ interface AppLayoutProps {
 const navigation = [
   { id: 'dashboard', name: 'Dashboard', icon: LayoutDashboard },
   { id: 'postmark', name: 'Postmark Setup', icon: Mail },
-  { id: 'knowreply', name: 'KnowReply Setup', icon: Zap },
-  { id: 'mcps', name: 'MCP Management', icon: Terminal },
+  { id: 'mcps', name: 'Agents & Tools Setup', icon: Terminal },
+  { id: 'knowreply', name: 'Know Reply Setup', icon: Zap },
   { id: 'email-testing', name: 'Email Testing', icon: TestTube },
   { id: 'logs', name: 'Activity Logs', icon: Activity },
 ];
