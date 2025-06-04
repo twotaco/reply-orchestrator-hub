@@ -5,26 +5,41 @@ import type { KnowReplyAgentConfig } from './types.ts';
 function getValueByPath(source: any, path: string): any {
   if (!path) return undefined;
 
-  // Normalize path: convert `orders[0].line_items[2].price` to `orders.0.line_items.2.price`
-  const parts = path.replace(/\[(\d+)\]/g, '.$1').split('.').filter(Boolean);
-
+  const parts = path.replace(/\[(\d+)\]/g, '.$1').split('.').filter(p => p !== '');
   let current = source;
-  for (const part of parts) {
-    if (current == null) return undefined;
-    if (Array.isArray(current)) {
-      const index = parseInt(part, 10);
-      if (isNaN(index) || index < 0 || index >= current.length) return undefined;
-      current = current[index];
-    } else if (typeof current === 'object') {
-      if (!(part in current)) return undefined;
-      current = current[part];
-    } else {
-      return undefined;
+
+  // If the source is an array and the path wrongly assumes it's wrapped in an object (like "orders[0].id")
+  if (Array.isArray(current) && parts.length > 0 && parts[0] !== '0') {
+    // If part[0] is a string like "orders" and current doesn't have that as a property, but is an array
+    if (!(parts[0] in current)) {
+      // Treat the first key as a misnamed root, drop it, and try accessing from the array directly
+      console.warn(`⚠️ Detected array at root with invalid top-level key '${parts[0]}'. Adjusting path...`);
+      parts.shift();
     }
   }
+
+  for (const part of parts) {
+    if (current == null) return undefined;
+    if (typeof current !== 'object') return undefined;
+
+    if (Array.isArray(current)) {
+      const index = Number(part);
+      if (Number.isInteger(index) && index >= 0 && index < current.length) {
+        current = current[index];
+      } else {
+        return undefined;
+      }
+    } else {
+      if (part in current) {
+        current = current[part];
+      } else {
+        return undefined;
+      }
+    }
+  }
+
   return current;
 }
-
 
 const MCP_SERVER_BASE_URL = "https://mcp.knowreply.email";
 
