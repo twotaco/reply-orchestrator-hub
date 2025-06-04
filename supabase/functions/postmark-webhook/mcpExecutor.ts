@@ -3,42 +3,28 @@ import type { KnowReplyAgentConfig } from './types.ts';
 // Deno object is globally available in Deno runtime
 
 function getValueByPath(source: any, path: string): any {
-  if (!path) return undefined; // Path must exist
+  if (!path) return undefined;
 
-  // Converts path like "orders[0].id" to "orders.0.id", then splits to ["orders", "0", "id"]
-  // Filters out empty strings that might result from patterns like "..".
-  const parts = path.replace(/\[(\d+)\]/g, '.$1').split('.').filter(p => p !== '');
+  // Normalize path: convert `orders[0].line_items[2].price` to `orders.0.line_items.2.price`
+  const parts = path.replace(/\[(\d+)\]/g, '.$1').split('.').filter(Boolean);
 
   let current = source;
   for (const part of parts) {
-    if (current === null || current === undefined) {
-      return undefined; // Cannot traverse null or undefined
-    }
-
-    // If current is not an object or array, it cannot be traversed further.
-    if (typeof current !== 'object') {
-      return undefined;
-    }
-
+    if (current == null) return undefined;
     if (Array.isArray(current)) {
-      const index = Number(part); // Convert string part to number for array indexing
-      if (Number.isInteger(index) && index >= 0 && index < current.length) {
-        current = current[index];
-      } else {
-        // Part is not a valid integer index for the current array
-        return undefined;
-      }
-    } else { // Current is an object (and not null, checked above)
-      if (current.hasOwnProperty(part)) {
-        current = current[part];
-      } else {
-        // Part is not a property of the current object
-        return undefined;
-      }
+      const index = parseInt(part, 10);
+      if (isNaN(index) || index < 0 || index >= current.length) return undefined;
+      current = current[index];
+    } else if (typeof current === 'object') {
+      if (!(part in current)) return undefined;
+      current = current[part];
+    } else {
+      return undefined;
     }
   }
   return current;
 }
+
 
 const MCP_SERVER_BASE_URL = "https://mcp.knowreply.email";
 
