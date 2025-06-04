@@ -2,6 +2,44 @@
 import type { KnowReplyAgentConfig } from './types.ts';
 // Deno object is globally available in Deno runtime
 
+function getValueByPath(source: any, path: string): any {
+  if (!path) return undefined; // Path must exist
+
+  // Converts path like "orders[0].id" to "orders.0.id", then splits to ["orders", "0", "id"]
+  // Filters out empty strings that might result from patterns like "..".
+  const parts = path.replace(/\[(\d+)\]/g, '.$1').split('.').filter(p => p !== '');
+
+  let current = source;
+  for (const part of parts) {
+    if (current === null || current === undefined) {
+      return undefined; // Cannot traverse null or undefined
+    }
+
+    // If current is not an object or array, it cannot be traversed further.
+    if (typeof current !== 'object') {
+      return undefined;
+    }
+
+    if (Array.isArray(current)) {
+      const index = Number(part); // Convert string part to number for array indexing
+      if (Number.isInteger(index) && index >= 0 && index < current.length) {
+        current = current[index];
+      } else {
+        // Part is not a valid integer index for the current array
+        return undefined;
+      }
+    } else { // Current is an object (and not null, checked above)
+      if (current.hasOwnProperty(part)) {
+        current = current[part];
+      } else {
+        // Part is not a property of the current object
+        return undefined;
+      }
+    }
+  }
+  return current;
+}
+
 const MCP_SERVER_BASE_URL = "https://mcp.knowreply.email";
 
 export async function executeMCPPlan(
@@ -148,14 +186,31 @@ export async function executeMCPPlan(
             console.error(`❌ [Step ${i}] ${placeholderError} Output was:`, referencedOutput);
             break;
           }
-          if (referencedOutput.hasOwnProperty(refFieldName)) {
-            resolvedArgs[key] = referencedOutput[refFieldName];
-            console.log(`[Step ${i}] Resolved placeholder '${value}' to:`, resolvedArgs[key]);
+          // --- START OF NEW LOGIC ---
+          const resolvedValue = getValueByPath(referencedOutput, refFieldName);
+
+          if (resolvedValue !== undefined) {
+            resolvedArgs[key] = resolvedValue;
+            // Using JSON.stringify for consistent logging of complex objects/arrays
+            console.log(`[Step ${i}] Resolved placeholder '${value}' (path: '${refFieldName}') to:`, JSON.stringify(resolvedArgs[key]));
           } else {
-            placeholderError = `Invalid placeholder: field '${refFieldName}' not found in output of step ${refStepIndex} for '${value}'. Available fields: ${Object.keys(referencedOutput || {}).join(', ')}`;
-            console.error(`❌ [Step ${i}] ${placeholderError}`);
-            break;
+            let availablePathHint = "";
+            if (referencedOutput === null || referencedOutput === undefined) {
+                availablePathHint = `Referenced output from step ${refStepIndex} is null or undefined.`;
+            } else if (typeof referencedOutput === 'object' && !Array.isArray(referencedOutput)) { // Check if it's an object but not an array
+                availablePathHint = `Available top-level keys on referenced output object (step ${refStepIndex}): ${Object.keys(referencedOutput).join(', ')}.`;
+            } else if (Array.isArray(referencedOutput)) {
+                availablePathHint = `Referenced output (step ${refStepIndex}) is an array of length ${referencedOutput.length}.`;
+            } else { // Is a primitive
+                availablePathHint = `Referenced output (step ${refStepIndex}) is a primitive: ${String(referencedOutput)}.`;
+            }
+
+            placeholderError = `Invalid placeholder: Could not resolve path '${refFieldName}' in output of step ${refStepIndex} for argument '${key}'. ${availablePathHint}`;
+            // Log a snippet of the referenced output for easier debugging
+            console.error(`❌ [Step ${i}] ${placeholderError}. Full referenced output snippet (up to 500 chars):`, JSON.stringify(referencedOutput, null, 2).substring(0, 500));
+            break; // Exit the loop for this action's args, will be handled by if(placeholderError)
           }
+          // --- END OF NEW LOGIC ---
         } else {
           resolvedArgs[key] = value;
         }
@@ -177,14 +232,18 @@ export async function executeMCPPlan(
     }
 
     const requestPayload = { args: resolvedArgs, auth: actualConnectionParams };
+    console.log(`[Step ${i}] DEBUG: Attempting to send request with resolved args:`, JSON.stringify(requestPayload.args, null, 2));
     let responseData: any = null;
     let rawResponseText = '';
     let status: 'success' | 'error' = 'error';
     let errorMessage: string | null = null;
 
-    if (!currentActionFailed) {
+    if (!currentActionFailed) { // This check was: if (!mcpServerInternalApiKey || mcpServerInternalApiKey.trim() === '') which is incorrect here.
+                                // The currentActionFailed flag should be checked, which is set if MCP_SERVER_INTERNAL_API_KEY is missing at the start of the loop.
+                                // However, the original code had a redundant check for mcpServerInternalApiKey here.
+                                // For now, sticking to the logic of proceeding if !currentActionFailed.
         try {
-          const headers: HeadersInit = { 'Content-Type': 'application/json', 'x-internal-api-key': mcpServerInternalApiKey!, }; // Added ! as it's checked above
+          const headers: HeadersInit = { 'Content-Type': 'application/json', 'x-internal-api-key': mcpServerInternalApiKey!, };
           console.log(`📤 [Step ${i}] Making POST request to ${targetUrl} for tool ${actionToExecute.tool}`);
           const response = await fetch(targetUrl, { method: 'POST', headers: headers, body: JSON.stringify(requestPayload), });
           rawResponseText = await response.text();
