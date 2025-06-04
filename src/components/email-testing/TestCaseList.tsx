@@ -1,5 +1,5 @@
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react'; // Added useEffect
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -27,6 +27,8 @@ export function TestCaseList({ testCases, onEdit, onRefresh }: TestCaseListProps
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const [expandedRunHistory, setExpandedRunHistory] = useState<Record<string, boolean>>({});
+  const [webhookApiKey, setWebhookApiKey] = useState<string | null>(null);
+  const [loadingApiKey, setLoadingApiKey] = useState<boolean>(true);
 
   const toggleRunHistory = (testCaseId: string) => {
     setExpandedRunHistory(prev => ({
@@ -34,6 +36,54 @@ export function TestCaseList({ testCases, onEdit, onRefresh }: TestCaseListProps
       [testCaseId]: !prev[testCaseId]
     }));
   };
+
+  useEffect(() => {
+    const fetchApiKey = async () => {
+      if (!user?.id) {
+        setLoadingApiKey(false);
+        return;
+      }
+      setLoadingApiKey(true);
+      try {
+        const { data, error } = await supabase
+          .from('workspace_configs')
+          .select('webhook_api_key')
+          .eq('user_id', user.id)
+          .single();
+
+        if (error && error.code !== 'PGRST116') {
+          throw error;
+        }
+
+        if (data?.webhook_api_key) {
+          setWebhookApiKey(data.webhook_api_key);
+        } else {
+          console.warn('Webhook API key not found for user. Email tests may not run correctly.');
+          toast({
+            title: "Webhook URL Not Configured",
+            description: "Your unique webhook URL for email testing is not yet configured. Please visit Postmark Setup in KnowReply settings.",
+            variant: "destructive",
+            duration: 10000,
+          });
+        }
+      } catch (error) {
+        console.error('Error fetching webhook_api_key:', error);
+        toast({
+          title: 'Error Fetching Configuration',
+          description: 'Could not fetch webhook configuration for email testing.',
+          variant: 'destructive',
+        });
+      } finally {
+        setLoadingApiKey(false);
+      }
+    };
+
+    if (user?.id) { // Only fetch if user is available
+      fetchApiKey();
+    } else {
+      setLoadingApiKey(false); // Not loading if no user
+    }
+  }, [user, toast]);
 
   const deleteMutation = useMutation({
     mutationFn: async (testCaseId: string) => {
@@ -62,11 +112,18 @@ export function TestCaseList({ testCases, onEdit, onRefresh }: TestCaseListProps
 
   const runTestMutation = useMutation({
     mutationFn: async (testCase: any) => {
-      // Use the actual webhook endpoint that Postmark would call
-      const webhookUrl = `https://gfabrnzppzorywipiwcm.supabase.co/functions/v1/postmark-webhook`;
+      if (!webhookApiKey) {
+        toast({
+          title: 'Cannot Run Test',
+          description: 'Webhook API key is missing. Please configure it in Postmark Setup (KnowReply settings).',
+          variant: 'destructive',
+        });
+        throw new Error('Webhook API key is missing.');
+      }
+      const dynamicWebhookUrl = `https://hub.knowreply.email/postmark-webhook/${webhookApiKey}`;
 
       // Send the test data to the webhook
-      const response = await fetch(webhookUrl, {
+      const response = await fetch(dynamicWebhookUrl, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'
@@ -193,10 +250,18 @@ export function TestCaseList({ testCases, onEdit, onRefresh }: TestCaseListProps
                   <Button
                     size="sm"
                     onClick={() => runTestMutation.mutate(testCase)}
-                    disabled={runTestMutation.isPending}
-                    title="Run Test"
+                    disabled={runTestMutation.isPending || loadingApiKey || !webhookApiKey}
+                    title={
+                      loadingApiKey ? "Loading webhook config..." :
+                      !webhookApiKey ? "Webhook not configured. Please visit Postmark Setup in KnowReply settings." :
+                      "Run Test"
+                    }
                   >
-                    <Play className="h-3 w-3 mr-1" />
+                    {(runTestMutation.isPending && runTestMutation.variables?.id === testCase.id) || (loadingApiKey && !webhookApiKey) ? ( // Show loader if mutating this test case OR if still loading API key and it's not yet available
+                        <Loader2 className="h-3 w-3 mr-1 animate-spin" />
+                      ) : (
+                        <Play className="h-3 w-3 mr-1" />
+                    )}
                     Run
                   </Button>
                   <Button
