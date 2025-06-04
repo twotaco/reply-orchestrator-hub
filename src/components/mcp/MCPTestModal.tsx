@@ -14,7 +14,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { toast } from '@/hooks/use-toast';
 import { supabase } from '@/integrations/supabase/client';
 import type { MCPEndpoint } from './types';
-import { categoryMapUtil } from './utils'; // Needed for DialogDescription
+import { generateExamplePayloadFromSchema, categoryMapUtil } from './utils';
 
 interface MCPTestModalProps {
   isOpen: boolean;
@@ -30,7 +30,8 @@ export function MCPTestModal({ isOpen, onOpenChange, endpointToTest, user }: MCP
 
   useEffect(() => {
     if (endpointToTest) {
-      setCurrentTestPayload(JSON.stringify(endpointToTest.expected_format || {}, null, 2));
+      const examplePayloadObject = generateExamplePayloadFromSchema(endpointToTest.expected_format || {});
+      setCurrentTestPayload(JSON.stringify(examplePayloadObject, null, 2));
       setTestResponse(null); // Clear previous response when endpoint changes
     }
   }, [endpointToTest]);
