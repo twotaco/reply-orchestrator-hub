@@ -237,38 +237,29 @@ function extractDomain(email: string): string | null {
 }
 
 export function isSenderVerified(headers: PostmarkWebhookPayload['Headers'], fromEmail: string): boolean {
-  // fromEmail is kept for potential future use or if a very detailed Authentication-Results header becomes available
-  if (!headers || !fromEmail) return false;
-
-  const receivedSpf = getHeaderValue(headers, 'Received-SPF') || '';
-  const spamTests = getHeaderValue(headers, 'X-Spam-Tests') || '';
-  const spamStatus = getHeaderValue(headers, 'X-Spam-Status');
-
-  if (spamStatus && spamStatus.toLowerCase().startsWith('yes')) {
-    console.log(`Sender ${fromEmail} marked as spam by X-Spam-Status. Verification failed.`);
+  // fromEmail is kept for potential future use in logging or more advanced heuristics, though not central to this logic.
+  if (!headers) { // fromEmail check removed as it's not used in core logic, only logs
+    console.log(`Verification failed: Headers are null or undefined for email associated with ${fromEmail}.`); // fromEmail still useful for context here
     return false;
   }
 
-  const spfPass = receivedSpf.toLowerCase().includes('pass');
-  if (!spfPass) {
-    console.log(`Sender ${fromEmail} SPF check did not pass. Received-SPF: "${receivedSpf}". Verification failed.`);
-    // Not returning false immediately, as DKIM might still pass and be aligned,
-    // but the final condition will fail. This log helps debug SPF part.
+  const spamStatus = getHeaderValue(headers, 'X-Spam-Status');
+  if (spamStatus && spamStatus.toLowerCase().startsWith('yes')) {
+    console.log(`Verification failed for ${fromEmail}: X-Spam-Status is "${spamStatus}".`);
+    return false;
   }
+
+  const spamTests = getHeaderValue(headers, 'X-Spam-Tests') || ''; // Default to empty string if header is null
 
   const dkimSigned = spamTests.includes('DKIM_SIGNED');
   const dkimValid = spamTests.includes('DKIM_VALID');
-  // DKIM_VALID_AU (Author Domain Alignment) means the domain in the DKIM signature (d= field)
-  // aligns with the domain in the From: header. This is crucial.
   const dkimAligned = spamTests.includes('DKIM_VALID_AU');
+  const spfPassInTests = spamTests.includes('SPF_PASS');
 
-  if (!(dkimSigned && dkimValid && dkimAligned)) {
-    console.log(`Sender ${fromEmail} DKIM checks did not pass or align. SpamTests: "${spamTests}". Verification failed.`);
-    // Not returning false immediately, final condition handles it. This log helps debug DKIM part.
-  }
+  if (!dkimSigned) console.log(`Verification failed for ${fromEmail}: DKIM_SIGNED not found in X-Spam-Tests ("${spamTests}").`);
+  if (!dkimValid) console.log(`Verification failed for ${fromEmail}: DKIM_VALID not found in X-Spam-Tests ("${spamTests}").`);
+  if (!dkimAligned) console.log(`Verification failed for ${fromEmail}: DKIM_VALID_AU not found in X-Spam-Tests ("${spamTests}").`);
+  if (!spfPassInTests) console.log(`Verification failed for ${fromEmail}: SPF_PASS not found in X-Spam-Tests ("${spamTests}").`);
 
-  // For verification to pass:
-  // 1. SPF for the envelope sender must pass.
-  // 2. DKIM signature must exist, be valid, AND be aligned with the From: header domain.
-  return spfPass && dkimSigned && dkimValid && dkimAligned;
+  return dkimSigned && dkimValid && dkimAligned && spfPassInTests;
 }

@@ -310,111 +310,93 @@ Deno.test("[processEmailWithKnowReply] should result in empty mcpActionDigest if
 
 
 // --- Unit tests for isSenderVerified ---
-Deno.test("[isSenderVerified] various scenarios", async (t) => {
+Deno.test("[isSenderVerified] various scenarios (SPF check via X-Spam-Tests)", async (t) => {
   const baseFromEmail = 'user@example.com';
 
-  await t.step("fully verified: SPF Pass (envelope aligned with From), DKIM Pass & Aligned (From)", () => {
+  await t.step("fully verified: All checks pass via X-Spam-Tests", () => {
     const headers: PostmarkHeader[] = [
-      { Name: 'Received-SPF', Value: 'pass (sender IP is 1.2.3.4) envelope-from=user@example.com' }, // SPF domain matches From domain
-      { Name: 'X-Spam-Tests', Value: 'DKIM_SIGNED,DKIM_VALID,DKIM_VALID_AU,OTHER_TEST' },
-      { Name: 'X-Spam-Status', Value: 'No' }
+      { Name: 'X-Spam-Tests', Value: 'DKIM_SIGNED,DKIM_VALID,DKIM_VALID_AU,SPF_PASS,OTHER_TEST' },
+      { Name: 'X-Spam-Status', Value: 'No' },
+      // Received-SPF is now irrelevant to the function's logic
+      { Name: 'Received-SPF', Value: 'pass (sender IP is 1.2.3.4) envelope-from=user@example.com' },
     ];
     assert(isSenderVerified(headers, baseFromEmail), "Should be verified");
   });
 
-  await t.step("fully verified: SPF Pass (envelope different from From), DKIM Pass & Aligned (From)", () => {
-    const fromEmail = 'sender@fromdomain.com';
-    const headers: PostmarkHeader[] = [
-      { Name: 'Received-SPF', Value: 'pass (sender IP is 1.2.3.4) envelope-from=user@envelopedomain.com' }, // SPF domain different from From domain
-      { Name: 'X-Spam-Tests', Value: 'DKIM_SIGNED,DKIM_VALID,DKIM_VALID_AU,OTHER_TEST' }, // DKIM_VALID_AU ensures d=fromdomain.com
-      { Name: 'X-Spam-Status', Value: 'No' }
-    ];
-    assert(isSenderVerified(headers, fromEmail), "Should be verified: SPF for envelope pass, DKIM for From pass & aligned");
-  });
-
-  await t.step("User's scenario: SPF Pass (envelope) and DKIM aligned (From)", () => {
+  await t.step("User's scenario: All checks pass via X-Spam-Tests", () => {
     const userFromEmail = 'demo@knowreply.email';
     const headers: PostmarkHeader[] = [
-      { Name: 'X-Spam-Tests', Value: 'DKIM_SIGNED,DKIM_VALID,DKIM_VALID_AU,SPF_PASS' }, // SPF_PASS in X-Spam-Tests is informational
-      { Name: 'Received-SPF', Value: 'Pass (sender SPF authorized) identity=mailfrom; envelope-from=john@example.com;' },
-      { Name: 'X-Spam-Status', Value: 'No' } // Assuming this or missing
-    ];
-    assert(isSenderVerified(headers, userFromEmail), "Should be verified based on DKIM_VALID_AU and SPF Pass");
-  });
-
-  await t.step("SPF fail", () => {
-    const headers: PostmarkHeader[] = [
-      { Name: 'Received-SPF', Value: 'fail (sender IP is 1.2.3.4) envelope-from=user@example.com' },
-      { Name: 'X-Spam-Tests', Value: 'DKIM_SIGNED,DKIM_VALID,DKIM_VALID_AU' },
+      { Name: 'X-Spam-Tests', Value: 'DKIM_SIGNED,DKIM_VALID,DKIM_VALID_AU,SPF_PASS' },
+      { Name: 'Received-SPF', Value: 'Pass (sender SPF authorized) identity=mailfrom; envelope-from=john@example.com;' }, // Irrelevant to new logic
       { Name: 'X-Spam-Status', Value: 'No' }
     ];
-    assert(!isSenderVerified(headers, baseFromEmail), "Should NOT be verified due to SPF fail");
+    assert(isSenderVerified(headers, userFromEmail), "Should be verified based on flags in X-Spam-Tests");
   });
 
-  await t.step("DKIM not signed", () => {
+  await t.step("SPF Fail (SPF_PASS missing in X-Spam-Tests)", () => {
     const headers: PostmarkHeader[] = [
-      { Name: 'Received-SPF', Value: 'pass (sender IP is 1.2.3.4) envelope-from=user@example.com' },
-      { Name: 'X-Spam-Tests', Value: 'DKIM_VALID,DKIM_VALID_AU' }, // Missing DKIM_SIGNED
+      { Name: 'X-Spam-Tests', Value: 'DKIM_SIGNED,DKIM_VALID,DKIM_VALID_AU' }, // No SPF_PASS
+      { Name: 'Received-SPF', Value: 'pass irrelevant string' }, // This header is now ignored
+      { Name: 'X-Spam-Status', Value: 'No' }
+    ];
+    assert(!isSenderVerified(headers, baseFromEmail), "Should NOT be verified due to SPF_PASS missing");
+  });
+
+  await t.step("DKIM not signed (but SPF_PASS present)", () => {
+    const headers: PostmarkHeader[] = [
+      { Name: 'X-Spam-Tests', Value: 'DKIM_VALID,DKIM_VALID_AU,SPF_PASS' }, // Missing DKIM_SIGNED
       { Name: 'X-Spam-Status', Value: 'No' }
     ];
     assert(!isSenderVerified(headers, baseFromEmail), "Should NOT be verified due to DKIM not signed");
   });
 
-  await t.step("DKIM not valid", () => {
+  await t.step("DKIM not valid (but SPF_PASS present)", () => {
     const headers: PostmarkHeader[] = [
-      { Name: 'Received-SPF', Value: 'pass (sender IP is 1.2.3.4) envelope-from=user@example.com' },
-      { Name: 'X-Spam-Tests', Value: 'DKIM_SIGNED,DKIM_VALID_AU' }, // Missing DKIM_VALID
+      { Name: 'X-Spam-Tests', Value: 'DKIM_SIGNED,DKIM_VALID_AU,SPF_PASS' }, // Missing DKIM_VALID
       { Name: 'X-Spam-Status', Value: 'No' }
     ];
     assert(!isSenderVerified(headers, baseFromEmail), "Should NOT be verified due to DKIM not valid");
   });
 
-  await t.step("DKIM not aligned (DKIM_VALID_AU missing), SPF Pass", () => {
+  await t.step("DKIM not aligned (DKIM_VALID_AU missing, but SPF_PASS present)", () => {
     const headers: PostmarkHeader[] = [
-      { Name: 'Received-SPF', Value: 'pass (sender IP is 1.2.3.4) envelope-from=user@example.com' },
-      { Name: 'X-Spam-Tests', Value: 'DKIM_SIGNED,DKIM_VALID' }, // DKIM_VALID_AU is missing
+      { Name: 'X-Spam-Tests', Value: 'DKIM_SIGNED,DKIM_VALID,SPF_PASS' }, // DKIM_VALID_AU is missing
       { Name: 'X-Spam-Status', Value: 'No' }
     ];
-    assert(!isSenderVerified(headers, baseFromEmail), "Should NOT be verified due to DKIM not aligned, even if SPF passes");
+    assert(!isSenderVerified(headers, baseFromEmail), "Should NOT be verified due to DKIM not aligned");
   });
 
-  await t.step("X-Spam-Status is Yes", () => {
+  await t.step("X-Spam-Status is Yes (all other checks pass in X-Spam-Tests)", () => {
     const headers: PostmarkHeader[] = [
-      { Name: 'Received-SPF', Value: 'pass (sender IP is 1.2.3.4) envelope-from=user@example.com' },
-      { Name: 'X-Spam-Tests', Value: 'DKIM_SIGNED,DKIM_VALID,DKIM_VALID_AU' },
+      { Name: 'X-Spam-Tests', Value: 'DKIM_SIGNED,DKIM_VALID,DKIM_VALID_AU,SPF_PASS' },
       { Name: 'X-Spam-Status', Value: 'Yes, score=7.0' }
     ];
     assert(!isSenderVerified(headers, baseFromEmail), "Should NOT be verified due to X-Spam-Status Yes");
   });
 
-  await t.step("SPF Pass (for envelope), DKIM Aligned (for From) - old 'misaligned SPF' case now passes", () => {
+  // The following two tests for "misaligned SPF" and "subdomain SPF" are now effectively testing
+  // the same core logic: if DKIM is aligned for From and SPF_PASS is in X-Spam-Tests, it passes.
+  // The details of envelope-from in Received-SPF are irrelevant to the new function logic.
+  await t.step("Verified: DKIM Aligned (From) and SPF_PASS in X-Spam-Tests (Received-SPF irrelevant)", () => {
     const headers: PostmarkHeader[] = [
-      // SPF for envelope domain 'another-domain.com' passes.
-      { Name: 'Received-SPF', Value: 'pass (sender IP is 1.2.3.4) envelope-from=user@another-domain.com' },
-      // DKIM is for 'user@example.com' (baseFromEmail) and is aligned.
-      { Name: 'X-Spam-Tests', Value: 'DKIM_SIGNED,DKIM_VALID,DKIM_VALID_AU' },
+      { Name: 'Received-SPF', Value: 'pass (sender IP is 1.2.3.4) envelope-from=user@another-domain.com' }, // Irrelevant
+      { Name: 'X-Spam-Tests', Value: 'DKIM_SIGNED,DKIM_VALID,DKIM_VALID_AU,SPF_PASS' },
       { Name: 'X-Spam-Status', Value: 'No' }
     ];
-    // This should now be true because DKIM_VALID_AU authenticates the From header, and SPF authenticates the envelope.
-    assert(isSenderVerified(headers, baseFromEmail), "Should be verified: SPF for envelope passes, DKIM for From is aligned");
+    assert(isSenderVerified(headers, baseFromEmail), "Should be verified based on X-Spam-Tests flags");
   });
 
-  await t.step("SPF Pass (envelope), DKIM Aligned (From) - old 'subdomain SPF' case still passes", () => {
+  // This test becomes redundant with the one above, but keeping structure for clarity of transition
+   await t.step("Verified: DKIM Aligned (From) and SPF_PASS in X-Spam-Tests (Received-SPF with subdomain irrelevant)", () => {
     const headers: PostmarkHeader[] = [
-      { Name: 'Received-SPF', Value: 'pass (sender IP is 1.2.3.4) envelope-from=user@sub.example.com' },
-      { Name: 'X-Spam-Tests', Value: 'DKIM_SIGNED,DKIM_VALID,DKIM_VALID_AU' }, // DKIM_VALID_AU authenticates baseFromEmail
+      { Name: 'Received-SPF', Value: 'pass (sender IP is 1.2.3.4) envelope-from=user@sub.example.com' }, // Irrelevant
+      { Name: 'X-Spam-Tests', Value: 'DKIM_SIGNED,DKIM_VALID,DKIM_VALID_AU,SPF_PASS' },
       { Name: 'X-Spam-Status', Value: 'No' }
     ];
-    assert(isSenderVerified(headers, baseFromEmail), "Should be verified: SPF for envelope passes, DKIM for From is aligned");
+    assert(isSenderVerified(headers, baseFromEmail), "Should be verified based on X-Spam-Tests flags");
   });
 
-  await t.step("missing Received-SPF header", () => {
-    const headers: PostmarkHeader[] = [
-      { Name: 'X-Spam-Tests', Value: 'DKIM_SIGNED,DKIM_VALID,DKIM_VALID_AU' },
-      { Name: 'X-Spam-Status', Value: 'No' }
-    ];
-    assert(!isSenderVerified(headers, baseFromEmail), "Should NOT be verified due to missing Received-SPF");
-  });
+  // Test for "missing Received-SPF header" is removed as it's no longer used by the function.
 
   await t.step("missing X-Spam-Tests header", () => {
     const headers: PostmarkHeader[] = [
