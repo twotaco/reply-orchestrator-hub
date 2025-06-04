@@ -205,7 +205,7 @@ export function PostmarkSetup() {
 
   // Use the correct Supabase webhook URL
   const generatedWebhookUrl = config.webhook_api_key
-    ? `https://gfabrnzppzorywipiwcm.supabase.co/functions/v1/postmark-webhook/${config.webhook_api_key}`
+    ? `https://hub.knowreply.email/postmark-webhook/${config.webhook_api_key}` // Changed base URL
     : config.postmark_api_token // Only show generating if token exists, otherwise it's not relevant yet
     ? 'Generating your unique webhook URL...'
     : 'Please save API token to generate webhook URL.';
