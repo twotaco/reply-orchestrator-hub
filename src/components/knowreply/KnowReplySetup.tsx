@@ -292,6 +292,7 @@ export function KnowReplySetup() {
       setAgentEmailMappings([]);
     } finally {
       setLoading(false);
+    }
   }, [user?.id, toast, setConfig, setLoading, setAgentConfigs, setAvailableAgents, setAgentEmailMappings, loadAgentConfigs, setHasUnsavedChanges]);
 
   // Ensure the duplicate plain async functions for loadMCPEndpoints and loadAgentConfigs are removed.
