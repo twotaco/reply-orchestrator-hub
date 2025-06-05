@@ -60,7 +60,7 @@ async function processWithAgent(
       // mcpPlan remains null
     } else {
       // Has API Key and Endpoints, proceed to generate plan
-      const emailBodyContent = payload.TextBody || payload.HtmlBody || payload.StrippedTextReply || "";
+      const emailBodyContent = payload.StrippedTextReply || payload.TextBody || payload.HtmlBody || "";
       console.log(`🗺️ Agent ${agentConfig.agent_id} has ${agentConfig.mcp_endpoints.length} MCPs. Attempting to generate plan with Gemini.`);
       mcpPlan = await generateMCPToolPlan(
         emailBodyContent, payload.FromFull.Email, payload.FromName,
