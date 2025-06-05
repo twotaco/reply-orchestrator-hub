@@ -1,6 +1,7 @@
 
 import { useState } from 'react';
-import { useAuth } from '@/hooks/useAuth'; // AuthProvider removed
+import { Outlet, useLocation } from 'react-router-dom'; // Import Outlet and useLocation
+import { AuthProvider, useAuth } from '@/hooks/useAuth';
 import { AuthPage } from '@/components/auth/AuthPage';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { Dashboard } from '@/components/dashboard/Dashboard';
@@ -12,6 +13,7 @@ import { EmailTesting } from '@/components/email-testing/EmailTesting';
 function AppContent() {
   const { user, loading } = useAuth();
   const [currentPage, setCurrentPage] = useState('dashboard');
+  const location = useLocation(); // Get current location
 
   if (loading) {
     return (
@@ -25,7 +27,7 @@ function AppContent() {
     return <AuthPage />;
   }
 
-  const renderPage = () => {
+  const renderLegacyPageContent = () => {
     switch (currentPage) {
       case 'dashboard':
         return <Dashboard />;
@@ -38,20 +40,24 @@ function AppContent() {
       case 'email-testing':
         return <EmailTesting />;
       default:
-        return <Dashboard />;
+        return <Dashboard />; // Fallback for current page state
     }
   };
 
   return (
     <AppLayout currentPage={currentPage} onPageChange={setCurrentPage}>
-      {renderPage()}
+      <Outlet />
+      {/* Conditionally render legacy page content if at the root path */}
+      {location.pathname === '/' ? renderLegacyPageContent() : null}
     </AppLayout>
   );
 }
 
 function App() {
   return (
-    <AppContent />
+    <AuthProvider>
+      <AppContent />
+    </AuthProvider>
   );
 }
 
