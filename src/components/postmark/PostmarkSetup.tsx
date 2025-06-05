@@ -23,8 +23,6 @@ interface WorkspaceConfig {
   postmark_api_token: string | null;
   postmark_webhook_url: string | null;
   postmark_active: boolean | null;
-  postmark_inbound_hash: string | null;
-  postmark_server_id: string | null;
   webhook_api_key?: string | null;
 }
 
@@ -35,8 +33,6 @@ export function PostmarkSetup() {
     postmark_api_token: '',
     postmark_webhook_url: '',
     postmark_active: false,
-    postmark_inbound_hash: '',
-    postmark_server_id: ''
   });
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -53,7 +49,7 @@ export function PostmarkSetup() {
     try {
       const { data, error } = await supabase
         .from('workspace_configs')
-        .select('postmark_api_token, postmark_webhook_url, postmark_active, postmark_inbound_hash, postmark_server_id, webhook_api_key')
+        .select('postmark_api_token, postmark_webhook_url, postmark_active, webhook_api_key')
         .eq('user_id', user?.id)
         .single();
 
@@ -122,8 +118,6 @@ export function PostmarkSetup() {
           postmark_api_token: config.postmark_api_token,
           postmark_webhook_url: config.postmark_webhook_url,
           postmark_active: config.postmark_active,
-          postmark_inbound_hash: config.postmark_inbound_hash,
-          postmark_server_id: config.postmark_server_id,
           webhook_api_key: config.webhook_api_key, // Ensure webhook_api_key is preserved
           updated_at: new Date().toISOString()
         }, {
@@ -273,39 +267,16 @@ export function PostmarkSetup() {
         </CardHeader>
         <CardContent className="space-y-4">
           <div>
-            <Label htmlFor="api-token">Postmark Account API Token</Label>
+            <Label htmlFor="api-token">Postmark Server API Token</Label>
             <Input
               id="api-token"
               type="password"
-              placeholder="Enter your Postmark Account API token"
+              placeholder="Enter your Postmark Server API token"
               value={config.postmark_api_token || ''}
               onChange={(e) => setConfig({ ...config, postmark_api_token: e.target.value })}
             />
             <p className="text-sm text-gray-500 mt-1">
               Found in your Postmark account under API Tokens
-            </p>
-          </div>
-
-          <div>
-            <Label htmlFor="server-id">Server ID (Optional)</Label>
-            <Input
-              id="server-id"
-              placeholder="Enter your Postmark Server ID"
-              value={config.postmark_server_id || ''}
-              onChange={(e) => setConfig({ ...config, postmark_server_id: e.target.value })}
-            />
-          </div>
-
-          <div>
-            <Label htmlFor="inbound-hash">Inbound Hash</Label>
-            <Input
-              id="inbound-hash"
-              placeholder="Enter your inbound hash (from Postmark server settings)"
-              value={config.postmark_inbound_hash || ''}
-              onChange={(e) => setConfig({ ...config, postmark_inbound_hash: e.target.value })}
-            />
-            <p className="text-sm text-gray-500 mt-1">
-              This is the unique identifier before @inbound.postmarkapp.com
             </p>
           </div>
 
@@ -382,38 +353,6 @@ export function PostmarkSetup() {
           </div>
         </CardContent>
       </Card>
-
-      {/* Inbound Email Address */}
-      {config.postmark_inbound_hash && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <CheckCircle2 className="h-5 w-5 text-green-600" />
-              Your Inbound Email Address
-            </CardTitle>
-            <CardDescription>
-              This is your default Postmark inbound email address.
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="flex items-center gap-2">
-              <Badge variant="outline" className="text-lg px-3 py-2">
-                {config.postmark_inbound_hash}@inbound.postmarkapp.com
-              </Badge>
-              <Button 
-                variant="outline" 
-                size="icon"
-                onClick={() => copyToClipboard(`${config.postmark_inbound_hash}@inbound.postmarkapp.com`)}
-              >
-                <Copy className="h-4 w-4" />
-              </Button>
-            </div>
-            <p className="text-sm text-gray-500 mt-2">
-              See the Postmark "Inbound Email Documentation" for using other email addresses.
-            </p>
-          </CardContent>
-        </Card>
-      )}
 
       <Card>
         <CardHeader>
