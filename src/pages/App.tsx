@@ -8,6 +8,7 @@ import { PostmarkSetup } from '@/components/postmark/PostmarkSetup';
 import { KnowReplySetup } from '@/components/knowreply/KnowReplySetup';
 import { MCPManagement } from '@/components/mcp/MCPManagement';
 import { EmailTesting } from '@/components/email-testing/EmailTesting';
+import { ActivityLogs } from '@/components/activity-logs/ActivityLogs';
 
 function AppContent() {
   const { user, loading } = useAuth();
@@ -38,7 +39,7 @@ function AppContent() {
       case 'email-testing':
         return <EmailTesting />;
       case 'logs':
-        return <div>Activity Logs - Coming Soon</div>;
+                return <ActivityLogs />;
       default:
         return <Dashboard />;
     }
