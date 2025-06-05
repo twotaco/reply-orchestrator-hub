@@ -174,20 +174,129 @@ async function processWithAgent(
   }
 
   console.log('✅ KnowReply response received for agent:', agentConfig.agent_id);
-  console.log('📊 Updating email_interactions with id:', emailInteractionId);
+
+  // Initialize postmark_reply_status
+  let postmarkReplyStatus = null;
+  let finalInteractionStatus = 'processed'; // Default status
+
+  // Check if KnowReply suggested a reply
+  if (responseData.reply && responseData.reply.body && responseData.reply.subject) {
+    console.log(`💬 KnowReply suggested a reply for agent ${agentConfig.agent_id}. Attempting to send via Postmark.`);
+
+    // 1. Fetch Postmark Server API Token from workspace_configs
+    // Note: workspaceConfig passed to processWithAgent currently only has knowreply_webhook_url and knowreply_api_token.
+    // We need to fetch the postmark_api_token separately or ensure it's added to the initial workspaceConfig load.
+    // For this change, we will fetch it here.
+    const { data: wsConfigData, error: tokenError } = await supabase
+      .from('workspace_configs')
+      .select('postmark_api_token')
+      .eq('user_id', userId)
+      .single();
+
+    if (tokenError || !wsConfigData?.postmark_api_token) {
+      console.error(`❌ Failed to fetch Postmark API token for user ${userId}:`, tokenError?.message || 'Token not found.');
+      postmarkReplyStatus = {
+        success: false,
+        error: 'Failed to fetch Postmark API token.',
+        messageId: null,
+        sent_at: new Date().toISOString(),
+      };
+      await supabase.from('activity_logs').insert({
+        user_id: userId, email_interaction_id: emailInteractionId,
+        action: 'postmark_reply_token_error', status: 'error',
+        details: { agent_id: agentConfig.agent_id, error: tokenError?.message || 'Token not found.' },
+      });
+    } else {
+      const postmarkServerToken = wsConfigData.postmark_api_token;
+      console.log(`🔑 Successfully fetched Postmark API token for user ${userId}.`);
+
+      // 2. Prepare Reply Details
+      const replySubject = responseData.reply.subject;
+      const htmlBody = responseData.reply.body;
+      const toEmail = payload.FromFull.Email; // Original sender
+      // Assuming the original recipient email is a valid sender signature. This might need refinement.
+      // payload.ToFull[0].Email might not always be the desired From address for a reply if aliases/forwarding or special mailboxes are used.
+      // payload.OriginalRecipient might be more reliable if it represents the mailbox Postmark delivered to.
+      const fromEmail = payload.ToFull?.[0]?.Email || payload.OriginalRecipient;
+      const originalMessageId = payload.MessageID;
+
+      if (!fromEmail) {
+        console.error(`❌ Could not determine 'fromEmail' for reply. Original To/Recipient missing. Agent: ${agentConfig.agent_id}`);
+        postmarkReplyStatus = {
+          success: false,
+          error: "Could not determine 'fromEmail' for sending reply (original recipient missing).",
+          messageId: null,
+          sent_at: new Date().toISOString(),
+        };
+        await supabase.from('activity_logs').insert({
+          user_id: userId, email_interaction_id: emailInteractionId,
+          action: 'postmark_reply_from_email_error', status: 'error',
+          details: { agent_id: agentConfig.agent_id, error: "Original ToFull or OriginalRecipient is missing in Postmark payload." },
+        });
+      } else {
+        console.log(`📧 Preparing to send Postmark reply: To: ${toEmail}, From: ${fromEmail}, Subject: ${replySubject}`);
+
+        // 3. Call sendPostmarkReply
+        const replyResult = await sendPostmarkReply(
+          postmarkServerToken,
+          toEmail,
+          fromEmail,
+          replySubject,
+          htmlBody,
+          originalMessageId
+        );
+
+        console.log(`📬 Postmark reply send attempt result for agent ${agentConfig.agent_id}:`, replyResult);
+        postmarkReplyStatus = {
+          success: replyResult.success,
+          messageId: replyResult.messageId || null,
+          error: replyResult.error || null,
+          sent_at: new Date().toISOString(), // Record attempt time
+        };
+
+        if (replyResult.success) {
+          console.log(`✅ Successfully sent Postmark reply. MessageID: ${replyResult.messageId}`);
+          finalInteractionStatus = 'replied'; // Update status if reply was successful
+          await supabase.from('activity_logs').insert({
+            user_id: userId, email_interaction_id: emailInteractionId,
+            action: 'postmark_reply_sent', status: 'success',
+            details: { agent_id: agentConfig.agent_id, message_id: replyResult.messageId, to: toEmail, from: fromEmail },
+          });
+        } else {
+          console.error(`❌ Failed to send Postmark reply for agent ${agentConfig.agent_id}:`, replyResult.error);
+          await supabase.from('activity_logs').insert({
+            user_id: userId, email_interaction_id: emailInteractionId,
+            action: 'postmark_reply_failed', status: 'error',
+            details: { agent_id: agentConfig.agent_id, error: replyResult.error, to: toEmail, from: fromEmail },
+          });
+        }
+      }
+    }
+  } else {
+    console.log(`ℹ️ No reply suggested by KnowReply for agent ${agentConfig.agent_id}.`);
+  }
+
+  // 4. Log Outcome & Update Interaction
+  console.log('📊 Updating email_interactions with id:', emailInteractionId, 'Final Status:', finalInteractionStatus);
+
+  const updatePayload: any = {
+    knowreply_agent_used: agentConfig.agent_id,
+    knowreply_request: knowReplyRequest,
+    knowreply_response: responseData,
+    mcp_results: responseData.mcp_results || null,
+    mcp_plan: mcpPlan,
+    intent: responseData.intent || null,
+    status: finalInteractionStatus, // Use the determined status
+    updated_at: new Date().toISOString(),
+  };
+
+  if (postmarkReplyStatus) {
+    updatePayload.postmark_reply_status = postmarkReplyStatus;
+  }
 
   const { data: updateResult, error: updateError } = await supabase
     .from('email_interactions')
-    .update({
-      knowreply_agent_used: agentConfig.agent_id,
-      knowreply_request: knowReplyRequest,
-      knowreply_response: responseData,
-      mcp_results: responseData.mcp_results || null, // Overwrites with KnowReply's version of MCP results
-      mcp_plan: mcpPlan,
-      intent: responseData.intent || null,
-      status: 'processed',
-      updated_at: new Date().toISOString()
-    })
+    .update(updatePayload)
     .eq('id', emailInteractionId)
     .select();
 
@@ -229,6 +338,90 @@ async function processWithAgent(
     });
 
   console.log(`🎉 Successfully processed email with agent ${agentConfig.agent_id}`);
+}
+
+/**
+ * Sends a reply email via Postmark.
+ *
+ * @async
+ * @param {string} postmarkServerToken - The Postmark server API token.
+ * @param {string} toEmail - Recipient of the reply.
+ * @param {string} fromEmail - Sender of the reply (must be a configured Postmark sender signature).
+ * @param {string} replySubject - Subject of the reply.
+ * @param {string} htmlBody - HTML content of the reply.
+ * @param {string} originalMessageId - The Message-ID of the email being replied to, for threading.
+ * @returns {Promise<object>} An object indicating success or failure, with Postmark response or error details.
+ */
+export async function sendPostmarkReply(
+  postmarkServerToken: string,
+  toEmail: string,
+  fromEmail: string,
+  replySubject: string,
+  htmlBody: string,
+  originalMessageId: string
+): Promise<{ success: boolean; messageId?: string; submittedAt?: string; errorCode?: number; message?: string; error?: string; details?: any }> {
+  const postmarkApiUrl = 'https://api.postmarkapp.com/email';
+
+  const payload = {
+    From: fromEmail,
+    To: toEmail,
+    Subject: replySubject,
+    HtmlBody: htmlBody,
+    MessageStream: 'outbound', // Or configure as needed
+    Headers: [
+      { Name: 'References', Value: originalMessageId },
+      { Name: 'In-Reply-To', Value: originalMessageId },
+    ],
+  };
+
+  // Log parts of the request for debugging (avoid logging full htmlBody if very long)
+  console.log('Sending Postmark reply. Payload (partial):', {
+    From: payload.From,
+    To: payload.To,
+    Subject: payload.Subject,
+    MessageStream: payload.MessageStream,
+    Headers: payload.Headers,
+    BodyLength: htmlBody.length,
+  });
+
+  try {
+    const response = await fetch(postmarkApiUrl, {
+      method: 'POST',
+      headers: {
+        'Accept': 'application/json',
+        'Content-Type': 'application/json',
+        'X-Postmark-Server-Token': postmarkServerToken,
+      },
+      body: JSON.stringify(payload),
+    });
+
+    const responseData = await response.json();
+    console.log('Postmark API response status:', response.status);
+    console.log('Postmark API response data:', responseData);
+
+    if (response.ok) {
+      return {
+        success: true,
+        messageId: responseData.MessageID,
+        submittedAt: responseData.SubmittedAt,
+        details: responseData,
+      };
+    } else {
+      return {
+        success: false,
+        error: `Postmark API Error: ${responseData.Message || 'Unknown error'}`,
+        errorCode: responseData.ErrorCode,
+        details: responseData,
+      };
+    }
+  } catch (error) {
+    console.error('Failed to send email via Postmark:', error);
+    return {
+      success: false,
+      error: 'Failed to make request to Postmark API.',
+      details: error.message,
+    };
+  }
 }
 
 export async function processEmailWithKnowReply(
