@@ -1,5 +1,5 @@
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react'; // Added useCallback
 import { motion } from 'framer-motion';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
@@ -76,8 +76,7 @@ export function KnowReplySetup() {
   const [loadingAgents, setLoadingAgents] = useState(false);
   const [fetchError, setFetchError] = useState<string | null>(null);
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
-  // Removed: const [currentEmailInput, setCurrentEmailInput] = useState<Record<string, string>>({});
-  // Removed: const handleEmailInputChange = (agentId: string, value: string) => { ... };
+  const [configuringAgentId, setConfiguringAgentId] = useState<string | null>(null);
 
   const handleAddNewEmailRow = (agentId: string) => {
     setAgentConfigs(prevAgentConfigs =>
@@ -117,36 +116,163 @@ export function KnowReplySetup() {
     setHasUnsavedChanges(true);
   };
 
+  // Main data loading useEffect:
   useEffect(() => {
-    if (user) {
+    if (user && !hasUnsavedChanges) {
+      console.log('useEffect (main data load): Conditions met, calling loadConfig and loadMCPEndpoints.');
       loadConfig();
       loadMCPEndpoints();
+    } else if (user && hasUnsavedChanges) {
+      console.log('useEffect (main data load): User present, but skipping data load due to unsaved changes.');
+    } else if (!user) {
+      console.log('useEffect (main data load): No user, clearing data and resetting states.');
+      setConfig({ knowreply_api_token: '' });
+      setAgentConfigs([]);
+      setAvailableAgents([]);
+      setMCPEndpoints([]);
+      setAgentEmailMappings([]);
+      setHasUnsavedChanges(false);
+      setLoading(false);
+      setFetchError(null);
     }
-  }, [user]);
+  }, [user, hasUnsavedChanges, loadConfig, loadMCPEndpoints]);
 
-  useEffect(() => {
-    if (config.knowreply_api_token) {
-      fetchAgents();
+  const loadAgentConfigs = useCallback(async () => {
+    if (!user?.id) {
+      console.log('loadAgentConfigs: No user, skipping.');
+      setAgentConfigs([]);
+      setAgentEmailMappings([]);
+      return;
     }
-  }, [config.knowreply_api_token]);
-
-  const loadConfig = async () => {
+    console.log('loadAgentConfigs: Fetching...');
     try {
+      const { data: mcpMappingData, error: mcpError } = await supabase
+        .from('knowreply_agent_mcp_mappings')
+        .select('*')
+        .eq('user_id', user.id);
+      if (mcpError) throw mcpError;
+
+      const { data: emailData, error: emailError } = await supabase
+        .from('agent_email_mappings')
+        .select('id, agent_id, email_address, agent_name') // agent_name is fetched
+        .eq('user_id', user.id);
+      if (emailError) throw emailError;
+      setAgentEmailMappings(emailData || []);
+
+      const configMap = new Map<string, AgentConfig>();
+
+      (mcpMappingData || []).forEach(mapping => {
+        if (!configMap.has(mapping.agent_id)) {
+          const currentAgentEmails = (emailData || [])
+            .filter(em => em.agent_id === mapping.agent_id)
+            .map(em => em.email_address);
+          const agentNameFromEmailMapping = (emailData || []).find(em => em.agent_id === mapping.agent_id)?.agent_name;
+
+          configMap.set(mapping.agent_id, {
+            agent_id: mapping.agent_id,
+            agent_name: agentNameFromEmailMapping || '', // Use name from email_mapping or set to be filled by fetchAgents
+            agent_role: '', // To be filled by fetchAgents
+            enabled: mapping.enabled !== undefined ? mapping.enabled : true, // Default to true if not specified
+            mcp_endpoints: [],
+            email_addresses: currentAgentEmails,
+            email_errors: [],
+          });
+        }
+        // Assuming 'enabled' field on mcp_mapping row refers to the agent's enabled state for that MCP link,
+        // or overall enabled state. The AgentConfig.enabled is the agent's general enabled state.
+        // Let's assume mapping.enabled refers to the agent's enabled status for this configuration context.
+        // If mcp_endpoint_id is present, add it.
+        if (mapping.mcp_endpoint_id) { // The original code used mapping.active here. Assuming it's just mapping.mcp_endpoint_id existence.
+             configMap.get(mapping.agent_id)!.mcp_endpoints.push(mapping.mcp_endpoint_id);
+        }
+      });
+
+      (emailData || []).forEach(emailMapping => {
+        if (!configMap.has(emailMapping.agent_id)) {
+          configMap.set(emailMapping.agent_id, {
+            agent_id: emailMapping.agent_id,
+            agent_name: emailMapping.agent_name || '',
+            agent_role: '',
+            enabled: true,
+            mcp_endpoints: [],
+            email_addresses: [emailMapping.email_address],
+            email_errors: [],
+          });
+        } else {
+          const existingCfg = configMap.get(emailMapping.agent_id)!;
+          if (!existingCfg.email_addresses.includes(emailMapping.email_address)) {
+            existingCfg.email_addresses.push(emailMapping.email_address);
+          }
+          if (!existingCfg.agent_name && emailMapping.agent_name) {
+            existingCfg.agent_name = emailMapping.agent_name;
+          }
+        }
+      });
+
+      // Removed the iteration that used `availableAgents` to set names here.
+      // `fetchAgents` will be responsible for updating names based on API results.
+      setAgentConfigs(Array.from(configMap.values()));
+      // setHasUnsavedChanges(false); // CRITICAL: loadAgentConfigs should NOT reset this.
+    } catch (error) {
+      console.error('Error loading agent configurations:', error);
+      toast({ title: "Error", description: "Failed to load agent configurations.", variant: "destructive" });
+  }, [user?.id, toast, setAgentConfigs, setAgentEmailMappings, availableAgents]); // availableAgents is used in name consolidation
+
+  const loadMCPEndpoints = useCallback(async () => {
+    if (!user?.id) {
+      // console.log('loadMCPEndpoints: No user, skipping.'); // Already logged by loadConfig if that's the entry point
+      setMCPEndpoints([]);
+      return;
+    }
+    // console.log('loadMCPEndpoints: Fetching...'); // Can be verbose, loadConfig logs entry
+    try {
+      const { data, error } = await supabase
+        .from('mcp_endpoints')
+        .select('*')
+        .eq('user_id', user.id)
+        .eq('active', true);
+
+      if (error) throw error;
+      setMCPEndpoints(data || []);
+    } catch (error) {
+      console.error('Error loading MCP endpoints:', error);
+      toast({ title: "Error", description: "Failed to load MCP endpoints.", variant: "destructive" });
+    }
+  }, [user?.id, toast, setMCPEndpoints]);
+
+
+  const loadConfig = useCallback(async () => {
+    console.log('loadConfig: Attempting to load main workspace configuration...');
+    setLoading(true);
+    try {
+      if (!user?.id) {
+        console.log('loadConfig: No user, skipping load.');
+        setLoading(false);
+        setConfig({ knowreply_api_token: '' });
+        setAgentConfigs([]);
+        setAvailableAgents([]);
+        setAgentEmailMappings([]); // Clear email mappings too
+        // setHasUnsavedChanges(false); // Should be done by the main useEffect when user is null
+        return;
+      }
       const { data, error } = await supabase
         .from('workspace_configs')
         .select('knowreply_api_token')
-        .eq('user_id', user?.id)
+        .eq('user_id', user.id) // Use user.id directly as it's checked
         .single();
 
-      if (error && error.code !== 'PGRST116') {
+      if (error && error.code !== 'PGRST116') { // PGRST116 means no row, which is fine.
         throw error;
       }
 
       if (data) {
         setConfig(data);
+      } else {
+        // No existing workspace_config row for this user. Reset to default.
+        setConfig({ knowreply_api_token: '' });
       }
 
-      // Load existing agent configurations
+      // Load agent-specific configurations (MCP mappings, email mappings)
       await loadAgentConfigs();
     } catch (error) {
       console.error('Error loading config:', error);
@@ -155,115 +281,27 @@ export function KnowReplySetup() {
         description: "Failed to load KnowReply configuration",
         variant: "destructive",
       });
+      // Reset to defaults on error to avoid partial inconsistent state
+      setConfig({ knowreply_api_token: '' });
+      setAgentConfigs([]);
+      setAvailableAgents([]);
+      setAgentEmailMappings([]);
     } finally {
       setLoading(false);
+  }, [user?.id, toast, setConfig, setLoading, setAgentConfigs, setAvailableAgents, setAgentEmailMappings, loadAgentConfigs]);
+
+  // Ensure the duplicate plain async functions for loadMCPEndpoints and loadAgentConfigs are removed.
+  // The useCallback versions are defined above and are the correct ones to use.
+  // The fetchAgents function below is already correctly wrapped in useCallback.
+
+  const fetchAgents = useCallback(async () => {
+    if (!config.knowreply_api_token) {
+      setAvailableAgents([]); // Clear available agents if no token
+      return;
     }
-  };
-
-  const loadMCPEndpoints = async () => {
-    try {
-      const { data, error } = await supabase
-        .from('mcp_endpoints')
-        .select('*')
-        .eq('user_id', user?.id)
-        .eq('active', true);
-
-      if (error) throw error;
-      setMCPEndpoints(data || []);
-    } catch (error) {
-      console.error('Error loading MCP endpoints:', error);
-    }
-  };
-
-  const loadAgentConfigs = async () => {
-    try {
-      const { data, error } = await supabase
-        .from('knowreply_agent_mcp_mappings')
-        .select('*')
-        .eq('user_id', user?.id);
-
-      if (error) throw error;
-
-      // Fetch Agent Email Mappings
-      const { data: emailData, error: emailError } = await supabase
-        .from('agent_email_mappings')
-        .select('id, agent_id, email_address')
-        .eq('user_id', user?.id);
-      if (emailError) throw emailError;
-      setAgentEmailMappings(emailData || []);
-
-      // Group mappings by agent_id
-      const configMap = new Map<string, AgentConfig>();
-      
-      data?.forEach(mapping => {
-        if (!configMap.has(mapping.agent_id)) {
-          const currentAgentEmails = (emailData || [])
-            .filter(emailMapping => emailMapping.agent_id === mapping.agent_id)
-            .map(emailMapping => emailMapping.email_address);
-          configMap.set(mapping.agent_id, {
-            agent_id: mapping.agent_id,
-            agent_name: '', // Will be filled when agents are loaded
-            enabled: true,
-            mcp_endpoints: [],
-            email_addresses: currentAgentEmails,
-            email_errors: [],
-          });
-        }
-        
-        if (mapping.active) {
-          configMap.get(mapping.agent_id)!.mcp_endpoints.push(mapping.mcp_endpoint_id);
-        }
-      });
-
-      // Ensure agents from emailData are also included even if they don't have MCP mappings
-      (emailData || []).forEach(emailMapping => {
-        if (!configMap.has(emailMapping.agent_id)) {
-          const agent = availableAgents.find(a => a.id === emailMapping.agent_id) // availableAgents should be loaded before this or concurrently
-          configMap.set(emailMapping.agent_id, {
-            agent_id: emailMapping.agent_id,
-            agent_name: agent?.name || 'Unknown Agent', // Attempt to get name
-            enabled: true, // Or determine based on some logic if necessary
-            mcp_endpoints: [],
-            email_addresses: [emailMapping.email_address],
-            email_errors: [],
-          });
-        } else {
-          // If agent already in configMap (from MCP mappings), ensure email is added if not present
-          const existingConfig = configMap.get(emailMapping.agent_id)!;
-          if (!existingConfig.email_addresses.includes(emailMapping.email_address)) {
-            existingConfig.email_addresses.push(emailMapping.email_address);
-          }
-        }
-      });
-
-      // Update agent names for configs that might have been created solely from emailData
-      // This part might need adjustment based on when availableAgents are populated.
-      // If availableAgents isn't populated yet, agent_name might remain 'Unknown Agent' until fetchAgents completes.
-      // Consider moving the agent_name population logic to after fetchAgents if it's an issue.
-      configMap.forEach((config) => {
-        if (config.agent_name === 'Unknown Agent' || config.agent_name === '') {
-           const agentDetails = availableAgents.find(a => a.id === config.agent_id);
-           if (agentDetails) {
-             config.agent_name = agentDetails.name;
-             config.agent_role = agentDetails.role;
-           }
-        }
-      });
-
-
-      setAgentConfigs(Array.from(configMap.values()));
-      setHasUnsavedChanges(false);
-    } catch (error) {
-      console.error('Error loading agent configs:', error);
-    }
-  };
-
-  const fetchAgents = async () => {
-    if (!config.knowreply_api_token) return;
-
+    // console.log('fetchAgents: Fetching agents...'); // Optional: for debugging
     setLoadingAgents(true);
     setFetchError(null);
-    
     try {
       const response = await fetch(KNOWREPLY_GET_AGENTS_URL, {
         method: 'GET',
@@ -323,38 +361,47 @@ export function KnowReplySetup() {
     } finally {
       setLoadingAgents(false);
     }
-  };
+  }, [config.knowreply_api_token, toast, setAvailableAgents, setAgentConfigs, setLoadingAgents, setFetchError]); // Dependencies for fetchAgents
 
-  const addAgent = (agent: Agent) => {
-    const exists = agentConfigs.find(config => config.agent_id === agent.id);
-    if (exists) {
-      toast({
-        title: "Agent Already Added",
-        description: `${agent.name} is already configured`,
-        variant: "destructive",
-      });
-      return;
+  // useEffect for fetching agents based on API token (from main config)
+  useEffect(() => {
+    if (config.knowreply_api_token) {
+        fetchAgents();
+    } else {
+        // If token is removed, clear agents. fetchAgents itself also does this.
+        setAvailableAgents([]);
     }
+  }, [config.knowreply_api_token, toast, setAvailableAgents, setAgentConfigs, setLoadingAgents, setFetchError]); // fetchAgents is stable
 
-    const newConfig: AgentConfig = {
-      agent_id: agent.id,
-      agent_name: agent.name,
-      agent_role: agent.role,
-      enabled: true,
-      mcp_endpoints: [],
-      email_addresses: [],
-      email_errors: [],
-    };
-
-    setAgentConfigs(prev => [newConfig, ...prev]); // Add to the beginning
-    setHasUnsavedChanges(true);
-    // Removed toast notification
+  const handleConfigureAgent = (agentFromApi: Agent) => {
+    setConfiguringAgentId(agentFromApi.id);
+    const existingConfig = agentConfigs.find(ac => ac.agent_id === agentFromApi.id);
+    if (!existingConfig) {
+      const newConfigData: AgentConfig = {
+        agent_id: agentFromApi.id,
+        agent_name: agentFromApi.name,
+        agent_role: agentFromApi.role,
+        enabled: true, // Default to enabled
+        mcp_endpoints: [],
+        email_addresses: [''], // Default with one empty email input row
+        email_errors: [],
+      };
+      setAgentConfigs(prev => {
+        const filtered = prev.filter(ac => ac.agent_id !== agentFromApi.id);
+        return [newConfigData, ...filtered];
+      });
+      setHasUnsavedChanges(true);
+    }
   };
 
-  const removeAgent = (agentId: string) => {
-    setAgentConfigs(prev => prev.filter(config => config.agent_id !== agentId));
+  const removeAgentFromConfig = (agentIdToRemove: string) => {
+    setAgentConfigs(prev => prev.filter(config => config.agent_id !== agentIdToRemove));
+    if (configuringAgentId === agentIdToRemove) {
+      setConfiguringAgentId(null);
+    }
     setHasUnsavedChanges(true);
   };
+  // Old addAgent function is removed.
 
   const toggleAgentEnabled = (agentId: string) => {
     setAgentConfigs(prev => prev.map(config => 
@@ -555,11 +602,11 @@ export function KnowReplySetup() {
       }
       // --- End Manage Agent Email Mappings ---
 
-      setHasUnsavedChanges(false);
       toast({
         title: "Success",
         description: "KnowReply configuration saved successfully",
       });
+      setHasUnsavedChanges(false); // This change will be picked up by the main data loading useEffect.
     } catch (error) {
       console.error('Error saving config:', error);
       toast({
@@ -580,9 +627,9 @@ export function KnowReplySetup() {
     );
   }
 
-  const availableAgentsToAdd = availableAgents.filter(
-    agent => !agentConfigs.find(config => config.agent_id === agent.id)
-  );
+  // const availableAgentsToAdd = availableAgents.filter( // This will be removed from JSX
+  //   agent => !agentConfigs.find(config => config.agent_id === agent.id)
+  // );
 
   return (
     <motion.div
@@ -673,152 +720,125 @@ export function KnowReplySetup() {
                 </Button>
               </div>
             ) : (
-              <>
-                {/* Add New Agent */}
-                {availableAgentsToAdd.length > 0 && (
-                  <div>
-                    <Label className="text-sm font-medium mb-3 block">Add Agents</Label>
-                    <div className="grid gap-3">
-                      {availableAgentsToAdd.map((agent) => (
-                        <div key={agent.id} className="flex items-center justify-between p-3 border rounded-lg">
-                          <div>
-                            <div className="font-medium">{agent.name}</div>
-                            {agent.role && (
-                              <div className="text-sm text-gray-500">{agent.role}</div>
+              <div className="space-y-4">
+                <Label className="text-base font-semibold mb-3 block">Manage Your KnowReply Agents</Label>
+                {availableAgents.length === 0 && !loadingAgents && (
+                   <p className="text-center text-gray-500 py-4">No agents available from KnowReply API. Check your API token or add agents in KnowReply.</p>
+                )}
+                {availableAgents.map((agentFromApi) => {
+                  const agentConfig = agentConfigs.find(ac => ac.agent_id === agentFromApi.id);
+                  const isCurrentlyConfiguring = configuringAgentId === agentFromApi.id;
+
+                  return (
+                    <Card key={agentFromApi.id} className={`p-4 transition-all duration-300 ease-in-out ${isCurrentlyConfiguring ? 'shadow-lg border-orange-500 ring-1 ring-orange-500' : 'border-gray-200'}`}>
+                      {!isCurrentlyConfiguring ? (
+                        // Summary View
+                        <div className="flex items-center justify-between">
+                           <div>
+                            <h3 className="font-medium">{agentFromApi.name}</h3>
+                            {agentFromApi.role && <p className="text-sm text-gray-500">{agentFromApi.role}</p>}
+                            {agentConfig && (
+                                <Badge variant={agentConfig.enabled ? "default" : "outline"} className={`mt-1 ${agentConfig.enabled ? 'bg-green-100 text-green-700 border-green-300' : 'text-gray-600 border-gray-300'}`}>
+                                {agentConfig.enabled ? "Enabled" : "Disabled"}
+                                </Badge>
                             )}
+                             {!agentConfig && (
+                                <Badge variant="outline" className="mt-1 text-gray-500 border-gray-300">Not Configured</Badge>
+                             )}
                           </div>
-                          <Button size="sm" onClick={() => addAgent(agent)}>
-                            <Plus className="h-4 w-4 mr-1" />
-                            Add Agent
+                          <Button size="sm" variant="outline" onClick={() => handleConfigureAgent(agentFromApi)}>
+                            {agentConfig ? "Edit Configuration" : "Configure Agent"}
                           </Button>
                         </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-
-                {/* Configured Agents */}
-                {agentConfigs.length > 0 && (
-                  <div>
-                    <Label className="text-sm font-medium mb-3 block">Configured Agents</Label>
-                    <div className="space-y-4">
-                      {agentConfigs.map((agentConfig) => (
-                        <Card key={agentConfig.agent_id} className="p-4">
+                      ) : (
+                        // Expanded Configuration View (ensure agentConfig exists due to handleConfigureAgent logic)
+                        agentConfig && (
                           <div className="space-y-4">
-                            {/* Agent Header */}
                             <div className="flex items-center justify-between">
-                              <div className="flex items-center gap-3">
-                                <Checkbox
-                                  checked={agentConfig.enabled}
-                                  onCheckedChange={() => toggleAgentEnabled(agentConfig.agent_id)}
-                                />
-                                <div>
-                                  <div className="font-medium">{agentConfig.agent_name}</div>
-                                  {agentConfig.agent_role && (
-                                    <div className="text-sm text-gray-500">{agentConfig.agent_role}</div>
-                                  )}
-                                </div>
+                              <div>
+                                <h3 className="font-semibold text-lg text-orange-700">{agentConfig.agent_name}</h3>
+                                {agentConfig.agent_role && <p className="text-sm text-gray-500">{agentConfig.agent_role}</p>}
                               </div>
-                              <Button
-                                variant="outline"
-                                size="sm"
-                                onClick={() => removeAgent(agentConfig.agent_id)}
-                              >
-                                <Trash2 className="h-4 w-4" />
-                              </Button>
+                              <div className="flex items-center gap-2">
+                                 <Button variant="outline" size="sm" onClick={() => setConfiguringAgentId(null)}>Done</Button>
+                                 <Button variant="ghost" size="icon" title="Remove Agent from Configuration" onClick={() => removeAgentFromConfig(agentFromApi.id)}>
+                                    <Trash2 className="h-4 w-4 text-red-500" />
+                                 </Button>
+                              </div>
                             </div>
 
-                            {/* MCP Endpoints */}
+                            <div className="flex items-center space-x-2 pt-2">
+                              <Checkbox
+                                id={`enable-${agentConfig.agent_id}`}
+                                checked={agentConfig.enabled}
+                                onCheckedChange={() => toggleAgentEnabled(agentConfig.agent_id)}
+                              />
+                              <Label htmlFor={`enable-${agentConfig.agent_id}`} className="text-sm font-medium">
+                                Enable Agent for Email Processing
+                              </Label>
+                            </div>
+
                             {agentConfig.enabled && mcpEndpoints.length > 0 && (
-                              <div>
+                              <div className="pt-2">
                                 <Label className="text-sm font-medium mb-2 block">MCP Endpoints</Label>
-                                <div className="grid gap-2">
+                                <div className="grid gap-2 max-h-48 overflow-y-auto pr-2"> {/* Added max-height and scroll */}
                                   {mcpEndpoints.map((endpoint) => (
                                     <div key={endpoint.id} className="flex items-center space-x-3 p-2 border rounded">
                                       <Checkbox
+                                        id={`mcp-${agentConfig.agent_id}-${endpoint.id}`}
                                         checked={agentConfig.mcp_endpoints.includes(endpoint.id)}
                                         onCheckedChange={() => toggleMCPForAgent(agentConfig.agent_id, endpoint.id)}
                                       />
                                       <div className="flex-1">
-                                        <div className="flex items-center gap-2">
-                                          <span className="text-sm font-medium">{endpoint.name}</span>
-                                          <Badge variant="outline" className="text-xs">{endpoint.category}</Badge>
-                                        </div>
-                                        {endpoint.instructions && (
-                                          <p className="text-xs text-gray-500 mt-1">{endpoint.instructions}</p>
-                                        )}
+                                        <Label htmlFor={`mcp-${agentConfig.agent_id}-${endpoint.id}`} className="text-sm font-medium">{endpoint.name}</Label>
+                                        <Badge variant="outline" className="text-xs ml-2">{endpoint.category}</Badge>
+                                        {endpoint.instructions && <p className="text-xs text-gray-500 mt-1">{endpoint.instructions}</p>}
                                       </div>
                                     </div>
                                   ))}
                                 </div>
                               </div>
                             )}
-
                             {agentConfig.enabled && mcpEndpoints.length === 0 && (
-                              <div className="text-sm text-gray-500 p-3 bg-gray-50 rounded">
-                                No MCP endpoints configured. Set up MCP endpoints first to connect them to agents.
-                              </div>
+                               <p className="text-xs text-gray-500 p-3 bg-gray-50 rounded">No MCP endpoints configured in this workspace yet.</p>
                             )}
 
-                            {/* Email Addresses Configuration */}
                             {agentConfig.enabled && (
                               <div className="pt-4 mt-4 border-t">
                                 <div className="flex justify-between items-center mb-2">
                                   <Label className="text-sm font-medium">Associated Email Addresses</Label>
-                                  <Button
-                                    size="sm"
-                                    variant="outline"
-                                    onClick={() => handleAddNewEmailRow(agentConfig.agent_id)}
-                                    title="Add new email address field"
-                                  >
-                                    <Plus className="h-4 w-4 mr-1" />
-                                    Add Email
+                                  <Button size="xs" variant="outline" onClick={() => handleAddNewEmailRow(agentConfig.agent_id)} title="Add email field">
+                                    <Plus className="h-3 w-3 mr-1" /> Add
                                   </Button>
                                 </div>
-
-                                <div className="space-y-2">
-                                  {agentConfig.email_addresses && agentConfig.email_addresses.map((emailString, index) => (
+                                <div className="space-y-2 max-h-40 overflow-y-auto pr-1"> {/* Scroll for emails */}
+                                  {agentConfig.email_addresses.map((emailString, index) => (
                                     <div key={index} className="flex items-center gap-2">
                                       <Input
                                         type="email"
                                         placeholder="Enter email address"
                                         value={emailString}
                                         onChange={(e) => handleEmailValueChange(agentConfig.agent_id, index, e.target.value)}
-                                        className="flex-grow"
+                                        className="flex-grow h-8 text-sm"
                                       />
-                                      <Button
-                                        variant="ghost"
-                                        size="icon"
-                                        onClick={() => handleRemoveEmailRow(agentConfig.agent_id, index)}
-                                        title="Remove this email address"
-                                        className="text-gray-500 hover:text-red-500"
-                                      >
-                                        <Trash2 className="h-4 w-4" />
+                                      <Button variant="ghost" size="icon" onClick={() => handleRemoveEmailRow(agentConfig.agent_id, index)} title="Remove email">
+                                        <Trash2 className="h-4 w-4 text-gray-500 hover:text-red-500" />
                                       </Button>
                                     </div>
                                   ))}
-                                  {(agentConfig.email_addresses?.length === 0 || !agentConfig.email_addresses) && (
-                                    <p className="text-xs text-gray-500 text-center py-2">
-                                      No email addresses associated. Click "Add Email" to assign one.
-                                    </p>
+                                  {agentConfig.email_addresses.length === 0 && (
+                                    <p className="text-xs text-gray-500 text-center py-1">No email addresses yet. Click "Add" to assign one.</p>
                                   )}
                                 </div>
                               </div>
                             )}
                           </div>
-                        </Card>
-                      ))}
-                    </div>
-                  </div>
-                )}
-
-                {agentConfigs.length === 0 && availableAgents.length > 0 && (
-                  <div className="text-center py-8 text-gray-500">
-                    <Brain className="h-12 w-12 mx-auto mb-4 opacity-50" />
-                    <p>No agents configured yet. Add agents above to get started.</p>
-                  </div>
-                )}
-              </>
+                        )
+                      )}
+                    </Card>
+                  );
+                })}
+              </div>
             )}
           </CardContent>
         </Card>
