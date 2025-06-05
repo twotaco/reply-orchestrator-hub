@@ -127,7 +127,7 @@ export async function handlePostmarkRequest(
           to_email: toEmailForStorage,
           subject: payload.Subject,
           original_content: payload.TextBody || payload.HtmlBody,
-          status: 'pending', // Initial status for new interaction
+          status: 'received', // Changed from 'pending'
           postmark_request: payload,
           source: 'postmark_webhook',
         })
@@ -137,7 +137,7 @@ export async function handlePostmarkRequest(
         responseData.errors.push(`Database error creating email interaction: ${interactionError.message}`);
       } else if (newInteraction) {
         interactionRecordId = newInteraction.id;
-        console.log(`✅ New email interaction created with ID: ${interactionRecordId}`);
+        console.log(`✅ New email interaction created with ID: ${interactionRecordId} for user ${userId}.`);
       }
     } else if (interactionCheckError) { // Some other DB error
         console.error('⚠️ Database error checking for existing email interaction:', interactionCheckError);
@@ -150,7 +150,7 @@ export async function handlePostmarkRequest(
         .update({
           from_email: payload.From, to_email: toEmailForStorage, subject: payload.Subject,
           original_content: payload.TextBody || payload.HtmlBody,
-          status: 'pending', // Reset status for re-processing attempt
+          status: 'received', // Also ensure existing interactions are reset to 'received' for reprocessing
           postmark_request: payload,
           updated_at: new Date().toISOString()
         })
