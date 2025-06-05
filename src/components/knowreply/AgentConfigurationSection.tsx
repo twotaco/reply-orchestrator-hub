@@ -1,22 +1,22 @@
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Button } from '@/components/ui/button'; // For Retry button
+import { Button } from '@/components/ui/button';
 import { Loader2, Brain, AlertCircle } from 'lucide-react';
-import { AgentList } from './AgentList';
-import { ConfiguredAgentsSection } from './ConfiguredAgentsSection';
+import { AvailableAgentsAccordion } from './AvailableAgentsAccordion'; // Updated import
+import { ConfiguredAgentsAccordion } from './ConfiguredAgentsAccordion'; // Updated import
 
-// Assuming these interfaces are defined or imported from a common types file
-interface KnowReplyConfig { // Needed to check if API token exists
+// Interfaces (ensure consistency)
+interface KnowReplyConfig {
   knowreply_api_token: string | null;
 }
 
-interface Agent {
+interface Agent { // Represents an agent fetched from the API
   id: string;
   name: string;
   persona?: string;
   role?: string;
 }
 
-interface AgentConfig {
+interface AgentConfig { // Represents a configured agent's settings
   agent_id: string;
   agent_name: string;
   agent_role?: string;
@@ -34,18 +34,18 @@ interface MCPEndpoint {
 }
 
 interface AgentConfigurationSectionProps {
-  config: KnowReplyConfig; // To check if API token is present
-  availableAgents: Agent[]; // Combined from availableAgents and agentConfigs to get full list for ConfiguredAgentsSection condition
-  availableAgentsToAdd: Agent[];
+  config: KnowReplyConfig;
+  availableAgents: Agent[]; // Full list of agents from API, used for "no agents found" message
+  availableAgentsToAdd: Agent[]; // Filtered list for AvailableAgentsAccordion
   onAddAgent: (agent: Agent) => void;
-  agentConfigs: AgentConfig[];
+  agentConfigs: AgentConfig[]; // For ConfiguredAgentsAccordion
   mcpEndpoints: MCPEndpoint[];
   onToggleAgentEnabled: (agentId: string) => void;
   onRemoveAgent: (agentId: string) => void;
   onToggleMCPForAgent: (agentId: string, mcpEndpointId: string) => void;
   loadingAgents: boolean;
   fetchError: string | null;
-  onFetchAgents: () => void; // Function to retry fetching agents
+  onFetchAgents: () => void;
   onAddNewEmailRow: (agentId: string) => void;
   onEmailValueChange: (agentId: string, emailIndex: number, newValue: string) => void;
   onRemoveEmailRow: (agentId: string, emailIndex: number) => void;
@@ -69,44 +69,59 @@ export function AgentConfigurationSection({
   onRemoveEmailRow,
 }: AgentConfigurationSectionProps) {
   if (!config.knowreply_api_token) {
-    return null; // Don't show this section if there's no API token
+    // This card is not shown if API token is not present.
+    // Alternatively, could show a message prompting for API token.
+    return null;
   }
 
   return (
-    <Card>
+    <Card className="shadow-md">
       <CardHeader>
-        <CardTitle className="flex items-center gap-2">
-          <Brain className="h-5 w-5" />
+        <CardTitle className="flex items-center gap-2 text-xl font-semibold text-gray-800 dark:text-gray-100">
+          <Brain className="h-6 w-6 text-blue-600 dark:text-blue-400" />
           Agent Configuration
         </CardTitle>
-        <CardDescription>
-          Add agents and configure which MCP endpoints each can access, and assign email addresses.
+        <CardDescription className="text-sm text-gray-600 dark:text-gray-400">
+          Manage your KnowReply agents. Add available agents to the configuration, then enable and assign MCPs or email addresses.
+          Settings for each agent are shown in collapsible sections.
         </CardDescription>
       </CardHeader>
-      <CardContent className="space-y-6">
+      <CardContent className="space-y-6 pt-4">
         {loadingAgents ? (
-          <div className="flex items-center justify-center py-8">
-            <Loader2 className="h-6 w-6 animate-spin mr-2" />
+          <div className="flex flex-col items-center justify-center py-10 text-gray-500 dark:text-gray-400">
+            <Loader2 className="h-8 w-8 animate-spin mb-3" />
             <span>Loading agents...</span>
           </div>
         ) : fetchError ? (
-          <div className="text-center py-8">
-            <AlertCircle className="h-12 w-12 mx-auto mb-4 text-red-500" />
-            <p className="text-red-600 mb-4">{fetchError}</p>
+          <div className="text-center py-10">
+            <AlertCircle className="h-10 w-10 mx-auto mb-3 text-red-500 dark:text-red-400" />
+            <p className="text-red-600 dark:text-red-400 mb-4 text-base">Error: {fetchError}</p>
             <Button variant="outline" onClick={onFetchAgents}>
               Retry Connection
             </Button>
           </div>
         ) : (
           <>
-            <AgentList
-              availableAgentsToAdd={availableAgentsToAdd}
-              onAddAgent={onAddAgent}
-            />
-            <ConfiguredAgentsSection
+            {/* Message for when API fetch is successful but NO agents exist on the account */}
+            {!loadingAgents && !fetchError && availableAgents.length === 0 && (
+              <div className="py-6 text-center text-sm text-gray-500 dark:text-gray-400 border-t border-b dark:border-gray-700">
+                 <Brain className="h-8 w-8 mx-auto mb-2 text-gray-400 dark:text-gray-500 opacity-75" />
+                No agents found for your API token. Please verify your token or check your KnowReply dashboard if you expect agents to be listed.
+              </div>
+            )}
+
+            {/* Only show AvailableAgentsAccordion if there are agents from the API */}
+            {availableAgents.length > 0 && (
+                 <AvailableAgentsAccordion
+                    availableAgentsToAdd={availableAgentsToAdd}
+                    onAddAgent={onAddAgent}
+                />
+            )}
+
+            {/* ConfiguredAgentsAccordion can be shown even if availableAgents is empty, if some agents were configured previously */}
+            <ConfiguredAgentsAccordion
               agentConfigs={agentConfigs}
               mcpEndpoints={mcpEndpoints}
-              availableAgents={availableAgents} // Pass the full list of available agents
               onToggleAgentEnabled={onToggleAgentEnabled}
               onRemoveAgent={onRemoveAgent}
               onToggleMCPForAgent={onToggleMCPForAgent}
@@ -114,13 +129,6 @@ export function AgentConfigurationSection({
               onEmailValueChange={onEmailValueChange}
               onRemoveEmailRow={onRemoveEmailRow}
             />
-            {/* This explicit message for when no agents are available at all (even after successful fetch) */}
-            { !loadingAgents && !fetchError && availableAgents.length === 0 && agentConfigs.length === 0 && (
-                <div className="text-center py-8 text-gray-500">
-                    <Brain className="h-12 w-12 mx-auto mb-4 opacity-50" />
-                    <p>No agents found for your API token. Please check your KnowReply dashboard.</p>
-                </div>
-            )}
           </>
         )}
       </CardContent>

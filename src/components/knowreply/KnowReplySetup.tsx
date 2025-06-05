@@ -17,7 +17,7 @@ import {
   ExternalLink,
   Loader2,
   Brain,
-  AlertCircle,
+  AlertCircle, // Ensure AlertCircle is imported
   Trash2,
   Plus,
   Save
@@ -588,7 +588,7 @@ export function KnowReplySetup() {
     <motion.div
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
-      className="space-y-6"
+      className="space-y-6 pb-24" // Added pb-24
     >
       <div>
         <h1 className="text-3xl font-bold text-gray-900">KnowReply Setup</h1>
@@ -597,26 +597,7 @@ export function KnowReplySetup() {
         </p>
       </div>
 
-      {/* Unsaved Changes Warning */}
-      {hasUnsavedChanges && (
-        <Card className="border-orange-200 bg-orange-50">
-          <CardContent className="pt-6">
-            <div className="flex items-center gap-2 text-orange-700">
-              <AlertCircle className="h-5 w-5" />
-              <span className="font-medium">You have unsaved changes</span>
-              <Button 
-                onClick={saveConfiguration} 
-                disabled={saving}
-                size="sm"
-                className="ml-auto"
-              >
-                {saving ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Save className="h-4 w-4 mr-2" />}
-                Save Now
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
-      )}
+      {/* Unsaved Changes Warning card removed, integrated into sticky bar */}
 
       {/* API Configuration */}
       <Card>
@@ -824,17 +805,37 @@ export function KnowReplySetup() {
         </Card>
       )}
 
-      {/* Save Configuration */}
-      <div className="flex justify-end">
-        <Button 
-          onClick={saveConfiguration} 
-          disabled={saving || !hasUnsavedChanges} 
-          size="lg"
-          className={hasUnsavedChanges ? 'bg-orange-600 hover:bg-orange-700' : ''}
-        >
-          {saving ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Save className="h-4 w-4 mr-2" />}
-          {hasUnsavedChanges ? 'Save Configuration' : 'Configuration Saved'}
-        </Button>
+      {/* Sticky Save Button Bar */}
+      <div className="fixed inset-x-0 bottom-0 bg-white dark:bg-gray-800 border-t border-gray-200 dark:border-gray-700 p-4 shadow-lg z-50">
+        <div className="container mx-auto flex items-center justify-between max-w-screen-xl">
+          <div>
+            {hasUnsavedChanges && (
+              <div className="flex items-center text-sm text-orange-600 dark:text-orange-400">
+                <AlertCircle className="h-5 w-5 mr-2" />
+                <span>Unsaved changes present.</span>
+              </div>
+            )}
+            {!hasUnsavedChanges && !saving && (
+              <div className="flex items-center text-sm text-green-600 dark:text-green-400">
+                <CheckCircle2 className="h-5 w-5 mr-2" />
+                <span>Configuration is up to date.</span>
+              </div>
+            )}
+          </div>
+          <Button
+            onClick={saveConfiguration}
+            disabled={saving || !hasUnsavedChanges}
+            size="lg"
+            className={`min-w-[200px] ${hasUnsavedChanges ? 'bg-orange-500 hover:bg-orange-600 dark:bg-orange-600 dark:hover:bg-orange-700 text-white' : 'bg-green-500 hover:bg-green-600 dark:bg-green-600 dark:hover:bg-green-700 text-white'}`}
+          >
+            {saving ? (
+              <Loader2 className="h-5 w-5 animate-spin mr-2" />
+            ) : (
+              <Save className="h-5 w-5 mr-2" />
+            )}
+            {saving ? 'Saving...' : (hasUnsavedChanges ? 'Save Configuration' : 'Configuration Saved')}
+          </Button>
+        </div>
       </div>
 
       {/* Setup Instructions */}
