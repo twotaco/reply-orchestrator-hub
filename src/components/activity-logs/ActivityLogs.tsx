@@ -341,7 +341,7 @@ export function ActivityLogs() {
                           </CardFooter>
                         </Card>
                         <Card>
-                          <CardHeader><CardTitle>Webhook Call Plan</CardTitle></CardHeader>
+                          <CardHeader><CardTitle>Connected Tools Called</CardTitle></CardHeader>
                           <CardContent>
                             <RenderToolPlan planData={log.originalEntry.mcp_plan} showJson={jsonViewStates.webhookPlan} />
                           </CardContent>

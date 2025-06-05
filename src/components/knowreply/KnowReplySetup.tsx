@@ -711,7 +711,7 @@ export function KnowReplySetup() {
 
                             {/* Email Addresses Configuration */}
                             {agentConfig.enabled && (
-                              <div className="pt-4 mt-4 border-t">
+                              <div className="pt-4 mt-4">
                                 <div className="flex justify-between items-center mb-2">
                                   <Label className="text-sm font-medium">Email Accounts to be Handled by This Agent</Label>
                                   <Button
@@ -757,7 +757,7 @@ export function KnowReplySetup() {
                             
                             {/* MCP Endpoints */}
                             {agentConfig.enabled && mcpEndpoints.length > 0 && (
-                              <div className="pt-4 mt-4 border-t">
+                              <div className="pt-4 mt-4">
                                 <Label className="text-sm font-medium mb-2 block">Connected Tools (MCP Endpoints)</Label>
                                 <div className="grid gap-2">
                                   {mcpEndpoints.map((endpoint) => (
