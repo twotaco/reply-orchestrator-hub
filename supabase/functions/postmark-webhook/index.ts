@@ -21,18 +21,27 @@ serve(async (req: Request) => {
 
   const url = new URL(req.url);
   const pathParts = url.pathname.split('/');
-  // Expected URL structure: /functions/v1/postmark-webhook/<customer_api_key>
-  // Split parts: ["", "functions", "v1", "postmark-webhook", "<customer_api_key>"]
-  const customerApiKey = pathParts.length === 5 && pathParts[3] === 'postmark-webhook' ? pathParts[4] : null;
+  // Expected URL structure: /some/prefix/postmark-webhook/<customer_api_key>
+  // Trim leading/trailing slashes to handle paths like "/" or "/path/" consistently, then split.
+  const cleanPath = url.pathname.replace(/^\/+|\/+$/g, '');
+  const pathParts = cleanPath.split('/');
 
-  if (!customerApiKey) {
-    console.error('❌ Invalid URL path or API key missing:', url.pathname);
+  const customerApiKey = pathParts.pop(); // Get the last segment (potential API key)
+  const hookSegment = pathParts.pop();   // Get the second-to-last segment (should be 'postmark-webhook')
+
+  // Validate the extracted parts
+  if (hookSegment !== 'postmark-webhook' || !customerApiKey || customerApiKey.trim() === '') {
+    console.error(
+      '❌ Invalid URL path or API key missing. Path:', url.pathname,
+      'Parsed hookSegment:', hookSegment,
+      'Parsed API key:', customerApiKey
+    );
     return new Response(JSON.stringify({ status: 'error', message: 'Invalid webhook URL format or API key missing.' }), {
       status: 400,
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' }, // Ensure corsHeaders is defined
     });
   }
-  console.log('🔑 Extracted Customer API Key:', customerApiKey);
+  console.log('🔑 Extracted Customer API Key (robustly):', customerApiKey);
 
   try {
     const supabaseAdminClient = createClient(
