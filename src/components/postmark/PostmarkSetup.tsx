@@ -154,34 +154,41 @@ export function PostmarkSetup() {
 
     setTesting(true);
     try {
-      console.log('Testing Postmark connection via edge function...');
-      
-      const { data, error } = await supabase.functions.invoke('test-postmark-connection', {
-        body: {
-          apiToken: config.postmark_api_token
-        }
+      const { data, error: invokeError } = await supabase.functions.invoke('test-postmark-connection', {
+        body: { apiToken: config.postmark_api_token }
       });
 
-      if (error) {
-        console.error('Edge function error:', error);
-        throw new Error(error.message || 'Failed to test connection');
+      if (invokeError) {
+        // This catches network errors or if the function crashes badly (doesn't return JSON)
+        console.error('Supabase function invocation error:', invokeError);
+        throw new Error(invokeError.message || 'Failed to invoke test connection function.');
       }
 
-      if (data?.error) {
-        throw new Error(data.error);
+      // At this point, the function itself returned a response (HTTP 200)
+      // 'data' should be the JSON payload from the Supabase function
+      if (!data) {
+        // Should not happen if invokeError is not set, but as a safeguard
+        throw new Error('Received no data from test connection function.');
       }
 
+      if (!data.success) {
+        // The function executed but indicated a failure (e.g., bad token, Postmark API error)
+        console.error('Test connection reported failure:', data.error);
+        throw new Error(data.error || 'Test connection failed.');
+      }
+
+      // If we reach here, data.success is true
       console.log('Connection test successful:', data);
-      
       toast({
         title: "Success",
         description: data.message || `Successfully connected to Postmark. Server: ${data.serverName} (ID: ${data.serverId})`,
       });
-    } catch (error) {
-      console.error('Error testing connection:', error);
+
+    } catch (error) { // Catches errors thrown from within the try block
+      console.error('Error during testConnection:', error);
       toast({
         title: "Error",
-        description: `Failed to connect to Postmark API: ${error.message}`,
+        description: error.message || 'Failed to connect to Postmark API.', // error.message will now be more specific
         variant: "destructive",
       });
     } finally {
