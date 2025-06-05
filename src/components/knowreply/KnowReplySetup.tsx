@@ -216,6 +216,7 @@ export function KnowReplySetup() {
     } catch (error) {
       console.error('Error loading agent configurations:', error);
       toast({ title: "Error", description: "Failed to load agent configurations.", variant: "destructive" });
+    }
   }, [user?.id, toast, setAgentConfigs, setAgentEmailMappings, availableAgents]); // availableAgents is used in name consolidation
 
   const loadMCPEndpoints = useCallback(async () => {
