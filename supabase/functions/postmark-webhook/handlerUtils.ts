@@ -1,209 +1,217 @@
 // handlerUtils.ts for postmark-webhook function
-import type { PostmarkWebhookPayload } from './types.ts';
-// Deno object is globally available in Deno runtime
-// SupabaseClient type is not strictly needed as supabase is 'any'
-import type { WorkspaceConfigWithUser } from './types.ts'; // Import WorkspaceConfigWithUser
+import type { PostmarkWebhookPayload, WorkspaceConfigWithUser } from './types.ts';
 
 export const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-  // Removed 'Access-Control-Allow-Methods' as OPTIONS is handled in index.ts
 };
 
 export async function handlePostmarkRequest(
-  supabase: any, // This is the admin client from index.ts
-  workspaceConfig: WorkspaceConfigWithUser, // Authenticated workspace config (includes user_id)
-  payload: PostmarkWebhookPayload, // Parsed payload from index.ts
+  supabase: any, // Admin client
+  workspaceConfig: WorkspaceConfigWithUser,
+  payload: PostmarkWebhookPayload,
   processEmailFn: (
-    supabase: any,
+    supabaseClient: any,
     userId: string,
     payload: PostmarkWebhookPayload,
     emailInteractionId: string
   ) => Promise<{ success: boolean; warnings: string[]; errors: string[] }>
 ): Promise<Response> {
+  const userId = workspaceConfig.user_id;
   const responseData = {
     status: 'success',
-    message: `Email processed for user: ${workspaceConfig.user_id}`, // Updated message
+    message: `Webhook call for MessageID ${payload.MessageID} acknowledged by handler.`,
     warnings: [] as string[],
     errors: [] as string[],
     processed_at: new Date().toISOString()
   };
 
   try {
-    // User is already authenticated by API key in index.ts (via workspaceConfig)
-    // The payload is already parsed in index.ts
-    // Method check (POST) is already done in index.ts
-
-    console.log('📨 Processing payload in handlePostmarkRequest for user:', workspaceConfig.user_id);
-    console.log('   From:', payload.From);
-    console.log('   To:', payload.To);
-    console.log('   Subject:', payload.Subject);
-    console.log('   MessageID:', payload.MessageID);
-
+    const toEmailForStorage = payload.ToFull?.[0]?.Email || payload.To;
     const spamHeaders = payload.Headers || [];
-    const spamScore = spamHeaders.find(h => h.Name === 'X-Spam-Score')?.Value;
+    const spamScoreHeader = spamHeaders.find(h => h.Name === 'X-Spam-Score')?.Value;
+    const spamScore = spamScoreHeader ? parseFloat(spamScoreHeader) : null;
     const spamStatus = spamHeaders.find(h => h.Name === 'X-Spam-Status')?.Value;
 
-    // Use the authenticated user_id from workspaceConfig
-    const userId = workspaceConfig.user_id;
-    const toEmailForStorage = payload.ToFull?.[0]?.Email || payload.To; // For storage purposes
+    // --- Log to postmark_inbound_emails (raw email log) ---
+    try {
+      const { data: existingRawEmail, error: checkRawError } = await supabase
+          .from('postmark_inbound_emails')
+          .select('id')
+          .eq('message_id', payload.MessageID)
+          .eq('user_id', userId)
+          .single();
 
-    // REMOVED: Old inbound hash logic for user identification
-
-    console.log(`✅ User authenticated via API key: ${userId}`);
-    // responseData.message is already set with user_id
-
-    const { data: existingEmail, error: checkError } = await supabase
-      .from('postmark_inbound_emails')
-      .select('id, message_id')
-      .eq('message_id', payload.MessageID)
-      .eq('user_id', userId) // Use authenticated userId
-      .single();
-
-    if (checkError && checkError.code !== 'PGRST116') {
-      console.error('❌ Error checking for existing email:', checkError);
-      responseData.errors.push(`Database error checking existing email: ${checkError.message}`);
-    }
-
-    if (existingEmail) {
-      console.log('📝 Updating existing email record for message_id:', payload.MessageID);
-      // responseData.warnings.push(`Updated existing email record for message_id: ${payload.MessageID}`); // This can be noisy
-      const { error: updateError } = await supabase
-        .from('postmark_inbound_emails')
-        .update({
-          from_email: payload.From, from_name: payload.FromName, to_email: toEmailForStorage,
-          cc_email: payload.Cc || null, bcc_email: payload.Bcc || null, subject: payload.Subject,
-          text_body: payload.TextBody, html_body: payload.HtmlBody, stripped_text_reply: payload.StrippedTextReply,
-          mailbox_hash: payload.MailboxHash, spam_score: spamScore ? parseFloat(spamScore) : null, spam_status: spamStatus,
-          attachments: payload.Attachments, headers: payload.Headers, raw_webhook_data: payload,
-          processed: false, updated_at: new Date().toISOString()
-        })
-        .eq('id', existingEmail.id);
-      if (updateError) {
-        console.error('❌ Error updating inbound email:', updateError);
-        responseData.errors.push(`Database error updating inbound email: ${updateError.message}`);
-      } else {
-        console.log('✅ Successfully updated existing inbound email');
+      if (checkRawError && checkRawError.code !== 'PGRST116') { // PGRST116: Not Found
+          console.warn(`DB Warning (raw log check for MessageID ${payload.MessageID}): ${checkRawError.message}`);
+          responseData.warnings.push(`DB Warning (raw log check): ${checkRawError.message}`);
       }
-    } else {
-      console.log('💾 Creating new inbound email record for user:', userId);
-      // responseData.warnings.push(`Created new email record for message_id: ${payload.MessageID}`); // Can be noisy
-      const { error: insertError } = await supabase
-        .from('postmark_inbound_emails')
-        .insert({
-          user_id: userId, // Use authenticated userId
-          message_id: payload.MessageID, from_email: payload.From,
-          from_name: payload.FromName, to_email: toEmailForStorage, cc_email: payload.Cc || null, bcc_email: payload.Bcc || null,
-          subject: payload.Subject, text_body: payload.TextBody, html_body: payload.HtmlBody,
-          stripped_text_reply: payload.StrippedTextReply, mailbox_hash: payload.MailboxHash,
-          spam_score: spamScore ? parseFloat(spamScore) : null, spam_status: spamStatus,
-          attachments: payload.Attachments, headers: payload.Headers, raw_webhook_data: payload, processed: false
-        });
-      if (insertError) {
-        console.error('❌ Error inserting inbound email:', insertError);
-        responseData.errors.push(`Database error inserting inbound email: ${insertError.message}`);
+
+      if (existingRawEmail) {
+          const { error: updateRawError } = await supabase
+              .from('postmark_inbound_emails')
+              .update({
+                  raw_webhook_data: payload,
+                  updated_at: new Date().toISOString(),
+                  headers: payload.Headers,
+                  spam_score: spamScore,
+                  spam_status: spamStatus
+              })
+              .eq('id', existingRawEmail.id);
+          if (updateRawError) {
+              console.warn(`DB Warning (raw log update for MessageID ${payload.MessageID}): ${updateRawError.message}`);
+              responseData.warnings.push(`DB Warning (raw log update): ${updateRawError.message}`);
+          }
       } else {
-        console.log('✅ Successfully stored new inbound email');
+          const { error: insertRawError } = await supabase
+              .from('postmark_inbound_emails')
+              .insert({
+                  user_id: userId, message_id: payload.MessageID, from_email: payload.From,
+                  from_name: payload.FromName, to_email: toEmailForStorage, cc_email: payload.Cc || null,
+                  bcc_email: payload.Bcc || null, subject: payload.Subject, text_body: payload.TextBody,
+                  html_body: payload.HtmlBody, stripped_text_reply: payload.StrippedTextReply,
+                  mailbox_hash: payload.MailboxHash, spam_score: spamScore,
+                  spam_status: spamStatus, attachments: payload.Attachments, headers: payload.Headers,
+                  raw_webhook_data: payload, processed: false // 'processed' here refers to raw log, not KR processing
+              });
+          if (insertRawError) {
+              console.warn(`DB Warning (raw log insert for MessageID ${payload.MessageID}): ${insertRawError.message}`);
+              responseData.warnings.push(`DB Warning (raw log insert): ${insertRawError.message}`);
+          }
       }
+    } catch (rawLogErr: any) {
+        console.error(`Error during raw email logging for MessageID ${payload.MessageID}: ${rawLogErr.message}`);
+        responseData.warnings.push(`Error during raw email logging: ${rawLogErr.message}`);
     }
+    // --- END postmark_inbound_emails LOGIC ---
+
+    let interactionRecordId: string | null = null;
+    let callProcessEmailFunction = false;
+    let originalInteractionStatusForLogging: string | null = null;
 
     const { data: existingInteraction, error: interactionCheckError } = await supabase
       .from('email_interactions')
-      .select('id')
+      .select('id, status')
       .eq('message_id', payload.MessageID)
-      .eq('user_id', userId) // Use authenticated userId
+      .eq('user_id', userId)
       .single();
 
-    let interactionRecordId;
-    // Refined logic for creating/updating interaction record
-    if (interactionCheckError && interactionCheckError.code === 'PGRST116') { // Not found, create new
-        console.log('📝 Creating new email interaction record for user:', userId);
-        const { data: newInteraction, error: interactionError } = await supabase
+    if (interactionCheckError && interactionCheckError.code !== 'PGRST116') {
+      console.error(`❌ DB error checking existing email_interaction for MessageID ${payload.MessageID}: ${interactionCheckError.message}`);
+      responseData.status = 'error';
+      responseData.message = 'Database error: Could not check for existing interaction.';
+      responseData.errors.push(`DB error (interaction check): ${interactionCheckError.message}`);
+      return new Response(JSON.stringify(responseData), { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' }});
+    }
+
+    if (existingInteraction) {
+      interactionRecordId = existingInteraction.id;
+      originalInteractionStatusForLogging = existingInteraction.status;
+      console.log(`Found existing interaction ${interactionRecordId} for MessageID ${payload.MessageID}. Current status: ${originalInteractionStatusForLogging}`);
+
+      if (originalInteractionStatusForLogging === 'failed') {
+        responseData.message = `Retrying previously failed interaction (ID: ${interactionRecordId}) for MessageID ${payload.MessageID}.`;
+        console.log(responseData.message);
+        const { error: updateStatusError } = await supabase
+          .from('email_interactions')
+          .update({ status: 'received', updated_at: new Date().toISOString(), postmark_request: payload })
+          .eq('id', interactionRecordId);
+
+        if (updateStatusError) {
+          console.error(`❌ Failed to update status to 'received' for retrying failed interaction ${interactionRecordId}:`, updateStatusError.message);
+          responseData.warnings.push(`DB Warning: Failed to reset status for retry of ${interactionRecordId}: ${updateStatusError.message}`);
+          // Even if status update fails, we might still want to proceed if interactionRecordId is valid.
+          // Or, decide this is critical and return. For now, proceeding.
+        }
+        callProcessEmailFunction = true;
+      } else {
+        // 'received', 'processing', 'replied', 'processed'
+        responseData.message = `Webhook acknowledged. Interaction for MessageID ${payload.MessageID} already has status: ${originalInteractionStatusForLogging}.`;
+        responseData.warnings.push(
+          `Duplicate/concurrent call for MessageID: ${payload.MessageID}. Interaction status: ${originalInteractionStatusForLogging}. No new processing for this call.`
+        );
+        console.log(responseData.message);
+        callProcessEmailFunction = false;
+      }
+    } else {
+      // No existing interaction, this is a new email
+      responseData.message = `New interaction to be created for MessageID ${payload.MessageID}.`;
+      console.log(responseData.message);
+      const { data: newInteraction, error: insertError } = await supabase
         .from('email_interactions')
         .insert({
-          user_id: userId, // Use authenticated userId
-          message_id: payload.MessageID,
-          from_email: payload.From,
-          to_email: toEmailForStorage,
-          subject: payload.Subject,
-          original_content: payload.TextBody || payload.HtmlBody,
-          status: 'received', // Changed from 'pending'
-          postmark_request: payload,
-          source: 'postmark_webhook',
+          user_id: userId, message_id: payload.MessageID, from_email: payload.From,
+          to_email: toEmailForStorage, subject: payload.Subject,
+          original_content: payload.TextBody || payload.HtmlBody, status: 'received',
+          postmark_request: payload, source: 'postmark_webhook',
         })
-        .select('id').single();
-      if (interactionError) {
-        console.error('⚠️ Error creating email interaction:', interactionError);
-        responseData.errors.push(`Database error creating email interaction: ${interactionError.message}`);
-      } else if (newInteraction) {
-        interactionRecordId = newInteraction.id;
-        console.log(`✅ New email interaction created with ID: ${interactionRecordId} for user ${userId}.`);
-      }
-    } else if (interactionCheckError) { // Some other DB error
-        console.error('⚠️ Database error checking for existing email interaction:', interactionCheckError);
-        responseData.errors.push(`Database error checking existing email interaction: ${interactionCheckError.message}`);
-    }
-     else if (existingInteraction) { // Found existing, update it
-      console.log('📝 Updating existing email interaction for message_id:', payload.MessageID, 'ID:', existingInteraction.id);
-      const { error: updateInteractionError } = await supabase
-        .from('email_interactions')
-        .update({
-          from_email: payload.From, to_email: toEmailForStorage, subject: payload.Subject,
-          original_content: payload.TextBody || payload.HtmlBody,
-          status: 'received', // Also ensure existing interactions are reset to 'received' for reprocessing
-          postmark_request: payload,
-          updated_at: new Date().toISOString()
-        })
-        .eq('id', existingInteraction.id);
-      if (updateInteractionError) {
-        console.error('⚠️ Error updating email interaction:', updateInteractionError);
-        // Not pushing to responseData.errors for now, as it might not be fatal for KnowReply call
-      }
-      interactionRecordId = existingInteraction.id;
-    }
+        .select('id')
+        .single();
 
-    if (!interactionRecordId) {
-        console.error(`❌ Failed to obtain interactionRecordId for user ${userId}. Cannot proceed with KnowReply processing.`);
+      if (insertError || !newInteraction) {
+        console.error(`❌ DB error inserting new email_interaction for MessageID ${payload.MessageID}:`, insertError?.message);
         responseData.status = 'error';
-        responseData.message = 'Failed to create or update email interaction record.';
-        responseData.errors.push('Internal error: Could not obtain email interaction ID.');
+        responseData.message = 'Database error: Could not create new interaction.';
+        responseData.errors.push(`DB error (interaction insert): ${insertError?.message || 'Unknown error during insert'}`);
+        return new Response(JSON.stringify(responseData), { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' }});
+      }
+      interactionRecordId = newInteraction.id;
+      console.log(`Created new interaction ${interactionRecordId} with status 'received'.`);
+      callProcessEmailFunction = true;
     }
 
-    if (interactionRecordId) {
-      console.log(`🤖 Starting KnowReply processing for user ${userId}, interaction ID: ${interactionRecordId}`);
+    if (callProcessEmailFunction && interactionRecordId) {
+      console.log(`🤖 Proceeding to call processEmailFn for interaction ID: ${interactionRecordId} (MessageID: ${payload.MessageID})`);
       const knowReplyResult = await processEmailFn(
-        supabase, // Pass the admin client from index.ts
-        userId, // Pass the authenticated userId
-        payload,
-        interactionRecordId
+        supabase, userId, payload, interactionRecordId
       );
+
       responseData.warnings.push(...knowReplyResult.warnings);
       responseData.errors.push(...knowReplyResult.errors);
       if (!knowReplyResult.success) {
         responseData.status = 'error';
-        responseData.message = 'Email received but processing failed';
-        if (knowReplyResult.errors.length === 0) {
-          responseData.errors.push('Processing failed for unknown reasons');
+        if (responseData.message.includes('acknowledged') || responseData.message.startsWith('New') || responseData.message.startsWith('Retrying')) {
+            responseData.message = `Processing by core logic for interaction ${interactionRecordId} reported issues.`;
         }
       } else {
-        responseData.warnings.push('Processing completed successfully by processEmailFn');
+        // Update message only if it was a retry or new, to reflect successful processing
+        if (originalInteractionStatusForLogging === 'failed') {
+            responseData.message = `Successfully retried and processed previously failed interaction ${interactionRecordId}.`;
+        } else if (!existingInteraction) { // implies it was a new interaction
+            responseData.message = `Successfully processed new interaction ${interactionRecordId}.`;
+        }
+        // If it was a duplicate of an already processed/replied item, the message remains as set earlier.
       }
+    } else if (callProcessEmailFunction && !interactionRecordId) {
+      // This case should ideally not be reached if logic above is correct
+      console.error(`❌ CRITICAL: callProcessEmailFunction is true but interactionRecordId is null for MessageID ${payload.MessageID}.`);
+      responseData.status = 'error';
+      responseData.message = 'Internal error: Interaction ID missing before processing.';
+      responseData.errors.push('Interaction ID was not available for processing.');
     }
 
-    console.log('🎉 Successfully processed Postmark webhook for user:', workspaceConfig.user_id);
-    const statusCode = responseData.status === 'error' ? 422 : 200;
+    let httpStatusCode = 200;
+    // If there were errors from processEmailFn, or critical errors in this handler before processEmailFn.
+    if (responseData.status === 'error' && responseData.errors.length > 0) {
+        httpStatusCode = 422; // Unprocessable Entity - request understood, but content issues or processing failed
+    }
+
+    console.log(`🎉 Finalizing Postmark webhook response for MessageID ${payload.MessageID}. HTTP Status: ${httpStatusCode}. Overall Status: ${responseData.status}.`);
     return new Response(JSON.stringify(responseData), {
-      status: statusCode,
+      status: httpStatusCode,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' }
     });
 
   } catch (error) {
-    console.error('💥 Error processing Postmark webhook in handlePostmarkRequest:', error);
-    console.error('💥 Error stack:', (error as Error).stack);
-    // Ensure responseData reflects the error for the final response
-    responseData.status = 'error';
-    responseData.message = 'Internal server error in handler';
-    responseData.errors.push(`Processing error: ${(error as Error).message}`);
+    console.error(`💥 Top-level error in handlePostmarkRequest for MessageID ${payload.MessageID || 'Unknown MessageID'}:`, error);
+    // Ensure responseData reflects the top-level error if not already set
+    if (responseData.status === 'success') { // Avoid overwriting specific error messages if already set
+        responseData.status = 'error';
+        responseData.message = 'Critical internal server error in webhook handler.';
+    }
+    if (!responseData.errors.some(e => e.includes((error as Error).message))) {
+        responseData.errors.push(`Unhandled processing error: ${(error as Error).message}`);
+    }
     return new Response(JSON.stringify(responseData), {
       status: 500,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' }
@@ -211,30 +219,25 @@ export async function handlePostmarkRequest(
   }
 }
 
-
 // --- Sender Verification Utilities ---
-
 // Type for headers parameter using indexed access type
 type PostmarkHeaderArray = PostmarkWebhookPayload['Headers'];
 
 function getHeaderValue(headers: PostmarkHeaderArray, name: string): string | null {
-  if (!headers) return null; // Add a guard for undefined headers array
+  if (!headers) return null;
   const match = headers.find(h => h.Name.toLowerCase() === name.toLowerCase());
   return match ? match.Value : null;
 }
 
 function extractDomain(email: string): string | null {
   if (!email) return null;
-  // Regex to capture domain from typical email format, including those with display names
-  // e.g., "Name <user@example.com>" or just "user@example.com"
   const match = email.match(/@([^>]+)>?$/);
   return match ? match[1].toLowerCase() : null;
 }
 
 export function isSenderVerified(headers: PostmarkWebhookPayload['Headers'], fromEmail: string): boolean {
-  // fromEmail is kept for potential future use in logging or more advanced heuristics, though not central to this logic.
-  if (!headers) { // fromEmail check removed as it's not used in core logic, only logs
-    console.log(`Verification failed: Headers are null or undefined for email associated with ${fromEmail}.`); // fromEmail still useful for context here
+  if (!headers) {
+    console.log(`Verification failed: Headers are null or undefined for email associated with ${fromEmail}.`);
     return false;
   }
 
@@ -244,7 +247,7 @@ export function isSenderVerified(headers: PostmarkWebhookPayload['Headers'], fro
     return false;
   }
 
-  const spamTests = getHeaderValue(headers, 'X-Spam-Tests') || ''; // Default to empty string if header is null
+  const spamTests = getHeaderValue(headers, 'X-Spam-Tests') || '';
 
   const dkimSigned = spamTests.includes('DKIM_SIGNED');
   const dkimValid = spamTests.includes('DKIM_VALID');

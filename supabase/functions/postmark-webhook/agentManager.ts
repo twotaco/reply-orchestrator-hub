@@ -241,7 +241,22 @@ export async function processEmailWithKnowReply(
 
   const warnings: string[] = [];
   const errors: string[] = [];
-  const processingErrors: string[] = []; // For Promise.allSettled results
+  // const processingErrors: string[] = []; // This was removed; errors are pushed directly to main 'errors' array.
+
+  // Immediately update status to 'processing'
+  try {
+    const { error: statusUpdateError } = await supabase
+      .from('email_interactions')
+      .update({ status: 'processing', updated_at: new Date().toISOString() })
+      .eq('id', emailInteractionId);
+    if (statusUpdateError) {
+      console.error(`⚠️ Failed to update interaction ${emailInteractionId} status to 'processing':`, statusUpdateError.message);
+      warnings.push(`Failed to set initial 'processing' status for interaction ${emailInteractionId}.`);
+    }
+  } catch (e) {
+     console.error(`💥 Exception during initial status update to 'processing' for interaction ${emailInteractionId}:`, (e as Error).message);
+     warnings.push(`Exception setting initial 'processing' status for interaction ${emailInteractionId}: ${(e as Error).message}`);
+  }
 
   // 1. Extract Recipient Emails from payload
   const toEmails = payload.ToFull?.map(recipient => recipient.Email.toLowerCase()) || [];
@@ -277,7 +292,11 @@ export async function processEmailWithKnowReply(
     console.log('✅ Found KnowReply config:', workspaceConfig.knowreply_webhook_url)
     console.log('✅ Found KnowReply API token:', workspaceConfig.knowreply_api_token ? 'Yes' : 'No')
 
-    interface AgentMcpMapping { // Renamed for clarity from generic AgentMapping
+  // Note: The `workspaceConfig` here is for KnowReply webhook URL and API token.
+  // The `processWithAgent` function uses this `workspaceConfig` object.
+  // All other agent-specific configurations (MCPs, etc.) are fetched below based on matchedAgentIds.
+
+  interface AgentMcpMapping {
       agent_id: string;
       mcp_endpoint_id: string | null;
       // active: boolean; // The query already filters by active=true for these
@@ -402,41 +421,63 @@ export async function processEmailWithKnowReply(
       }
     });
 
-    if (processingErrors.length > 0) errors.push(...processingErrors);
+    // if (processingErrors.length > 0) errors.push(...processingErrors); // processingErrors are now directly in 'errors'
+
+    // --- Final Status Update for email_interactions ---
+    if (uniqueAgentIdsToProcess.length === 0) {
+      // This case implies no agents were matched by email.
+      // The function should have returned earlier with a warning.
+      // If it reaches here, it's an unexpected state, but we should ensure a terminal status.
+      console.log(`ℹ️ No agents were matched for interaction ${emailInteractionId}. Finalizing status as 'processed' (no action needed).`);
+      await supabase.from('email_interactions').update({ status: 'processed', updated_at: new Date().toISOString() }).eq('id', emailInteractionId);
+      // warnings.push('No agents were matched by email.'); // This warning is likely added earlier when matchedAgentIds was found empty.
+      return { success: true, warnings, errors }; // Success because the webhook logic itself didn't fail.
+    }
 
     if (processedSuccessfullyCount > 0) {
-      const message = `Successfully processed email with ${processedSuccessfullyCount} out of ${uniqueAgentIdsToProcess.length} matched agent(s) for interaction ${emailInteractionId}.`;
+      // At least one agent successfully processed the email.
+      const message = `Email processed with ${processedSuccessfullyCount} out of ${uniqueAgentIdsToProcess.length} matched agent(s) for interaction ${emailInteractionId}.`;
       console.log('✅', message);
-      if (processingErrors.length > 0) {
-         warnings.push(`${message} Some errors occurred with other agents.`);
+      // Add warnings if some agents failed but at least one succeeded.
+      if (errors.length > 0) { // 'errors' array contains processing errors from failed agents
+         warnings.push(`${message} However, some errors occurred with other agents.`);
       } else {
         warnings.push(message);
       }
-      return { success: true, warnings, errors };
-    } else if (uniqueAgentIdsToProcess.length > 0) {
+      await supabase.from('email_interactions').update({ status: 'processed', updated_at: new Date().toISOString() }).eq('id', emailInteractionId);
+      return { success: true, warnings, errors }; // Overall success is true. Individual errors are in the 'errors' array.
+    } else {
+      // (uniqueAgentIdsToProcess.length > 0 && processedSuccessfullyCount === 0)
+      // Agents were matched and were supposed to run, but none of them succeeded.
       const message = `No agents processed the email successfully out of ${uniqueAgentIdsToProcess.length} matched for interaction ${emailInteractionId}.`;
       console.warn('⚠️', message);
-      warnings.push(message);
-      // If there were matched agents but none succeeded, this could be success:false depending on requirements.
-      // For now, if there were processingErrors, errors array will reflect that, leading to overall failure.
-      // If no processingErrors but count is 0, it means processWithAgent itself didn't throw but didn't "succeed" - needs clarity on processWithAgent's return.
-      // Assuming for now that if processingErrors is empty and count is 0, it's a strange state but not a system error.
-      return { success: processingErrors.length === 0, warnings, errors };
-    } else {
-      // Should have been caught by uniqueAgentIdsToProcess.length === 0 earlier
-      warnings.push(`No agents were matched or configured to process the email for interaction ${emailInteractionId}.`);
-      return { success: true, warnings, errors }; // No work to do.
+      if (!errors.some(e => e.includes(message))) errors.push(message); // Add this primary failure reason if not already detailed.
+
+      await supabase.from('email_interactions').update({ status: 'failed', updated_at: new Date().toISOString() }).eq('id', emailInteractionId);
+      return { success: false, warnings, errors }; // Overall operation failed as no agent succeeded.
     }
 
-  } catch (error: any) {
-    const errorMsg = `KnowReply processing failed for interaction ${emailInteractionId}: ${error.message}`
-    console.error('💥', errorMsg)
-    errors.push(errorMsg)
+  } catch (error: any) { // Main catch block for processEmailWithKnowReply
+    const errorMsg = `KnowReply processing failed for interaction ${emailInteractionId}: ${error.message}`;
+    console.error('💥', errorMsg, error.stack);
+    if (!errors.some(e => e.includes(error.message))) {
+        errors.push(errorMsg);
+    }
+    try {
+      await supabase
+        .from('email_interactions')
+        .update({ status: 'failed', updated_at: new Date().toISOString() })
+        .eq('id', emailInteractionId);
+    } catch (dbError: any) {
+      console.error(`🚨 Failed to update interaction ${emailInteractionId} status to 'failed' during main catch:`, dbError.message);
+      errors.push(`Additionally, failed to update status to 'failed': ${dbError.message}`);
+    }
+
     await supabase.from('activity_logs').insert({
         user_id: userId, email_interaction_id: emailInteractionId,
         action: 'knowreply_processing_failed', status: 'error',
-        details: { error: error.message }
-      })
-    return { success: false, warnings, errors }
+        details: { error: error.message, step: 'main_process_email_catch_outer' }
+      });
+    return { success: false, warnings, errors };
   }
 }
