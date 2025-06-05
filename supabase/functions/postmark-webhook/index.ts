@@ -20,7 +20,6 @@ serve(async (req: Request) => {
   }
 
   const url = new URL(req.url);
-  const pathParts = url.pathname.split('/');
   // Expected URL structure: /some/prefix/postmark-webhook/<customer_api_key>
   // Trim leading/trailing slashes to handle paths like "/" or "/path/" consistently, then split.
   const cleanPath = url.pathname.replace(/^\/+|\/+$/g, '');
