@@ -85,7 +85,7 @@ Important Instructions for Using Sender Information:
 
 Output format constraints:
 Respond ONLY with a valid JSON array. Do not add any other text before or after the array.
-If no tools are needed, or if the email content does not require any actionable steps, return an empty array [].
+If no tools are needed, or if the email content does not require any actionable steps, please return an empty array [].
 Only use tools from the 'Available Tools' list. Ensure the tool name in your output matches exactly a name from the 'Available Tools' list.
 
 Example of a multi-step plan:

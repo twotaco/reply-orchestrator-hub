@@ -658,7 +658,7 @@ export function KnowReplySetup() {
                 {/* Add New Agent */}
                 {availableAgentsToAdd.length > 0 && (
                   <div>
-                    <Label className="text-sm font-medium mb-3 block">Add Agents</Label>
+                    <Label className="text-sm font-medium mb-3 block">Available Agents</Label>
                     <div className="grid gap-3">
                       {availableAgentsToAdd.map((agent) => (
                         <div key={agent.id} className="flex items-center justify-between p-3 border rounded-lg">
@@ -681,7 +681,7 @@ export function KnowReplySetup() {
                 {/* Configured Agents */}
                 {agentConfigs.length > 0 && (
                   <div>
-                    <Label className="text-sm font-medium mb-3 block">Configured Agents</Label>
+                    <Label className="text-sm font-medium mb-3 block">Active Agent Configurations</Label>
                     <div className="space-y-4">
                       {agentConfigs.map((agentConfig) => (
                         <Card key={agentConfig.agent_id} className="p-4">
@@ -709,43 +709,11 @@ export function KnowReplySetup() {
                               </Button>
                             </div>
 
-                            {/* MCP Endpoints */}
-                            {agentConfig.enabled && mcpEndpoints.length > 0 && (
-                              <div>
-                                <Label className="text-sm font-medium mb-2 block">MCP Endpoints</Label>
-                                <div className="grid gap-2">
-                                  {mcpEndpoints.map((endpoint) => (
-                                    <div key={endpoint.id} className="flex items-center space-x-3 p-2 border rounded">
-                                      <Checkbox
-                                        checked={agentConfig.mcp_endpoints.includes(endpoint.id)}
-                                        onCheckedChange={() => toggleMCPForAgent(agentConfig.agent_id, endpoint.id)}
-                                      />
-                                      <div className="flex-1">
-                                        <div className="flex items-center gap-2">
-                                          <span className="text-sm font-medium">{endpoint.name}</span>
-                                          <Badge variant="outline" className="text-xs">{endpoint.category}</Badge>
-                                        </div>
-                                        {endpoint.instructions && (
-                                          <p className="text-xs text-gray-500 mt-1">{endpoint.instructions}</p>
-                                        )}
-                                      </div>
-                                    </div>
-                                  ))}
-                                </div>
-                              </div>
-                            )}
-
-                            {agentConfig.enabled && mcpEndpoints.length === 0 && (
-                              <div className="text-sm text-gray-500 p-3 bg-gray-50 rounded">
-                                No MCP endpoints configured. Set up MCP endpoints first to connect them to agents.
-                              </div>
-                            )}
-
                             {/* Email Addresses Configuration */}
                             {agentConfig.enabled && (
                               <div className="pt-4 mt-4 border-t">
                                 <div className="flex justify-between items-center mb-2">
-                                  <Label className="text-sm font-medium">Associated Email Addresses</Label>
+                                  <Label className="text-sm font-medium">Email Accounts to be Handled by This Agent</Label>
                                   <Button
                                     size="sm"
                                     variant="outline"
@@ -786,6 +754,39 @@ export function KnowReplySetup() {
                                 </div>
                               </div>
                             )}
+                            
+                            {/* MCP Endpoints */}
+                            {agentConfig.enabled && mcpEndpoints.length > 0 && (
+                              <div className="pt-4 mt-4 border-t">
+                                <Label className="text-sm font-medium mb-2 block">Connected Tools (MCP Endpoints)</Label>
+                                <div className="grid gap-2">
+                                  {mcpEndpoints.map((endpoint) => (
+                                    <div key={endpoint.id} className="flex items-center space-x-3 p-2 border rounded">
+                                      <Checkbox
+                                        checked={agentConfig.mcp_endpoints.includes(endpoint.id)}
+                                        onCheckedChange={() => toggleMCPForAgent(agentConfig.agent_id, endpoint.id)}
+                                      />
+                                      <div className="flex-1">
+                                        <div className="flex items-center gap-2">
+                                          <span className="text-sm font-medium">{endpoint.name}</span>
+                                          <Badge variant="outline" className="text-xs">{endpoint.category}</Badge>
+                                        </div>
+                                        {endpoint.instructions && (
+                                          <p className="text-xs text-gray-500 mt-1">{endpoint.instructions}</p>
+                                        )}
+                                      </div>
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+                            )}
+
+                            {agentConfig.enabled && mcpEndpoints.length === 0 && (
+                              <div className="text-sm text-gray-500 p-3 bg-gray-50 rounded">
+                                No tools (MCP endpoints) available. Set up tools first to connect them to agents.
+                              </div>
+                            )}
+
                           </div>
                         </Card>
                       ))}
@@ -852,7 +853,7 @@ export function KnowReplySetup() {
             <ol className="text-sm text-blue-800 space-y-1 list-decimal list-inside">
               <li>Enter your Know Reply API token</li>
               <li>Add the agents you want to use for email processing</li>
-              <li>Configure which MCP endpoints each agent can access (optional)</li>
+              <li>Configure which tools (MCP endpoints) each agent can access (optional)</li>
               <li>Enable/disable agents as needed</li>
               <li><strong>Click "Save Configuration" to apply your changes</strong></li>
             </ol>
