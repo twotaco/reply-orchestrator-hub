@@ -37,8 +37,6 @@ function AppContent() {
         return <MCPManagement />;
       case 'email-testing':
         return <EmailTesting />;
-      case 'logs':
-        return <div>Activity Logs - Coming Soon</div>;
       default:
         return <Dashboard />;
     }

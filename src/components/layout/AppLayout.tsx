@@ -1,5 +1,6 @@
 
 import { useState } from 'react';
+import { Link, useLocation } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { useAuth } from '@/hooks/useAuth';
 import { Button } from '@/components/ui/button';
@@ -34,6 +35,7 @@ const navigation = [
 export function AppLayout({ children, currentPage, onPageChange }: AppLayoutProps) {
   const { user, signOut } = useAuth();
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const location = useLocation();
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -57,20 +59,41 @@ export function AppLayout({ children, currentPage, onPageChange }: AppLayoutProp
               </Button>
             </div>
             <nav className="flex-1 p-4 space-y-2">
-              {navigation.map((item) => (
-                <Button
-                  key={item.id}
-                  variant={currentPage === item.id ? "default" : "ghost"}
-                  className="w-full justify-start"
-                  onClick={() => {
-                    onPageChange(item.id);
-                    setSidebarOpen(false);
-                  }}
-                >
-                  <item.icon className="h-4 w-4 mr-2" />
-                  {item.name}
-                </Button>
-              ))}
+              {navigation.map((item) => {
+                if (item.id === 'logs') {
+                  return (
+                    <Link
+                      to="/activity-logs"
+                      key={item.id}
+                      onClick={() => setSidebarOpen(false)}
+                      className="block" // Added block for Link to take full width if needed
+                    >
+                      <Button
+                        variant={location.pathname === '/activity-logs' ? "default" : "ghost"}
+                        className="w-full justify-start"
+                      >
+                        <item.icon className="h-4 w-4 mr-2" />
+                        {item.name}
+                      </Button>
+                    </Link>
+                  );
+                } else {
+                  return (
+                    <Button
+                      key={item.id}
+                      variant={currentPage === item.id ? "default" : "ghost"}
+                      className="w-full justify-start"
+                      onClick={() => {
+                        onPageChange(item.id);
+                        setSidebarOpen(false);
+                      }}
+                    >
+                      <item.icon className="h-4 w-4 mr-2" />
+                      {item.name}
+                    </Button>
+                  );
+                }
+              })}
             </nav>
           </motion.div>
         </div>
@@ -83,17 +106,37 @@ export function AppLayout({ children, currentPage, onPageChange }: AppLayoutProp
           <span className="font-semibold text-gray-900">Know Reply Hub</span>
         </div>
         <nav className="flex-1 p-4 space-y-2">
-          {navigation.map((item) => (
-            <Button
-              key={item.id}
-              variant={currentPage === item.id ? "default" : "ghost"}
-              className="w-full justify-start"
-              onClick={() => onPageChange(item.id)}
-            >
-              <item.icon className="h-4 w-4 mr-2" />
-              {item.name}
-            </Button>
-          ))}
+          {navigation.map((item) => {
+            if (item.id === 'logs') {
+              return (
+                <Link
+                  to="/activity-logs"
+                  key={item.id}
+                  className="block" // Added block for Link to take full width if needed
+                >
+                  <Button
+                    variant={location.pathname === '/activity-logs' ? "default" : "ghost"}
+                    className="w-full justify-start"
+                  >
+                    <item.icon className="h-4 w-4 mr-2" />
+                    {item.name}
+                  </Button>
+                </Link>
+              );
+            } else {
+              return (
+                <Button
+                  key={item.id}
+                  variant={currentPage === item.id ? "default" : "ghost"}
+                  className="w-full justify-start"
+                  onClick={() => onPageChange(item.id)}
+                >
+                  <item.icon className="h-4 w-4 mr-2" />
+                  {item.name}
+                </Button>
+              );
+            }
+          })}
         </nav>
       </div>
 
