@@ -489,6 +489,7 @@ export function KnowReplySetup() {
                 user_id: user.id,
                 agent_id: agentConfig.agent_id,
                 email_address: email.toLowerCase(),
+                agent_name: agentConfig.agent_name || null
               });
             }
           }
