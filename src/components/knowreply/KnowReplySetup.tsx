@@ -76,10 +76,45 @@ export function KnowReplySetup() {
   const [loadingAgents, setLoadingAgents] = useState(false);
   const [fetchError, setFetchError] = useState<string | null>(null);
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
-  const [currentEmailInput, setCurrentEmailInput] = useState<Record<string, string>>({});
+  // Removed: const [currentEmailInput, setCurrentEmailInput] = useState<Record<string, string>>({});
+  // Removed: const handleEmailInputChange = (agentId: string, value: string) => { ... };
 
-  const handleEmailInputChange = (agentId: string, value: string) => {
-    setCurrentEmailInput(prev => ({ ...prev, [agentId]: value }));
+  const handleAddNewEmailRow = (agentId: string) => {
+    setAgentConfigs(prevAgentConfigs =>
+      prevAgentConfigs.map(ac =>
+        ac.agent_id === agentId
+          ? { ...ac, email_addresses: [...(ac.email_addresses || []), ''] }
+          : ac
+      )
+    );
+    setHasUnsavedChanges(true);
+  };
+
+  const handleEmailValueChange = (agentId: string, emailIndex: number, newValue: string) => {
+    setAgentConfigs(prevAgentConfigs =>
+      prevAgentConfigs.map(ac => {
+        if (ac.agent_id === agentId) {
+          const updatedEmails = [...ac.email_addresses];
+          updatedEmails[emailIndex] = newValue;
+          return { ...ac, email_addresses: updatedEmails };
+        }
+        return ac;
+      })
+    );
+    setHasUnsavedChanges(true);
+  };
+
+  const handleRemoveEmailRow = (agentId: string, emailIndex: number) => {
+    setAgentConfigs(prevAgentConfigs =>
+      prevAgentConfigs.map(ac => {
+        if (ac.agent_id === agentId) {
+          const updatedEmails = ac.email_addresses.filter((_, idx) => idx !== emailIndex);
+          return { ...ac, email_addresses: updatedEmails };
+        }
+        return ac;
+      })
+    );
+    setHasUnsavedChanges(true);
   };
 
   useEffect(() => {
@@ -311,13 +346,9 @@ export function KnowReplySetup() {
       email_errors: [],
     };
 
-    setAgentConfigs(prev => [...prev, newConfig]);
+    setAgentConfigs(prev => [newConfig, ...prev]); // Add to the beginning
     setHasUnsavedChanges(true);
-    
-    toast({
-      title: "Agent Added",
-      description: `${agent.name} has been added. Don't forget to save your configuration.`,
-    });
+    // Removed toast notification
   };
 
   const removeAgent = (agentId: string) => {
@@ -352,35 +383,56 @@ export function KnowReplySetup() {
 
     setSaving(true);
     try {
-      // Validate Email Addresses
-      const allEmailsFromEnabledAgents: string[] = [];
-      for (const agentConfig of agentConfigs) {
-        if (agentConfig.enabled) {
-          if (!agentConfig.email_addresses || agentConfig.email_addresses.length === 0) {
-            toast({
-              title: "Validation Error",
-              description: `Agent "${agentConfig.agent_name}" is enabled but has no email addresses assigned. Please add at least one email or disable the agent.`,
-              variant: "destructive",
-            });
-            setSaving(false);
-            return;
+      // 1. Process and Filter Email Addresses from inputs
+      let allEnabledAgentEmailsForUniquenessCheck: string[] = [];
+      let formatValidationFailed = false;
+      let agentMissingEmails = false;
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/; // Basic email format regex
+
+      const processedAgentConfigs = agentConfigs.map(ac => {
+        if (!ac.enabled) {
+          return { ...ac, processed_email_addresses: [] }; // No emails to validate or save if not enabled
+        }
+        const filteredEmails = (ac.email_addresses || [])
+          .map(email => email.trim())
+          .filter(email => email !== '');
+
+        return { ...ac, processed_email_addresses: filteredEmails };
+      });
+
+      // 2. Perform Validations
+      for (const ac of processedAgentConfigs) {
+        if (ac.enabled) {
+          if (ac.processed_email_addresses.length === 0) {
+            agentMissingEmails = true;
+            // Update ac.email_errors here if UI needs to show error on specific agent.
+            // For now, global toast is primary.
           }
-          agentConfig.email_addresses.forEach(email => {
-            if (allEmailsFromEnabledAgents.includes(email.toLowerCase())) {
-              toast({
-                title: "Validation Error",
-                description: `Email address "${email}" is used by multiple enabled agents. Each email must be unique across all enabled agents.`,
-                variant: "destructive",
-              });
-              setSaving(false);
-              return;
+          ac.processed_email_addresses.forEach(email => {
+            if (!emailRegex.test(email)) {
+              formatValidationFailed = true;
+              // Update ac.email_errors for specific email if needed for UI.
             }
-            allEmailsFromEnabledAgents.push(email.toLowerCase());
+            // For uniqueness check, collect them all, then check.
+            allEnabledAgentEmailsForUniquenessCheck.push(email.toLowerCase());
           });
         }
       }
-      // Re-check for duplicates after collecting all emails, in case an agent has the same email twice (UI should prevent this though)
-      const emailCounts = allEmailsFromEnabledAgents.reduce((acc, email) => {
+
+      if (agentMissingEmails) {
+        toast({ title: "Validation Error", description: "Each enabled agent must have at least one valid (non-empty) email address.", variant: "destructive" });
+        setSaving(false);
+        return;
+      }
+
+      if (formatValidationFailed) {
+        toast({ title: "Validation Error", description: "One or more email addresses are not in a valid format. Please correct them.", variant: "destructive" });
+        setSaving(false);
+        return;
+      }
+
+      // Uniqueness Check (on lowercase, trimmed, non-empty emails)
+      const emailCounts = allEnabledAgentEmailsForUniquenessCheck.reduce((acc, email) => {
         acc[email] = (acc[email] || 0) + 1;
         return acc;
       }, {} as Record<string, number>);
@@ -389,15 +441,16 @@ export function KnowReplySetup() {
       if (duplicateEmails.length > 0) {
         toast({
           title: "Validation Error",
-          description: `The following email addresses are duplicated: ${duplicateEmails.join(', ')}. Each email must be unique.`,
+          description: `Duplicate email addresses found: ${duplicateEmails.join(', ')}. Emails must be unique across all enabled agents.`,
           variant: "destructive",
         });
         setSaving(false);
         return;
       }
 
+      // --- All email validations passed ---
 
-      // Check if workspace config exists first
+      // Check if workspace config exists first (for knowreply_api_token)
       const { data: existingConfig } = await supabase
         .from('workspace_configs')
         .select('id')
@@ -479,19 +532,17 @@ export function KnowReplySetup() {
 
       if (deleteEmailError) throw deleteEmailError;
 
-      // Prepare and insert new email mappings
+      // Prepare and insert new email mappings using processedAgentConfigs
       const newEmailMappings = [];
-      for (const agentConfig of agentConfigs) {
-        if (agentConfig.enabled && agentConfig.email_addresses) {
-          for (const email of agentConfig.email_addresses) {
-            if (email && email.trim() !== "") { // Ensure email is not empty
-              newEmailMappings.push({
-                user_id: user.id,
-                agent_id: agentConfig.agent_id,
-                email_address: email.toLowerCase(),
-                agent_name: agentConfig.agent_name || null
-              });
-            }
+      for (const agentConfig of processedAgentConfigs) { // Use processed configs
+        if (agentConfig.enabled && agentConfig.processed_email_addresses) {
+          for (const email of agentConfig.processed_email_addresses) { // Iterate over filtered, non-empty emails
+            newEmailMappings.push({
+              user_id: user.id,
+              agent_id: agentConfig.agent_id,
+              email_address: email.toLowerCase(), // Already trimmed, now lowercase
+              agent_name: agentConfig.agent_name || null
+            });
           }
         }
       }
@@ -712,69 +763,44 @@ export function KnowReplySetup() {
                             {/* Email Addresses Configuration */}
                             {agentConfig.enabled && (
                               <div className="pt-4 mt-4 border-t">
-                                <Label className="text-sm font-medium mb-2 block">Associated Email Addresses</Label>
-                                <div className="flex items-center gap-2 mb-2">
-                                  <Input
-                                    type="email"
-                                    placeholder="Enter email address"
-                                    value={currentEmailInput[agentConfig.agent_id] || ''}
-                                    onChange={(e) => handleEmailInputChange(agentConfig.agent_id, e.target.value)}
-                                    className="flex-grow"
-                                  />
+                                <div className="flex justify-between items-center mb-2">
+                                  <Label className="text-sm font-medium">Associated Email Addresses</Label>
                                   <Button
                                     size="sm"
                                     variant="outline"
-                                    onClick={() => {
-                                      const emailToAdd = (currentEmailInput[agentConfig.agent_id] || '').trim().toLowerCase();
-                                      if (!emailToAdd) return;
-
-                                      // Basic email validation
-                                      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-                                      if (!emailRegex.test(emailToAdd)) {
-                                        toast({ title: "Invalid Email", description: "Please enter a valid email address.", variant: "destructive" });
-                                        return;
-                                      }
-
-                                      if (agentConfig.email_addresses.includes(emailToAdd)) {
-                                        toast({ title: "Duplicate Email", description: "This email address is already added for this agent.", variant: "destructive" });
-                                        return;
-                                      }
-
-                                      setAgentConfigs(prev => prev.map(ac =>
-                                        ac.agent_id === agentConfig.agent_id
-                                          ? { ...ac, email_addresses: [...ac.email_addresses, emailToAdd] }
-                                          : ac
-                                      ));
-                                      handleEmailInputChange(agentConfig.agent_id, '');
-                                      setHasUnsavedChanges(true);
-                                    }}
+                                    onClick={() => handleAddNewEmailRow(agentConfig.agent_id)}
+                                    title="Add new email address field"
                                   >
+                                    <Plus className="h-4 w-4 mr-1" />
                                     Add Email
                                   </Button>
                                 </div>
+
                                 <div className="space-y-2">
-                                  {agentConfig.email_addresses.map((email) => (
-                                    <div key={email} className="flex items-center justify-between p-2 border rounded-md bg-gray-50">
-                                      <span className="text-sm text-gray-700">{email}</span>
+                                  {agentConfig.email_addresses && agentConfig.email_addresses.map((emailString, index) => (
+                                    <div key={index} className="flex items-center gap-2">
+                                      <Input
+                                        type="email"
+                                        placeholder="Enter email address"
+                                        value={emailString}
+                                        onChange={(e) => handleEmailValueChange(agentConfig.agent_id, index, e.target.value)}
+                                        className="flex-grow"
+                                      />
                                       <Button
                                         variant="ghost"
                                         size="icon"
-                                        onClick={() => {
-                                          setAgentConfigs(prev => prev.map(ac =>
-                                            ac.agent_id === agentConfig.agent_id
-                                              ? { ...ac, email_addresses: ac.email_addresses.filter(e => e !== email) }
-                                              : ac
-                                          ));
-                                          setHasUnsavedChanges(true);
-                                        }}
+                                        onClick={() => handleRemoveEmailRow(agentConfig.agent_id, index)}
+                                        title="Remove this email address"
                                         className="text-gray-500 hover:text-red-500"
                                       >
                                         <Trash2 className="h-4 w-4" />
                                       </Button>
                                     </div>
                                   ))}
-                                  {agentConfig.email_addresses.length === 0 && (
-                                    <p className="text-xs text-gray-500 text-center py-2">No email addresses associated with this agent yet.</p>
+                                  {(agentConfig.email_addresses?.length === 0 || !agentConfig.email_addresses) && (
+                                    <p className="text-xs text-gray-500 text-center py-2">
+                                      No email addresses associated. Click "Add Email" to assign one.
+                                    </p>
                                   )}
                                 </div>
                               </div>
