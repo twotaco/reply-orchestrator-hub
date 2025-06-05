@@ -276,6 +276,7 @@ async function processWithAgent(
           messageId: replyResult.messageId || null,
           error: replyResult.error || null,
           sent_at: new Date().toISOString(), // Record attempt time
+          raw_response: replyResult.details, // Added this line
         };
 
         if (replyResult.success) {
