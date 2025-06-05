@@ -122,15 +122,46 @@ export function TestCaseList({ testCases, onEdit, onRefresh }: TestCaseListProps
       }
       const dynamicWebhookUrl = `https://hub.knowreply.email/postmark-webhook/${webhookApiKey}`;
 
+      let parsedPayload;
+      if (typeof testCase.incoming_json === 'string') {
+        try {
+          parsedPayload = JSON.parse(testCase.incoming_json);
+        } catch (e) {
+          console.error("Failed to parse testCase.incoming_json:", e);
+          toast({ title: "Test Case Error", description: "Incoming JSON is not valid.", variant: "destructive" });
+          throw new Error("Invalid incoming JSON in test case.");
+        }
+      } else if (typeof testCase.incoming_json === 'object' && testCase.incoming_json !== null) {
+        // Assuming it's already an object, deep clone to avoid modifying original testCase object in state/cache
+        // A simple stringify/parse is a common way for deep cloning plain JSON-compatible objects
+        parsedPayload = JSON.parse(JSON.stringify(testCase.incoming_json));
+      } else {
+        console.error("testCase.incoming_json is not a string or a valid object:", testCase.incoming_json);
+        toast({ title: "Test Case Error", description: "Incoming JSON is not in a recognizable format.", variant: "destructive" });
+        throw new Error("Invalid format for incoming_json in test case.");
+      }
+
+      if (!parsedPayload.Headers || !Array.isArray(parsedPayload.Headers)) {
+        parsedPayload.Headers = [];
+      }
+
+      // Remove existing X-KnowReply-Test header if present to avoid duplicates
+      parsedPayload.Headers = parsedPayload.Headers.filter(
+        (header: { Name: string; Value: string }) => header.Name && header.Name.toLowerCase() !== 'x-knowreply-test'
+      );
+      // Add the new header
+      parsedPayload.Headers.push({ Name: "X-KnowReply-Test", Value: "true" });
+
+      console.log("Injecting X-KnowReply-Test: true header for test run. Current Headers:", parsedPayload.Headers);
+      const bodyPayload = JSON.stringify(parsedPayload);
+
       // Send the test data to the webhook
       const response = await fetch(dynamicWebhookUrl, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'
         },
-        body: typeof testCase.incoming_json === 'string' 
-          ? testCase.incoming_json 
-          : JSON.stringify(testCase.incoming_json)
+        body: bodyPayload
       });
 
       const responseText = await response.text();

@@ -175,15 +175,39 @@ async function processWithAgent(
 
   console.log('✅ KnowReply response received for agent:', agentConfig.agent_id);
 
-  // Initialize postmark_reply_status
+  // Initialize variables that will be used in either test or live path
   let postmarkReplyStatus = null;
   let finalInteractionStatus = 'processed'; // Default status
 
-  // Check if KnowReply suggested a reply
-  if (responseData.reply && responseData.reply.body && responseData.reply.subject) {
-    console.log(`💬 KnowReply suggested a reply for agent ${agentConfig.agent_id}. Attempting to send via Postmark.`);
+  // Check for X-KnowReply-Test header
+  let isTestEmail = false;
+  if (payload.Headers && Array.isArray(payload.Headers)) {
+    const testHeader = payload.Headers.find(h => h.Name.toLowerCase() === 'x-knowreply-test');
+    if (testHeader && testHeader.Value.toLowerCase() === 'true') {
+      isTestEmail = true;
+    }
+  }
 
-    // 1. Fetch Postmark Server API Token from workspace_configs
+  if (isTestEmail) {
+    console.log(`🧪 Email for agent ${agentConfig.agent_id} (Interaction ID: ${emailInteractionId}) is a test email (X-KnowReply-Test: true). Skipping actual Postmark reply.`);
+    postmarkReplyStatus = {
+      success: false, // Considered not successful in terms of sending a real reply
+      error: 'skipped_test_email',
+      messageId: null,
+      sent_at: new Date().toISOString(),
+    };
+    // finalInteractionStatus remains 'processed' as initialized
+    await supabase.from('activity_logs').insert({
+      user_id: userId, email_interaction_id: emailInteractionId,
+      action: 'postmark_reply_skipped_test', status: 'info',
+      details: { agent_id: agentConfig.agent_id, reason: 'X-KnowReply-Test header was true.' },
+    });
+  } else {
+    // This is the original block for handling actual replies
+    if (responseData.reply && responseData.reply.body && responseData.reply.subject) {
+      console.log(`💬 KnowReply suggested a reply for agent ${agentConfig.agent_id}. Attempting to send via Postmark.`);
+
+      // 1. Fetch Postmark Server API Token from workspace_configs
     // Note: workspaceConfig passed to processWithAgent currently only has knowreply_webhook_url and knowreply_api_token.
     // We need to fetch the postmark_api_token separately or ensure it's added to the initial workspaceConfig load.
     // For this change, we will fetch it here.
@@ -271,10 +295,11 @@ async function processWithAgent(
           });
         }
       }
+      }
+    } else {
+      console.log(`ℹ️ No reply suggested by KnowReply for agent ${agentConfig.agent_id}.`);
     }
-  } else {
-    console.log(`ℹ️ No reply suggested by KnowReply for agent ${agentConfig.agent_id}.`);
-  }
+  } // End of 'else' for !isTestEmail
 
   // 4. Log Outcome & Update Interaction
   console.log('📊 Updating email_interactions with id:', emailInteractionId, 'Final Status:', finalInteractionStatus);
