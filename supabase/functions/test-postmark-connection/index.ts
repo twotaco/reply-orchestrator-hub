@@ -36,43 +36,64 @@ serve(async (req) => {
       })
     }
 
-    console.log('🔍 Testing Postmark API connection...')
+    console.log('🔍 Testing Postmark Server API token connection...')
     
-    // Test the Postmark API by getting servers list with required offset parameter
-    const response = await fetch('https://api.postmarkapp.com/servers?offset=0&count=10', {
+    // Test the Postmark Server API by getting current server details
+    const response = await fetch('https://api.postmarkapp.com/server', {
       method: 'GET',
       headers: {
         'Accept': 'application/json',
-        'X-Postmark-Account-Token': apiToken
+        'X-Postmark-Server-Token': apiToken // Changed header key
       }
     })
 
     console.log('📡 Postmark API response status:', response.status)
+    const responseBody = await response.text(); // Read body once
 
     if (!response.ok) {
-      const errorText = await response.text()
-      console.error('❌ Postmark API error:', errorText)
-      throw new Error(`Postmark API error: ${response.status} - ${errorText}`)
+      let postmarkErrorData = null;
+      try {
+        postmarkErrorData = JSON.parse(responseBody);
+        console.error('❌ Postmark API error response:', postmarkErrorData);
+      } catch (e) {
+        console.error('❌ Postmark API error response (not JSON):', responseBody);
+      }
+      // Throw an error that will be caught by the catch block below
+      // This simplifies error response handling to one place
+      const errorMessage = postmarkErrorData?.Message
+        ? `Postmark API error: ${postmarkErrorData.Message} (Code: ${postmarkErrorData.ErrorCode || 'N/A'})`
+        : `Postmark API error: ${response.status} - ${responseBody}`;
+      throw new Error(errorMessage);
     }
 
-    const data = await response.json()
-    console.log('✅ Postmark API connection successful, servers count:', data.TotalCount)
+    const data = JSON.parse(responseBody); // Parse successful response
+    console.log(`✅ Postmark Server API connection successful. Server Name: ${data.Name}, ID: ${data.ID}`);
 
     return new Response(JSON.stringify({ 
       success: true, 
-      message: 'Connection successful',
-      serversCount: data.TotalCount 
+      message: `Connection successful. Server Name: ${data.Name}`,
+      serverName: data.Name,
+      serverId: data.ID,
+      // serversCount: undefined // Removing this, as it's not relevant for /server endpoint
     }), {
       status: 200,
       headers: { 'Content-Type': 'application/json', ...corsHeaders }
     })
 
   } catch (error) {
-    console.error('💥 Error testing Postmark connection:', error)
+    console.error('💥 Error testing Postmark connection:', error.message); // Log only message for cleaner logs
+    // Extract details if it's a structured error from Postmark (parsed in the try block)
+    const errorDetails = error.message.startsWith('Postmark API error:')
+      ? error.message
+      : 'Failed to test connection due to an unexpected error.';
+
     return new Response(JSON.stringify({ 
-      error: error.message || 'Failed to test connection' 
+      error: errorDetails,
+      // Optionally, you could add more structured details if the error object has them
+      // For example, if you added a 'details' property to the thrown error.
     }), {
-      status: 500,
+      // Determine status code based on error type if possible, otherwise 500
+      status: error.message.includes("Invalid API token") || error.message.includes("401") ? 401 : 500,
       headers: { 'Content-Type': 'application/json', ...corsHeaders }
     })
   }

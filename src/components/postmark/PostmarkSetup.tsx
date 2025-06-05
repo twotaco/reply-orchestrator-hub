@@ -175,7 +175,7 @@ export function PostmarkSetup() {
       
       toast({
         title: "Success",
-        description: `Postmark API connection successful! Found ${data.serversCount || 0} servers.`,
+        description: data.message || `Successfully connected to Postmark. Server: ${data.serverName} (ID: ${data.serverId})`,
       });
     } catch (error) {
       console.error('Error testing connection:', error);
