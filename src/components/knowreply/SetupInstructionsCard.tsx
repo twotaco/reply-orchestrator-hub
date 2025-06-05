@@ -15,8 +15,8 @@ export function SetupInstructionsCard() {
         <div className="bg-blue-50 dark:bg-blue-900/30 border border-blue-200 dark:border-blue-700 rounded-lg p-4">
           <h4 className="font-medium text-blue-800 dark:text-blue-200 mb-2">Quick Start Guide:</h4>
           <ol className="text-sm text-blue-700 dark:text-blue-300 space-y-1 list-decimal list-inside">
-            <li>Enter your KnowReply API token to connect your account.</li>
-            <li>Available agents from your KnowReply account will appear in the "Available Agents to Add" section.</li>
+            <li>Enter your Know Reply API token to connect your account.</li>
+            <li>Available agents from your Know Reply account will appear in the "Available Agents to Add" section.</li>
             <li>Click on an available agent to expand its details, then click "Add Agent to Configuration".</li>
             <li>Once added, the agent will move to the "Configured Agents" section.</li>
             <li>Expand a configured agent to:
@@ -33,7 +33,7 @@ export function SetupInstructionsCard() {
         <div className="space-y-2">
           <Button variant="outline" className="w-full justify-between" asChild>
             <a href="https://knowreply.com/dashboard" target="_blank" rel="noopener noreferrer">
-              Go to KnowReply Dashboard
+              Go to Know Reply Dashboard
               <ExternalLink className="h-4 w-4" />
             </a>
           </Button>

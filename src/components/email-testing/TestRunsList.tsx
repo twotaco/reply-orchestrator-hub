@@ -192,7 +192,7 @@ export function TestRunsList({ testCaseId }: TestRunsListProps) {
                   {/* KnowReply Results */}
                   {responseData?.knowreply_results && (
                     <div>
-                      <h5 className="text-sm font-medium mb-1 text-blue-600">KnowReply Processing Results:</h5>
+                      <h5 className="text-sm font-medium mb-1 text-blue-600">Know Reply Processing Results:</h5>
                       <div className="bg-blue-50 p-3 rounded border">
                         <div className="grid grid-cols-2 gap-2 mb-2 text-xs">
                           <div>
@@ -218,7 +218,7 @@ export function TestRunsList({ testCaseId }: TestRunsListProps) {
                         
                         {responseData.knowreply_results.knowreply_response && (
                           <div className="mt-2">
-                            <h6 className="text-xs font-medium mb-1">KnowReply Response:</h6>
+                            <h6 className="text-xs font-medium mb-1">Know Reply Response:</h6>
                             <pre className="text-xs bg-white p-2 rounded border overflow-x-auto max-h-40">
                               {JSON.stringify(responseData.knowreply_results.knowreply_response, null, 2)}
                             </pre>
@@ -237,9 +237,9 @@ export function TestRunsList({ testCaseId }: TestRunsListProps) {
                   {!responseData?.knowreply_results && run.success && (
                     <div className="bg-yellow-50 p-2 rounded border border-yellow-200">
                       <p className="text-xs text-yellow-700">
-                        ⚠️ KnowReply processing results not found. This might be due to:
+                        ⚠️ Know Reply processing results not found. This might be due to:
                         <br />• Email processing still in progress
-                        <br />• KnowReply configuration issues
+                        <br />• Know Reply configuration issues
                         <br />• MessageID not matching between test and processing
                       </p>
                     </div>

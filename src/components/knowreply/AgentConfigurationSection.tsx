@@ -82,7 +82,7 @@ export function AgentConfigurationSection({
           Agent Configuration
         </CardTitle>
         <CardDescription className="text-sm text-gray-600 dark:text-gray-400">
-          Manage your KnowReply agents. Add available agents to the configuration, then enable and assign MCPs or email addresses.
+          Manage your Know Reply agents. Add available agents to the configuration, then enable and assign MCPs or email addresses.
           Settings for each agent are shown in collapsible sections.
         </CardDescription>
       </CardHeader>
@@ -106,7 +106,7 @@ export function AgentConfigurationSection({
             {!loadingAgents && !fetchError && availableAgents.length === 0 && (
               <div className="py-6 text-center text-sm text-gray-500 dark:text-gray-400 border-t border-b dark:border-gray-700">
                  <Brain className="h-8 w-8 mx-auto mb-2 text-gray-400 dark:text-gray-500 opacity-75" />
-                No agents found for your API token. Please verify your token or check your KnowReply dashboard if you expect agents to be listed.
+                No agents found for your API token. Please verify your token or check your Know Reply dashboard if you expect agents to be listed.
               </div>
             )}
 

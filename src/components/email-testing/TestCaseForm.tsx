@@ -278,7 +278,7 @@ export function TestCaseForm({ testCase, onClose }: TestCaseFormProps) {
           Generate Example JSON
         </Button>
         <p className="text-xs text-gray-600 mt-1">
-          The <code>To</code> and <code>ToFull[0].Email</code> fields in the JSON determine which agent(s) are triggered based on your KnowReply Setup. Use a mapped email for success tests, or any other email to test different routing scenarios. The list below provides your currently mapped emails for easy copying.
+          The <code>To</code> and <code>ToFull[0].Email</code> fields in the JSON determine which agent(s) are triggered based on your Know Reply Setup. Use a mapped email for success tests, or any other email to test different routing scenarios. The list below provides your currently mapped emails for easy copying.
         </p>
       </div>
 
@@ -315,7 +315,7 @@ export function TestCaseForm({ testCase, onClose }: TestCaseFormProps) {
           </div>
         ) : (
           <p className="text-sm text-gray-500">
-            No agent email mappings found. Configure them in "KnowReply Setup" to see them here.
+            No agent email mappings found. Configure them in "Know Reply Setup" to see them here.
           </p>
         )}
       </div>

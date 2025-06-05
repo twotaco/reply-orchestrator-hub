@@ -74,7 +74,7 @@ IMPORTANT: When constructing the "args" object for any tool:
 - When referencing previous outputs, map the exact args_schema_keys name to a compatible field in a previous step's output_schema, even if they differ (e.g., orderId ← steps[0].outputs.id).
 - Do not rename keys. Do not use snake_case instead of camelCase. Do not change anything about the argument name.
 
-When referencing data from previous MCP calls, use the exact JSON path that matches the output structure:
+When referencing data from previous MCP calls, use the exact JSON path that matches the output structure and retain the square brackets for arrays and dot notation for objects:
 - If the response is an object with a field like 'orders: Order[]', use: 'steps[0].outputs.orders[0].id'
 - If the response is a plain array, use: 'steps[0].outputs[0].id'
 

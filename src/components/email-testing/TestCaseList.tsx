@@ -61,7 +61,7 @@ export function TestCaseList({ testCases, onEdit, onRefresh }: TestCaseListProps
           console.warn('Webhook API key not found for user. Email tests may not run correctly.');
           toast({
             title: "Webhook URL Not Configured",
-            description: "Your unique webhook URL for email testing is not yet configured. Please visit Postmark Setup in KnowReply settings.",
+            description: "Your unique webhook URL for email testing is not yet configured. Please visit Postmark Setup in Know Reply settings.",
             variant: "destructive",
             duration: 10000,
           });
@@ -115,7 +115,7 @@ export function TestCaseList({ testCases, onEdit, onRefresh }: TestCaseListProps
       if (!webhookApiKey) {
         toast({
           title: 'Cannot Run Test',
-          description: 'Webhook API key is missing. Please configure it in Postmark Setup (KnowReply settings).',
+          description: 'Webhook API key is missing. Please configure it in Postmark Setup (Know Reply settings).',
           variant: 'destructive',
         });
         throw new Error('Webhook API key is missing.');
@@ -175,7 +175,7 @@ export function TestCaseList({ testCases, onEdit, onRefresh }: TestCaseListProps
       // Wait a moment for KnowReply processing to complete
       await new Promise(resolve => setTimeout(resolve, 2000));
 
-      // Fetch the KnowReply processing results from email_interactions
+      // Fetch the Know Reply processing results from email_interactions
       let knowReplyResults = null;
       if (response.ok && testCase.incoming_json?.MessageID) {
         const { data: emailInteraction } = await supabase
@@ -192,7 +192,7 @@ export function TestCaseList({ testCases, onEdit, onRefresh }: TestCaseListProps
         }
       }
 
-      // Combine webhook response with KnowReply results
+      // Combine webhook response with Know Reply results
       const combinedResponseData = {
         webhook_response: responseData,
         knowreply_results: knowReplyResults
@@ -255,7 +255,7 @@ export function TestCaseList({ testCases, onEdit, onRefresh }: TestCaseListProps
       <CardHeader>
         <CardTitle>Test Cases</CardTitle>
         <CardDescription>
-          View your configured test cases. Click the history icon to see run history. Test results now include KnowReply processing outcomes.
+          View your configured test cases. Click the history icon to see run history. Test results now include Know Reply processing outcomes.
         </CardDescription>
       </CardHeader>
       <CardContent>
@@ -284,7 +284,7 @@ export function TestCaseList({ testCases, onEdit, onRefresh }: TestCaseListProps
                     disabled={runTestMutation.isPending || loadingApiKey || !webhookApiKey}
                     title={
                       loadingApiKey ? "Loading webhook config..." :
-                      !webhookApiKey ? "Webhook not configured. Please visit Postmark Setup in KnowReply settings." :
+                      !webhookApiKey ? "Webhook not configured. Please visit Postmark Setup in Know Reply settings." :
                       "Run Test"
                     }
                   >

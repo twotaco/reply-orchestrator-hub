@@ -22,16 +22,16 @@ export function ApiConfigurationCard({ config, setConfig, setHasUnsavedChanges }
           API Configuration
         </CardTitle>
         <CardDescription>
-          Enter your KnowReply API token to access your agents
+          Enter your Know Reply API token to access your agents
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
         <div>
-          <Label htmlFor="api-token">KnowReply API Token</Label>
+          <Label htmlFor="api-token">Know Reply API Token</Label>
           <Input
             id="api-token"
             type="password"
-            placeholder="Enter your KnowReply API token"
+            placeholder="Enter your Know Reply API token"
             value={config.knowreply_api_token || ''}
             onChange={(e) => {
               setConfig({ ...config, knowreply_api_token: e.target.value });

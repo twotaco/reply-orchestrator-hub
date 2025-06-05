@@ -25,7 +25,7 @@ export function AvailableAgentsAccordion({
       <div className="py-6 text-center text-sm text-gray-500 dark:text-gray-400 flex flex-col items-center">
         <Info className="h-8 w-8 mb-2 text-gray-400 dark:text-gray-500" />
         <span>No new agents available to add.</span>
-        <span>Check your KnowReply dashboard or API token if you expect more.</span>
+        <span>Check your Know Reply dashboard or API token if you expect more.</span>
       </div>
     );
   }

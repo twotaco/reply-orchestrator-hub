@@ -147,8 +147,8 @@ async function processWithAgent(
 
   const knowReplyUrl = workspaceConfig.knowreply_webhook_url;
 
-  console.log('🔗 KnowReply URL being called:', knowReplyUrl);
-  console.log('📤 Sending request to KnowReply with mcp_results:', {
+  console.log('🔗 Know Reply URL being called:', knowReplyUrl);
+  console.log('📤 Sending request to Know Reply with mcp_results:', {
     agent_id: agentConfig.agent_id,
     mcp_results_count: knowReplyRequest.mcp_results?.length || 0,
   });
@@ -163,17 +163,17 @@ async function processWithAgent(
     body: JSON.stringify(knowReplyRequest)
   });
 
-  console.log('📨 KnowReply response status:', response.status);
-  console.log('📨 KnowReply response headers:', Object.fromEntries(response.headers.entries()));
+  console.log('📨 Know Reply response status:', response.status);
+  console.log('📨 Know Reply response headers:', Object.fromEntries(response.headers.entries()));
 
   const responseData = await response.json();
-  console.log('📥 KnowReply response:', responseData);
+  console.log('📥 Know Reply response:', responseData);
   if (!response.ok) {
-    console.error('❌ KnowReply API error response:', responseData);
-    throw new Error(`KnowReply API error: ${response.status} - ${JSON.stringify(responseData)}`);
+    console.error('❌ Know Reply API error response:', responseData);
+    throw new Error(`Know Reply API error: ${response.status} - ${JSON.stringify(responseData)}`);
   }
 
-  console.log('✅ KnowReply response received for agent:', agentConfig.agent_id);
+  console.log('✅ Know Reply response received for agent:', agentConfig.agent_id);
 
   // Initialize variables that will be used in either test or live path
   let postmarkReplyStatus = null;
@@ -205,7 +205,7 @@ async function processWithAgent(
   } else {
     // This is the original block for handling actual replies
     if (responseData.reply && responseData.reply.body && responseData.reply.subject) {
-      console.log(`💬 KnowReply suggested a reply for agent ${agentConfig.agent_id}. Attempting to send via Postmark.`);
+      console.log(`💬 Know Reply suggested a reply for agent ${agentConfig.agent_id}. Attempting to send via Postmark.`);
 
       // 1. Fetch Postmark Server API Token from workspace_configs
     // Note: workspaceConfig passed to processWithAgent currently only has knowreply_webhook_url and knowreply_api_token.
@@ -297,7 +297,7 @@ async function processWithAgent(
       }
       }
     } else {
-      console.log(`ℹ️ No reply suggested by KnowReply for agent ${agentConfig.agent_id}.`);
+      console.log(`ℹ️ No reply suggested by Know Reply for agent ${agentConfig.agent_id}.`);
     }
   } // End of 'else' for !isTestEmail
 
@@ -342,10 +342,10 @@ async function processWithAgent(
   console.log('✅ Successfully updated email_interactions record:', updateResult[0]);
 
   if (responseData.warnings && responseData.warnings.length > 0) {
-    console.warn('⚠️ KnowReply warnings:', responseData.warnings);
+    console.warn('⚠️ Know Reply warnings:', responseData.warnings);
   }
   if (responseData.errors && responseData.errors.length > 0) {
-    console.error('❌ KnowReply errors:', responseData.errors);
+    console.error('❌ Know Reply errors:', responseData.errors);
   }
 
   await supabase
@@ -455,7 +455,7 @@ export async function processEmailWithKnowReply(
   payload: PostmarkWebhookPayload,
   emailInteractionId: string
 ): Promise<{ success: boolean; warnings: string[]; errors: string[] }> {
-  console.log('🤖 Starting KnowReply processing for user:', userId, 'Interaction ID:', emailInteractionId);
+  console.log('🤖 Starting Know Reply processing for user:', userId, 'Interaction ID:', emailInteractionId);
 
   const warnings: string[] = [];
   const errors: string[] = [];
@@ -501,16 +501,16 @@ export async function processEmailWithKnowReply(
       .single()
 
     if (configError || !workspaceConfig?.knowreply_webhook_url || !workspaceConfig?.knowreply_api_token) {
-      const error = 'No KnowReply webhook URL or API token found for user. Please configure KnowReply settings first.'
+      const error = 'No Know Reply webhook URL or API token found for user. Please configure Know Reply settings first.'
       console.log('❌', error)
       errors.push(error)
       return { success: false, warnings, errors }
     }
 
-    console.log('✅ Found KnowReply config:', workspaceConfig.knowreply_webhook_url)
-    console.log('✅ Found KnowReply API token:', workspaceConfig.knowreply_api_token ? 'Yes' : 'No')
+    console.log('✅ Found Know Reply config:', workspaceConfig.knowreply_webhook_url)
+    console.log('✅ Found Know Reply API token:', workspaceConfig.knowreply_api_token ? 'Yes' : 'No')
 
-  // Note: The `workspaceConfig` here is for KnowReply webhook URL and API token.
+  // Note: The `workspaceConfig` here is for Know Reply webhook URL and API token.
   // The `processWithAgent` function uses this `workspaceConfig` object.
   // All other agent-specific configurations (MCPs, etc.) are fetched below based on matchedAgentIds.
 
@@ -676,7 +676,7 @@ export async function processEmailWithKnowReply(
     }
 
   } catch (error: any) { // Main catch block for processEmailWithKnowReply
-    const errorMsg = `KnowReply processing failed for interaction ${emailInteractionId}: ${error.message}`;
+    const errorMsg = `Know Reply processing failed for interaction ${emailInteractionId}: ${error.message}`;
     console.error('💥', errorMsg, error.stack);
     if (!errors.some(e => e.includes(error.message))) {
         errors.push(errorMsg);

@@ -257,7 +257,7 @@ export function PostmarkSetup() {
       <div>
         <h1 className="text-3xl font-bold text-gray-900">Postmark Setup</h1>
         <p className="text-gray-600 mt-2">
-          Configure Postmark to receive and process inbound emails
+          Configure Postmark to receive, process, and reply to inbound emails
         </p>
       </div>
 
@@ -266,10 +266,10 @@ export function PostmarkSetup() {
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <Server className="h-5 w-5" />
-            API Configuration
+            Postmark Server API Configuration
           </CardTitle>
           <CardDescription>
-            Enter your Postmark API credentials to get started
+            Enter your Postmark Server API credentials to get started. This will be used for sending reply emails.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -283,7 +283,7 @@ export function PostmarkSetup() {
               onChange={(e) => setConfig({ ...config, postmark_api_token: e.target.value })}
             />
             <p className="text-sm text-gray-500 mt-1">
-              Found in your Postmark account under API Tokens
+              Found in your Postmark account in your Server's "API Tokens" tab under "Server API tokens"
             </p>
           </div>
 
@@ -308,7 +308,7 @@ export function PostmarkSetup() {
             Webhook Configuration
           </CardTitle>
           <CardDescription>
-            Set up the webhook URL in your Postmark server settings
+            Add this webhook URL in your Postmark Inbound Stream server "Settings" tab in the "Inbound webhook" field
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">

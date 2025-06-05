@@ -147,7 +147,7 @@ const createMockSupabaseClient = (mocks: {
 let envGetStub: Stub<Deno.Env> | undefined;
 // Stub for global fetch
 let fetchStub: Stub<typeof globalThis> | undefined;
-// Spy for KnowReply webhook payload
+// Spy for Know Reply webhook payload
 let capturedKnowReplyPayload: KnowReplyRequestPayload | null = null;
 const MOCK_EMAIL_INTERACTION_ID = 'test_email_interaction_id_mcp_digest';
 const MOCK_USER_ID = 'test_user_id_mcp_digest';
@@ -184,7 +184,7 @@ Deno.test("[processEmailWithKnowReply] should generate correct mcpActionDigest f
       return Promise.resolve(new Response(JSON.stringify(mcpResult.response), { status: 200 })); // MCP executor expects direct data or error obj
     } else if (urlString === mockWorkspaceConfig.knowreply_webhook_url) {
       capturedKnowReplyPayload = JSON.parse(options!.body!.toString());
-      return Promise.resolve(new Response(JSON.stringify({ message: "KnowReply OK" }), { status: 200 }));
+      return Promise.resolve(new Response(JSON.stringify({ message: "Know Reply OK" }), { status: 200 }));
     }
     // Fallback for any other Supabase internal fetches (e.g. auth) or unexpected calls
     console.warn(`Unhandled fetch mock for URL: ${urlString}`);
@@ -239,7 +239,7 @@ Deno.test("[processEmailWithKnowReply] should generate correct mcpActionDigest f
       return Promise.resolve(new Response(JSON.stringify(mcpErrorResultPayload), { status: 500, headers: { 'Content-Type': 'application/json' } }));
     } else if (urlString === mockWorkspaceConfig.knowreply_webhook_url) {
       capturedKnowReplyPayload = JSON.parse(options!.body!.toString());
-      return Promise.resolve(new Response(JSON.stringify({ message: "KnowReply OK" }), { status: 200 }));
+      return Promise.resolve(new Response(JSON.stringify({ message: "Know Reply OK" }), { status: 200 }));
     }
     console.warn(`Unhandled fetch mock for URL: ${urlString}`);
     return Promise.resolve(new Response(JSON.stringify({}), { status: 200, headers: { 'Content-Type': 'application/json' } }));
@@ -288,7 +288,7 @@ Deno.test("[processEmailWithKnowReply] should result in empty mcpActionDigest if
             return Promise.resolve(new Response(JSON.stringify({ candidates: [{ content: { parts: [{ text: JSON.stringify([]) }] } }] }), { status: 200 }));
         } else if (urlString === mockWorkspaceConfig.knowreply_webhook_url) {
             capturedKnowReplyPayload = JSON.parse(options!.body!.toString());
-            return Promise.resolve(new Response(JSON.stringify({ message: "KnowReply OK" }), { status: 200 }));
+            return Promise.resolve(new Response(JSON.stringify({ message: "Know Reply OK" }), { status: 200 }));
         }
         console.warn(`Unhandled fetch mock for URL: ${urlString}`);
         return Promise.resolve(new Response(JSON.stringify({}), { status: 200, headers: { 'Content-Type': 'application/json' } }));
@@ -483,7 +483,7 @@ Deno.test("[processEmailWithKnowReply] Sender NOT Verified - skips MCP actions",
       throw new Error("MCP execution fetch should not have been called for unverified sender!");
     } else if (urlString === mockWorkspaceConfig.knowreply_webhook_url) {
       capturedKnowReplyPayload = JSON.parse(options!.body!.toString());
-      return Promise.resolve(new Response(JSON.stringify({ message: "KnowReply OK" }), { status: 200 }));
+      return Promise.resolve(new Response(JSON.stringify({ message: "Know Reply OK" }), { status: 200 }));
     }
     return Promise.resolve(new Response(JSON.stringify({}), { status: 200, headers: { 'Content-Type': 'application/json' } }));
   });
@@ -563,7 +563,7 @@ Deno.test("[processEmailWithKnowReply] Sender IS Verified - proceeds with MCP ac
       return Promise.resolve(new Response(JSON.stringify(mcpExecutionResult), { status: 200 }));
     } else if (urlString === mockWorkspaceConfig.knowreply_webhook_url) {
       capturedKnowReplyPayload = JSON.parse(options!.body!.toString());
-      return Promise.resolve(new Response(JSON.stringify({ message: "KnowReply OK" }), { status: 200 }));
+      return Promise.resolve(new Response(JSON.stringify({ message: "Know Reply OK" }), { status: 200 }));
     }
     return Promise.resolve(new Response(JSON.stringify({}), { status: 200, headers: { 'Content-Type': 'application/json' } }));
   });

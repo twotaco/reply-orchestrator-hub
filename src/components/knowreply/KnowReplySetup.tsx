@@ -152,7 +152,7 @@ export function KnowReplySetup() {
       console.error('Error loading config:', error);
       toast({
         title: "Error",
-        description: "Failed to load KnowReply configuration",
+        description: "Failed to load Know Reply configuration",
         variant: "destructive",
       });
     } finally {
@@ -558,13 +558,13 @@ export function KnowReplySetup() {
       setHasUnsavedChanges(false);
       toast({
         title: "Success",
-        description: "KnowReply configuration saved successfully",
+        description: "Know Reply configuration saved successfully",
       });
     } catch (error) {
       console.error('Error saving config:', error);
       toast({
         title: "Error",
-        description: "Failed to save KnowReply configuration",
+        description: "Failed to save Know Reply configuration",
         variant: "destructive",
       });
     } finally {
@@ -591,9 +591,9 @@ export function KnowReplySetup() {
       className="space-y-6 pb-24" // Added pb-24
     >
       <div>
-        <h1 className="text-3xl font-bold text-gray-900">KnowReply Setup</h1>
+        <h1 className="text-3xl font-bold text-gray-900">Know Reply Setup</h1>
         <p className="text-gray-600 mt-2">
-          Configure multiple KnowReply AI agents with individual MCP endpoint access
+          Configure multiple Know Reply AI agents connect with connect tools (MCP endpoints)
         </p>
       </div>
 
@@ -607,16 +607,16 @@ export function KnowReplySetup() {
             API Configuration
           </CardTitle>
           <CardDescription>
-            Enter your KnowReply API token to access your agents
+            Enter your Know Reply API token to access your agents
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           <div>
-            <Label htmlFor="api-token">KnowReply API Token</Label>
+            <Label htmlFor="api-token">Know Reply API Token</Label>
             <Input
               id="api-token"
               type="password"
-              placeholder="Enter your KnowReply API token"
+              placeholder="Enter your Know Reply API token"
               value={config.knowreply_api_token || ''}
               onChange={(e) => {
                 setConfig({ ...config, knowreply_api_token: e.target.value });
@@ -850,7 +850,7 @@ export function KnowReplySetup() {
           <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
             <h4 className="font-medium text-blue-900 mb-2">Multi-Agent Configuration:</h4>
             <ol className="text-sm text-blue-800 space-y-1 list-decimal list-inside">
-              <li>Enter your KnowReply API token</li>
+              <li>Enter your Know Reply API token</li>
               <li>Add the agents you want to use for email processing</li>
               <li>Configure which MCP endpoints each agent can access (optional)</li>
               <li>Enable/disable agents as needed</li>
@@ -861,7 +861,7 @@ export function KnowReplySetup() {
           <div className="space-y-2">
             <Button variant="outline" className="w-full justify-between" asChild>
               <a href="https://knowreply.com/dashboard" target="_blank" rel="noopener noreferrer">
-                KnowReply Dashboard
+                Know Reply Dashboard
                 <ExternalLink className="h-4 w-4" />
               </a>
             </Button>

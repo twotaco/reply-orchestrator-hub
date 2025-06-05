@@ -66,12 +66,12 @@ export function MCPManagement() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-3xl font-bold">Agents & Tools Setup</h1>
-          <p className="text-gray-600 mt-2">Manage your Model Context Protocol (MCP) endpoints</p>
+          <h1 className="text-3xl font-bold">Email Agent Tools & Connections</h1>
+          <p className="text-gray-600 mt-2">Connect your Know Reply AI assistant to the tools and systems it needs to take action on your behalf (like looking up orders, updating bookings, or sending invoices) with Model Context Protocol (MCP) endpoints.</p>
         </div>
         <Button onClick={() => setShowAddForm(true)} disabled={showAddForm}>
           <Plus className="h-4 w-4 mr-2" />
-          Add MCP Endpoint
+          Add a Connection
         </Button>
       </div>
 
@@ -94,7 +94,7 @@ export function MCPManagement() {
 
      <Card>
         <CardHeader>
-          <CardTitle>Configured MCP Endpoints</CardTitle>
+          <CardTitle>Configured Connections</CardTitle>
           <CardDescription>
             {savedConfiguredActions.length} action(s) configured across {Object.keys(groupedEndpoints).length} provider(s).
           </CardDescription>

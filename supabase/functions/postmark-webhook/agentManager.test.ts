@@ -28,7 +28,7 @@ Deno.test("[agentManager] processEmailWithKnowReply", async (t) => {
 
     // Mock globalThis.fetch
     fetchStub = sinon.stub(globalThis, "fetch");
-    fetchStub.resolves(new Response(JSON.stringify({ success: true, intent: "mocked_intent" }), { status: 200 })); // Default mock for KnowReply API
+    fetchStub.resolves(new Response(JSON.stringify({ success: true, intent: "mocked_intent" }), { status: 200 })); // Default mock for Know Reply API
 
     // Mock Supabase client
     supabaseFromStub = sinon.stub(); // This will be the base for all 'from' calls
@@ -131,7 +131,7 @@ Deno.test("[agentManager] processEmailWithKnowReply", async (t) => {
     assertEquals(result.errors.length, 0, "Result errors should be empty");
     assertMatch(result.warnings[0], /Successfully processed email with 1 out of 1 matched agent\(s\)/);
 
-    assertEquals(fetchStub.callCount, 1, "Fetch (KnowReply API) should be called once");
+    assertEquals(fetchStub.callCount, 1, "Fetch (Know Reply API) should be called once");
     const fetchArgBody = JSON.parse(fetchStub.getCall(0).args[1].body as string);
     assertEquals(fetchArgBody.agent_id, "agent1", "Agent ID in fetch call body is incorrect");
 
@@ -172,7 +172,7 @@ Deno.test("[agentManager] processEmailWithKnowReply", async (t) => {
     assertEquals(result.errors.length, 0);
     assertMatch(result.warnings[0], /Successfully processed email with 1 out of 1 matched agent\(s\)/);
 
-    assertEquals(fetchStub.callCount, 1, "Fetch (KnowReply API) should be called once for no-MCP agent");
+    assertEquals(fetchStub.callCount, 1, "Fetch (Know Reply API) should be called once for no-MCP agent");
     const fetchArgBody = JSON.parse(fetchStub.getCall(0).args[1].body as string);
     assertEquals(fetchArgBody.agent_id, "agent1");
     assertEquals(fetchArgBody.mcp_results.length, 0);
@@ -241,7 +241,7 @@ Deno.test("[agentManager] processEmailWithKnowReply", async (t) => {
     assertEquals(result.errors.length, 0, "Multi-agent: Result errors should be empty");
     assertMatch(result.warnings[0], /Successfully processed email with 2 out of 2 matched agent\(s\)/);
 
-    assertEquals(fetchStub.callCount, 2, "Multi-agent: Fetch (KnowReply API) should be called twice");
+    assertEquals(fetchStub.callCount, 2, "Multi-agent: Fetch (Know Reply API) should be called twice");
 
     const agentIdsCalled = [
         JSON.parse(fetchStub.getCall(0).args[1].body as string).agent_id,
