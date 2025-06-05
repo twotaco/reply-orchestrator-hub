@@ -1,6 +1,6 @@
 
 import { useState } from 'react';
-import { AuthProvider, useAuth } from '@/hooks/useAuth';
+import { useAuth } from '@/hooks/useAuth'; // AuthProvider removed
 import { AuthPage } from '@/components/auth/AuthPage';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { Dashboard } from '@/components/dashboard/Dashboard';
@@ -51,9 +51,7 @@ function AppContent() {
 
 function App() {
   return (
-    <AuthProvider>
-      <AppContent />
-    </AuthProvider>
+    <AppContent />
   );
 }
 
