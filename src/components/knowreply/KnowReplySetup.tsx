@@ -209,14 +209,17 @@ export function KnowReplySetup() {
         }
       });
 
-      // Removed the iteration that used `availableAgents` to set names here.
       // `fetchAgents` will be responsible for updating names based on API results.
-      setAgentConfigs(Array.from(configMap.values()));
+      const finalConfigs = Array.from(configMap.values()).map(ac => ({
+        ...ac,
+        email_addresses: (ac.email_addresses && ac.email_addresses.length > 0) ? ac.email_addresses : [''],
+      }));
+      setAgentConfigs(finalConfigs);
       // setHasUnsavedChanges(false); // CRITICAL: loadAgentConfigs should NOT reset this.
     } catch (error) {
       console.error('Error loading agent configurations:', error);
       toast({ title: "Error", description: "Failed to load agent configurations.", variant: "destructive" });
-    }
+    } // This is the correct closing brace for the try-catch block
   }, [user?.id, toast, setAgentConfigs, setAgentEmailMappings, availableAgents]); // availableAgents is used in name consolidation
 
   const loadMCPEndpoints = useCallback(async () => {
@@ -289,8 +292,7 @@ export function KnowReplySetup() {
       setAgentEmailMappings([]);
     } finally {
       setLoading(false);
-    }
-  }, [user?.id, toast, setConfig, setLoading, setAgentConfigs, setAvailableAgents, setAgentEmailMappings, loadAgentConfigs]);
+  }, [user?.id, toast, setConfig, setLoading, setAgentConfigs, setAvailableAgents, setAgentEmailMappings, loadAgentConfigs, setHasUnsavedChanges]);
 
   // Ensure the duplicate plain async functions for loadMCPEndpoints and loadAgentConfigs are removed.
   // The useCallback versions are defined above and are the correct ones to use.
@@ -373,7 +375,7 @@ export function KnowReplySetup() {
         // If token is removed, clear agents. fetchAgents itself also does this.
         setAvailableAgents([]);
     }
-  }, [config.knowreply_api_token, toast, setAvailableAgents, setAgentConfigs, setLoadingAgents, setFetchError]); // fetchAgents is stable
+  }, [config.knowreply_api_token, fetchAgents]); // Corrected dependencies: fetchAgents is stable
 
   const handleConfigureAgent = (agentFromApi: Agent) => {
     setConfiguringAgentId(agentFromApi.id);
