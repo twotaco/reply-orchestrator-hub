@@ -244,7 +244,7 @@ async function processWithAgent(
       // Assuming the original recipient email is a valid sender signature. This might need refinement.
       // payload.ToFull[0].Email might not always be the desired From address for a reply if aliases/forwarding or special mailboxes are used.
       // payload.OriginalRecipient might be more reliable if it represents the mailbox Postmark delivered to.
-      const fromEmail = responseData.reply.from; // payload.ToFull?.[0]?.Email || payload.OriginalRecipient;
+      const fromEmail = payload.ToFull?.[0]?.Email || payload.OriginalRecipient; // do not use responseData.reply.from as the Agent in Know Reply might not be configured for that email address or any.
       const replyTo = responseData.reply.reply_to || fromEmail; // Use reply_to if provided, otherwise use fromEmail
       const ccEmail = responseData.reply.cc || null; // Optional CC email if provided
       const originalMessageId = payload.MessageID;
@@ -401,8 +401,8 @@ export async function sendPostmarkReply(
   const payload = {
     From: fromEmail,
     ReplyTo: replyTo, 
-    To: toEmail,
-    Cc: ccEmail || undefined, // Optional CC field
+    To: Array.isArray(toEmail) ? toEmail.join(', ') : toEmail,
+    Cc: Array.isArray(ccEmail) ? ccEmail.join(', ') : ccEmail || undefined, // Optional CC field
     Subject: replySubject,
     HtmlBody: htmlBody,
     TextBody: textBody, 
