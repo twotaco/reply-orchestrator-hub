@@ -32,6 +32,7 @@ interface EmailInteractionEntry {
   postmark_request: any;
   mcp_plan: any;
   postmark_response: any;
+  knowreply_response: any;
 }
 
 interface DisplayableLog {
@@ -215,7 +216,7 @@ export function ActivityLogs() {
     setError(null);
     let query = supabase
       .from('email_interactions')
-      .select('id, created_at, from_email, subject, status, postmark_request, mcp_plan, postmark_response')
+      .select('id, created_at, from_email, subject, status, postmark_request, mcp_plan, knowreply_response')
       .order('created_at', { ascending: false })
       .limit(100);
 
@@ -355,7 +356,7 @@ export function ActivityLogs() {
                         <Card>
                           <CardHeader><CardTitle>Return Email/Response</CardTitle></CardHeader>
                           <CardContent>
-                            <RenderEmailDetails emailData={log.originalEntry.postmark_response} showJson={jsonViewStates.returnEmail} />
+                            <RenderEmailDetails emailData={log.originalEntry.knowreply_response} showJson={jsonViewStates.returnEmail} />
                           </CardContent>
                            <CardFooter className="flex justify-end">
                             <Button variant="outline" size="sm" onClick={(e) => toggleJsonView('returnEmail', e)}>
