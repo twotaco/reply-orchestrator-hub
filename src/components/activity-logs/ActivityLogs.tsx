@@ -214,6 +214,9 @@ function RenderToolPlan({ planData, showJson }: { planData: any; showJson: boole
           <p className="font-semibold text-gray-700">
             Step {index + 1}: {step.tool || 'N/A'}
           </p>
+          <p className="text-gray-700">
+            Reasoning: {step.reasoning || 'N/A'}
+          </p>
           {step.args && Object.keys(step.args).length > 0 ? (
             <div className="mt-1">
               <p className="text-xs font-medium text-gray-600">Arguments:</p>

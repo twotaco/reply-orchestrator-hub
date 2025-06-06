@@ -94,7 +94,7 @@ async function processWithAgent(
           console.log(`🛠️ Generating MCP Action Digest for agent ${agentConfig.agent_id}`);
           const digestParts: string[] = [];
           for (let i = 0; i < mcpPlan.length; i++) {
-            const planStep = mcpPlan[i] as { tool: string; args: any };
+            const planStep = mcpPlan[i] as { tool: string; args: any; reasoning: string };
             const resultStep = mcpResults[i] as { tool_name: string; status: string; response: any; error_message: string };
             const mcpConfigMatched = agentConfig.mcp_endpoints.find(mcp => mcp.name === planStep.tool);
             const toolDescription = mcpConfigMatched?.instructions || 'No description found.';
@@ -102,7 +102,7 @@ async function processWithAgent(
             const status = resultStep.status;
             const outputString = status === 'success' ? JSON.stringify(resultStep.response) : resultStep.error_message;
             digestParts.push(
-              `Action ${i + 1}: ${planStep.tool}\nDescription: ${toolDescription}\nArguments: ${argsString}\nStatus: ${status}\nOutput: ${outputString}\n---`
+              `Action ${i + 1}: ${planStep.tool}\nReasoning: ${planStep.reasoning}\nDescription: ${toolDescription}\nArguments: ${argsString}\nStatus: ${status}\nOutput: ${outputString}\n---`
             );
           }
           mcpActionDigest = digestParts.join('\n');

@@ -28,7 +28,7 @@ export async function generateMCPToolPlan(
   }
 
   // Construct the prompt for Gemini
-  const geminiPrompt = `You are an intent and action planner. Based on the email sender information and customer email content below, determine which external tools (MCPs) are needed to answer or fulfill the request.
+  const geminiPrompt = `You are an intent and action planner. Based on the email sender information and customer email content below, determine which external tools (MCPs) are needed to help answer or fulfill the request.
 
 Email Sender Information:
 ---
@@ -88,22 +88,41 @@ Respond ONLY with a valid JSON array. Do not add any other text before or after 
 If no tools are needed, or if the email content does not require any actionable steps, please return an empty array [].
 Only use tools from the 'Available Tools' list. Ensure the tool name in your output matches exactly a name from the 'Available Tools' list.
 
-Example of a multi-step plan:
+Your entire response must be only the JSON array.
+JSON schema:
+[
+  {
+    "tool": "string", // The exact name of the tool from the 'Available Tools' list
+    "args": { // The arguments object for the tool, using exact keys from args_schema_keys
+      "argName1": "value1", // Use exact argument names as per args_schema_keys
+      "argName2": "value2" // Use exact argument names as per args_schema_keys
+    },
+    "reasoning": "string" // A brief explanation of why this tool is needed and what you want to accomplish by calling it
+  }
+  // Additional steps can be added in the same format
+  // If no tools are needed, return an empty array []
+] 
+
+Example of a multi-step plan using tool outputs as input values for subsequent steps:
 [
   {
     "tool": "user.getCustomerByEmail",
-    "args": { "email": "customer@example.com" }
+    "args": { "email": "customer@example.com" },
+    "reasoning": "To identify the customer based on the email sender information."
   },
   {
     "tool": "orders.getLatestOrder",
-    "args": { "customerId": "{{steps[0].outputs.id}}" }
+    "args": { "customerId": "{{steps[0].outputs.id}}" },
+    "reasoning": "To fetch the latest order for the identified customer."
   },
   {
     "tool": "shipping.getTrackingInfo",
-    "args": { "orderId": "{{steps[1].outputs.id}}" }
+    "args": { "orderId": "{{steps[1].outputs.id}}" },
+    "reasoning": "To retrieve the tracking information for the latest order so the support staff can identify where the package is and reply accordingly."
   }
 ]
-Your entire response must be only the JSON array.`;
+
+`;
 
   console.log('📝 Constructed Prompt for Gemini (first 200 chars):', geminiPrompt.substring(0,200));
 

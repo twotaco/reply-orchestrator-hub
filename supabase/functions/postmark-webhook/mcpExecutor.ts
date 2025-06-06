@@ -122,7 +122,7 @@ export async function executeMCPPlan(
         email_interaction_id: emailInteractionId,
         action: 'mcp_execution_error',
         status: 'error',
-        details: { step: i, tool_name: actionToExecute.tool, error: errorMsg, request_args: actionToExecute.args },
+        details: { step: i, tool_name: actionToExecute.tool, error: errorMsg, request_args: actionToExecute.args, reasoning: actionToExecute.reasoning },
       });
       continue;
     }
@@ -156,7 +156,7 @@ export async function executeMCPPlan(
       executionOutputs[i] = { error: errorDetail };
       await supabaseClient.from('activity_logs').insert({
         user_id: userId, email_interaction_id: emailInteractionId, action: 'mcp_execution_error', status: 'error',
-        details: { step: i, tool_name: actionToExecute.tool, error: errorDetail, request_args: actionToExecute.args },
+        details: { step: i, tool_name: actionToExecute.tool, error: errorDetail, request_args: actionToExecute.args, reasoning: actionToExecute.reasoning },
       });
       continue;
     }
@@ -165,7 +165,7 @@ export async function executeMCPPlan(
     console.log(`🔐 [Step ${i}] Using connection parameters for provider: ${mcpConfig.provider_name}`);
 
     const resolvedArgs: { [key: string]: any } = {};
-    let placeholderError = null;
+    let placeholderError;
 
     for (const key in actionToExecute.args) {
       const value = actionToExecute.args[key];
@@ -227,7 +227,7 @@ export async function executeMCPPlan(
       executionOutputs[i] = { error: placeholderError };
       await supabaseClient.from('activity_logs').insert({
         user_id: userId, email_interaction_id: emailInteractionId, action: 'mcp_execution_error', status: 'error',
-        details: { step: i, tool_name: actionToExecute.tool, error: placeholderError, request_args: actionToExecute.args },
+        details: { step: i, tool_name: actionToExecute.tool, error: placeholderError, request_args: actionToExecute.args, reasoning: actionToExecute.reasoning },
       });
       continue;
     }
@@ -275,13 +275,13 @@ export async function executeMCPPlan(
     }
 
     results.push({
-      tool_name: actionToExecute.tool, status: status, response: responseData, raw_response: rawResponseText, error_message: errorMessage,
+      tool_name: actionToExecute.tool, status: status, response: responseData, raw_response: rawResponseText, error_message: errorMessage, reasoning: actionToExecute.reasoning,
     });
 
     await supabaseClient.from('activity_logs').insert({
       user_id: userId, email_interaction_id: emailInteractionId, action: 'mcp_execution_attempt', status: status,
       details: {
-        step: i, tool_name: actionToExecute.tool, target_url: targetUrl, request_args: resolvedArgs,
+        step: i, tool_name: actionToExecute.tool, target_url: targetUrl, request_args: resolvedArgs, reasoning: actionToExecute.reasoning,
         response_status_code: status === 'success' && !errorMessage ? 200 : (errorMessage ? 'N/A' : 500),
         error: errorMessage,
       },
