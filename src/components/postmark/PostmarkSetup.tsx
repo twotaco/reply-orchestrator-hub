@@ -21,8 +21,6 @@ import {
 
 interface WorkspaceConfig {
   postmark_api_token: string | null;
-  postmark_webhook_url: string | null;
-  postmark_active: boolean | null;
   webhook_api_key?: string | null;
 }
 
@@ -31,8 +29,6 @@ export function PostmarkSetup() {
   const { toast } = useToast();
   const [config, setConfig] = useState<WorkspaceConfig>({
     postmark_api_token: '',
-    postmark_webhook_url: '',
-    postmark_active: false,
   });
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -49,7 +45,7 @@ export function PostmarkSetup() {
     try {
       const { data, error } = await supabase
         .from('workspace_configs')
-        .select('postmark_api_token, postmark_webhook_url, postmark_active, webhook_api_key')
+        .select('postmark_api_token, webhook_api_key')
         .eq('user_id', user?.id)
         .single();
 
@@ -116,8 +112,6 @@ export function PostmarkSetup() {
         .upsert({
           user_id: user.id,
           postmark_api_token: config.postmark_api_token,
-          postmark_webhook_url: config.postmark_webhook_url,
-          postmark_active: config.postmark_active,
           webhook_api_key: config.webhook_api_key, // Ensure webhook_api_key is preserved
           updated_at: new Date().toISOString()
         }, {

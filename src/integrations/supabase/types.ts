@@ -367,42 +367,27 @@ export type Database = {
         Row: {
           created_at: string
           id: string
-          knowreply_agent_id: string | null
           knowreply_api_token: string | null
-          knowreply_base_url: string | null
-          knowreply_persona: string | null
           knowreply_webhook_url: string | null
-          postmark_active: boolean | null
           postmark_api_token: string | null
-          postmark_webhook_url: string | null
           updated_at: string
           user_id: string
         }
         Insert: {
           created_at?: string
           id?: string
-          knowreply_agent_id?: string | null
           knowreply_api_token?: string | null
-          knowreply_base_url?: string | null
-          knowreply_persona?: string | null
           knowreply_webhook_url?: string | null
-          postmark_active?: boolean | null
           postmark_api_token?: string | null
-          postmark_webhook_url?: string | null
           updated_at?: string
           user_id: string
         }
         Update: {
           created_at?: string
           id?: string
-          knowreply_agent_id?: string | null
           knowreply_api_token?: string | null
-          knowreply_base_url?: string | null
-          knowreply_persona?: string | null
           knowreply_webhook_url?: string | null
-          postmark_active?: boolean | null
           postmark_api_token?: string | null
-          postmark_webhook_url?: string | null
           updated_at?: string
           user_id?: string
         }
