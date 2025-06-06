@@ -7,7 +7,6 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Mail, Zap } from 'lucide-react';
 import { toast } from '@/hooks/use-toast';
 
 export function AuthPage() {
@@ -79,7 +78,6 @@ export function AuthPage() {
             transition={{ delay: 0.2 }}
             className="flex items-center justify-center gap-2 mb-4"
           >
-            <!--Zap className="h-8 w-8 text-blue-600" />
             <img src="/knowreply-black-512x512.png" alt="Know Reply Hub Logo" className="h-8 w-8" />
             <h1 className="text-3xl font-bold text-gray-900">Know Reply Hub</h1>
           </motion.div>

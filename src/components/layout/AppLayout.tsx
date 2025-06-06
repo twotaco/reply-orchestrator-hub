@@ -49,7 +49,6 @@ export function AppLayout({ children, currentPage, onPageChange }: AppLayoutProp
           >
             <div className="flex items-center justify-between p-4 border-b">
               <div className="flex items-center gap-2">
-                <!--Zap className="h-6 w-6 text-blue-600" />
                 <img src="/knowreply-black-512x512.png" alt="Know Reply Hub Logo" className="h-8 w-8" />
                 <span className="font-semibold text-gray-900">Know Reply Hub</span>
               </div>
@@ -80,7 +79,6 @@ export function AppLayout({ children, currentPage, onPageChange }: AppLayoutProp
       {/* Desktop sidebar */}
       <div className="hidden lg:flex lg:flex-col lg:w-64 lg:fixed lg:inset-y-0 lg:bg-white lg:border-r">
         <div className="flex items-center gap-2 p-6 border-b">
-          <!--Zap className="h-6 w-6 text-blue-600" />
           <img src="/knowreply-black-512x512.png" alt="Know Reply Hub Logo" className="h-8 w-8" />
           <span className="font-semibold text-gray-900">Know Reply Hub</span>
         </div>
