@@ -216,15 +216,28 @@ export function TestRunsList({ testCaseId }: TestRunsListProps) {
                           )}
                         </div>
                         
-                        {responseData.knowreply_results.knowreply_response && (
-                          <div className="mt-2">
-                            <h6 className="text-xs font-medium mb-1">Know Reply Response:</h6>
-                            <pre className="text-xs bg-white p-2 rounded border overflow-x-auto max-h-40">
-                              {JSON.stringify(responseData.knowreply_results.knowreply_response, null, 2)}
+                      {responseData.knowreply_results.knowreply_response && (
+                        <div className="mt-2">
+                          <h6 className="text-xs font-medium mb-1">Know Reply Response:</h6>
+                          <pre className="text-xs bg-white p-2 rounded border overflow-x-auto max-h-40">
+                            {JSON.stringify(responseData.knowreply_results.knowreply_response, null, 2)}
+                          </pre>
+                          <h6 className="text-xs font-medium mb-1">Email Response Body:</h6>
+                          {responseData.knowreply_results.knowreply_response.reply?.html_body ? (
+                            <div
+                              className="text-xs bg-white p-2 rounded border overflow-auto max-h-40"
+                              dangerouslySetInnerHTML={{
+                                __html: responseData.knowreply_results.knowreply_response.reply.html_body,
+                              }}
+                            />
+                          ) : (
+                            <pre className="text-xs bg-white p-2 rounded border overflow-auto max-h-40">
+                              {responseData.knowreply_results.knowreply_response.reply?.body || 'No body content available.'}
                             </pre>
-                            <h6 className="text-xs font-medium mb-1">Email Response Body:</h6>
-                          </div>
-                        )}
+                          )}
+                        </div>
+                      )}
+
                       </div>
                     </div>
                   )}
