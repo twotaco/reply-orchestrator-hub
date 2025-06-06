@@ -374,8 +374,6 @@ export type Database = {
           knowreply_webhook_url: string | null
           postmark_active: boolean | null
           postmark_api_token: string | null
-          postmark_inbound_hash: string | null
-          postmark_server_id: string | null
           postmark_webhook_url: string | null
           updated_at: string
           user_id: string
@@ -390,8 +388,6 @@ export type Database = {
           knowreply_webhook_url?: string | null
           postmark_active?: boolean | null
           postmark_api_token?: string | null
-          postmark_inbound_hash?: string | null
-          postmark_server_id?: string | null
           postmark_webhook_url?: string | null
           updated_at?: string
           user_id: string
@@ -406,8 +402,6 @@ export type Database = {
           knowreply_webhook_url?: string | null
           postmark_active?: boolean | null
           postmark_api_token?: string | null
-          postmark_inbound_hash?: string | null
-          postmark_server_id?: string | null
           postmark_webhook_url?: string | null
           updated_at?: string
           user_id?: string

@@ -98,8 +98,6 @@ export interface WorkspaceConfigWithUser {
   postmark_api_token?: string | null;
   postmark_webhook_url?: string | null; // This might be the old one, or just a stored value
   postmark_active?: boolean | null;
-  postmark_inbound_hash?: string | null;
-  postmark_server_id?: string | null;
   webhook_api_key?: string | null; // The new key used for authentication
   // Any other fields from workspace_configs that are relevant after a select '*'
 }
