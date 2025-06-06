@@ -79,7 +79,8 @@ export function AuthPage() {
             transition={{ delay: 0.2 }}
             className="flex items-center justify-center gap-2 mb-4"
           >
-            <Zap className="h-8 w-8 text-blue-600" />
+            <!--Zap className="h-8 w-8 text-blue-600" />
+            <img src="/knowreply-black-512x512.png" alt="Know Reply Hub Logo" className="h-8 w-8" />
             <h1 className="text-3xl font-bold text-gray-900">Know Reply Hub</h1>
           </motion.div>
           <p className="text-gray-600">Orchestrate intelligent email replies with AI</p>
