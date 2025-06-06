@@ -182,6 +182,10 @@ async function processWithAgent(
     console.error('❌ Know Reply API error response:', responseData);
     throw new Error(`Know Reply API error: ${response.status} - ${JSON.stringify(responseData)}`);
   }
+  // Update the FROM address in the responseData if it exists
+  if (responseData.reply && responseData.reply.from) {
+    responseData.reply.from = payload.ToFull?.[0]?.Email || payload.OriginalRecipient; // Ensure we use the original sender's email because the Agent's address in KnowReply might be different.
+  }
 
   console.log('✅ Know Reply response received for agent:', agentConfig.agent_id);
 
@@ -244,7 +248,7 @@ async function processWithAgent(
       // Assuming the original recipient email is a valid sender signature. This might need refinement.
       // payload.ToFull[0].Email might not always be the desired From address for a reply if aliases/forwarding or special mailboxes are used.
       // payload.OriginalRecipient might be more reliable if it represents the mailbox Postmark delivered to.
-      const fromEmail = payload.ToFull?.[0]?.Email || payload.OriginalRecipient; // do not use responseData.reply.from as the Agent in Know Reply might not be configured for that email address or any.
+      const fromEmail = responseData.reply.from;
       const replyTo = responseData.reply.reply_to || fromEmail; // Use reply_to if provided, otherwise use fromEmail
       const ccEmail = responseData.reply.cc || null; // Optional CC email if provided
       const originalMessageId = payload.MessageID;
