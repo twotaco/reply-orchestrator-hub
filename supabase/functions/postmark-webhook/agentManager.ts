@@ -287,6 +287,7 @@ async function processWithAgent(
           success: replyResult.success,
           messageId: replyResult.messageId || null,
           error: replyResult.error || null,
+          payload: replyResult.payload, // Capture the payload from sendPostmarkReply
           sent_at: new Date().toISOString(), // Record attempt time
         };
 
@@ -329,6 +330,10 @@ async function processWithAgent(
 
   if (postmarkReplyStatus) {
     updatePayload.postmark_reply_status = postmarkReplyStatus;
+    // Add the original Postmark request payload to email_interactions if reply was successful
+    if (postmarkReplyStatus.success && postmarkReplyStatus.payload) {
+      updatePayload.postmark_response = postmarkReplyStatus.payload;
+    }
   }
 
   const { data: updateResult, error: updateError } = await supabase
@@ -387,7 +392,7 @@ async function processWithAgent(
  * @param {string} replySubject - Subject of the reply.
  * @param {string} htmlBody - HTML content of the reply.
  * @param {string} originalMessageId - The Message-ID of the email being replied to, for threading.
- * @returns {Promise<object>} An object indicating success or failure, with Postmark response or error details.
+ * @returns {Promise<{ success: boolean; payload: object; messageId?: string; submittedAt?: string; errorCode?: number; message?: string; error?: string; details?: any }>} An object indicating success or failure, with Postmark response or error details.
  */
 export async function sendPostmarkReply(
   postmarkServerToken: string,
@@ -399,7 +404,7 @@ export async function sendPostmarkReply(
   htmlBody: string,
   textBody: string, 
   originalMessageId: string
-): Promise<{ success: boolean; messageId?: string; submittedAt?: string; errorCode?: number; message?: string; error?: string; details?: any }> {
+): Promise<{ success: boolean; payload: object; messageId?: string; submittedAt?: string; errorCode?: number; message?: string; error?: string; details?: any }> {
   const postmarkApiUrl = 'https://api.postmarkapp.com/email';
 
   const payload = {
@@ -445,6 +450,7 @@ export async function sendPostmarkReply(
     if (response.ok) {
       return {
         success: true,
+        payload: payload,
         messageId: responseData.MessageID,
         submittedAt: responseData.SubmittedAt,
         details: responseData,
@@ -452,6 +458,7 @@ export async function sendPostmarkReply(
     } else {
       return {
         success: false,
+        payload: payload,
         error: `Postmark API Error: ${responseData.Message || 'Unknown error'}`,
         errorCode: responseData.ErrorCode,
         details: responseData,
@@ -461,6 +468,7 @@ export async function sendPostmarkReply(
     console.error('Failed to send email via Postmark:', error);
     return {
       success: false,
+      payload: payload || {},
       error: 'Failed to make request to Postmark API.',
       details: error.message,
     };
