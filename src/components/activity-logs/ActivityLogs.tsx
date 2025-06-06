@@ -32,6 +32,7 @@ interface EmailInteractionEntry {
   postmark_request: any;
   mcp_plan: any;
   postmark_response: any;
+  knowreply_response: any;
 }
 
 interface DisplayableLog {
@@ -80,6 +81,38 @@ function RenderEmailDetails({ emailData, showJson }: { emailData: any; showJson:
     return <pre className="whitespace-pre-wrap text-xs bg-gray-100 p-2 rounded overflow-x-auto">{JSON.stringify(jsonDataToShow, null, 2)}</pre>;
   }
 
+  const from =
+  parsedData.FromFull
+    ? formatEmailList(Array.isArray(parsedData.FromFull) ? parsedData.FromFull : [parsedData.FromFull])
+    : parsedData.From || parsedData.from || "N/A";
+
+  const to =
+    parsedData.ToFull
+      ? formatEmailList(parsedData.ToFull)
+      : parsedData.To
+      ? (Array.isArray(parsedData.To) ? parsedData.To.join(", ") : String(parsedData.To))
+      : parsedData.to
+      ? (Array.isArray(parsedData.to) ? parsedData.to.join(", ") : String(parsedData.to))
+      : "N/A";
+
+  const cc =
+    parsedData.CcFull
+      ? formatEmailList(parsedData.CcFull)
+      : parsedData.Cc
+      ? (Array.isArray(parsedData.Cc) ? parsedData.Cc.join(", ") : String(parsedData.Cc))
+      : parsedData.cc
+      ? (Array.isArray(parsedData.cc) ? parsedData.cc.join(", ") : String(parsedData.cc))
+      : null;
+
+  const subject = parsedData.Subject || parsedData.subject || "N/A";
+  const dateValue = parsedData.Date || parsedData.date || null;
+  const replyTo = parsedData.ReplyTo || parsedData.reply_to || null;
+
+  const bodyHtml = parsedData.HtmlBody || parsedData.html_body || null;
+  const bodyText = parsedData.TextBody || parsedData.body || parsedData.text_body || null;
+
+/*
+  // Temp fix
   const from = parsedData.FromFull ? formatEmailList([parsedData.FromFull]) : parsedData.From || 'N/A';
   const to = parsedData.ToFull ? formatEmailList(parsedData.ToFull) : parsedData.To || 'N/A';
   const cc = parsedData.CcFull ? formatEmailList(parsedData.CcFull) : parsedData.Cc || 'N/A';
@@ -88,6 +121,7 @@ function RenderEmailDetails({ emailData, showJson }: { emailData: any; showJson:
   const replyTo = parsedData.ReplyTo || 'N/A';
   const bodyHtml = parsedData.HtmlBody || null;
   const bodyText = parsedData.TextBody || null;
+  */
   let bodyContent;
 
   if (bodyHtml) {
@@ -215,7 +249,7 @@ export function ActivityLogs() {
     setError(null);
     let query = supabase
       .from('email_interactions')
-      .select('id, created_at, from_email, subject, status, postmark_request, mcp_plan, postmark_response')
+      .select('id, created_at, from_email, subject, status, postmark_request, mcp_plan, postmark_response, knowreply_response')
       .order('created_at', { ascending: false })
       .limit(100);
 
@@ -355,7 +389,7 @@ export function ActivityLogs() {
                         <Card>
                           <CardHeader><CardTitle>Return Email/Response</CardTitle></CardHeader>
                           <CardContent>
-                            <RenderEmailDetails emailData={log.originalEntry.postmark_response} showJson={jsonViewStates.returnEmail} />
+                            <RenderEmailDetails emailData={log.originalEntry.knowreply_response.reply} showJson={jsonViewStates.returnEmail} />
                           </CardContent>
                            <CardFooter className="flex justify-end">
                             <Button variant="outline" size="sm" onClick={(e) => toggleJsonView('returnEmail', e)}>
