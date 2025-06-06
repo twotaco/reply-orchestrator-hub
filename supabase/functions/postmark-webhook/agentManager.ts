@@ -122,7 +122,16 @@ async function processWithAgent(
     }
   } // Closing the main 'else' for senderIsVerified
 
-  const knowReplyRequest = {
+    // Check for X-KnowReply-Test header
+    let isTestEmail = false;
+    if (payload.Headers && Array.isArray(payload.Headers)) {
+      const testHeader = payload.Headers.find(h => h.Name.toLowerCase() === 'x-knowreply-test');
+      if (testHeader && testHeader.Value.toLowerCase() === 'true') {
+        isTestEmail = true;
+      }
+    }
+
+    const knowReplyRequest = {
     agent_id: agentConfig.agent_id,
     email: {
       provider: 'postmark',
@@ -143,6 +152,7 @@ async function processWithAgent(
     },
     mcp_results: mcpResults || [], // mcpResults will be null/empty if sender not verified
     mcp_action_digest: mcpActionDigest, // mcpActionDigest will have the appropriate message
+    is_simulation: isTestEmail,
   };
 
   const knowReplyUrl = workspaceConfig.knowreply_webhook_url;
@@ -179,14 +189,6 @@ async function processWithAgent(
   let postmarkReplyStatus = null;
   let finalInteractionStatus = 'processed'; // Default status
 
-  // Check for X-KnowReply-Test header
-  let isTestEmail = false;
-  if (payload.Headers && Array.isArray(payload.Headers)) {
-    const testHeader = payload.Headers.find(h => h.Name.toLowerCase() === 'x-knowreply-test');
-    if (testHeader && testHeader.Value.toLowerCase() === 'true') {
-      isTestEmail = true;
-    }
-  }
 
   if (isTestEmail) {
     console.log(`🧪 Email for agent ${agentConfig.agent_id} (Interaction ID: ${emailInteractionId}) is a test email (X-KnowReply-Test: true). Skipping actual Postmark reply.`);
@@ -236,12 +238,15 @@ async function processWithAgent(
 
       // 2. Prepare Reply Details
       const replySubject = responseData.reply.subject;
-      const htmlBody = responseData.reply.body;
-      const toEmail = payload.FromFull.Email; // Original sender
+      const htmlBody = responseData.reply.html_body;
+      const textBody = responseData.reply.body;
+      const toEmail = responseData.reply.to; // payload.FromFull.Email; // Original sender
       // Assuming the original recipient email is a valid sender signature. This might need refinement.
       // payload.ToFull[0].Email might not always be the desired From address for a reply if aliases/forwarding or special mailboxes are used.
       // payload.OriginalRecipient might be more reliable if it represents the mailbox Postmark delivered to.
-      const fromEmail = payload.ToFull?.[0]?.Email || payload.OriginalRecipient;
+      const fromEmail = responseData.reply.from; // payload.ToFull?.[0]?.Email || payload.OriginalRecipient;
+      const replyTo = responseData.reply.reply_to || fromEmail; // Use reply_to if provided, otherwise use fromEmail
+      const ccEmail = responseData.reply.cc || null; // Optional CC email if provided
       const originalMessageId = payload.MessageID;
 
       if (!fromEmail) {
@@ -265,8 +270,11 @@ async function processWithAgent(
           postmarkServerToken,
           toEmail,
           fromEmail,
+          replyTo,
+          ccEmail,
           replySubject,
-          htmlBody,
+          htmlBody || '', // Use htmlBody if available, otherwise empty string
+          textBody || '', // Use textBody if available, otherwise empty string
           originalMessageId
         );
 
@@ -381,17 +389,23 @@ export async function sendPostmarkReply(
   postmarkServerToken: string,
   toEmail: string,
   fromEmail: string,
+  replyTo: string, // Optional reply-to email
+  ccEmail: string | null,
   replySubject: string,
   htmlBody: string,
+  textBody: string, 
   originalMessageId: string
 ): Promise<{ success: boolean; messageId?: string; submittedAt?: string; errorCode?: number; message?: string; error?: string; details?: any }> {
   const postmarkApiUrl = 'https://api.postmarkapp.com/email';
 
   const payload = {
     From: fromEmail,
+    ReplyTo: replyTo, 
     To: toEmail,
+    Cc: ccEmail || undefined, // Optional CC field
     Subject: replySubject,
     HtmlBody: htmlBody,
+    TextBody: textBody, 
     MessageStream: 'outbound', // Or configure as needed
     Headers: [
       { Name: 'References', Value: originalMessageId },
