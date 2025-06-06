@@ -31,7 +31,7 @@ interface EmailInteractionEntry {
   status: string;
   postmark_request: any;
   mcp_plan: any;
-  postmark_response: any;
+  knowreply_response: any;
 }
 
 interface DisplayableLog {
@@ -355,7 +355,7 @@ export function ActivityLogs() {
                         <Card>
                           <CardHeader><CardTitle>Return Email/Response</CardTitle></CardHeader>
                           <CardContent>
-                            <RenderEmailDetails emailData={log.originalEntry.postmark_response} showJson={jsonViewStates.returnEmail} />
+                            <RenderEmailDetails emailData={log.originalEntry.knowreply_response} showJson={jsonViewStates.returnEmail} />
                           </CardContent>
                            <CardFooter className="flex justify-end">
                             <Button variant="outline" size="sm" onClick={(e) => toggleJsonView('returnEmail', e)}>
