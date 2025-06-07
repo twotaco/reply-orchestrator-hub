@@ -22,8 +22,7 @@ import { CustomerSummaryCard } from './CustomerSummaryCard';
 import { EmailDetailsCard } from './EmailDetailsCard';
 import { KeyQuestionsList } from './KeyQuestionsList';
 import { ProductInterestsList } from './ProductInterestsList';
-import { SentimentOverviewChart } from './SentimentOverviewChart';
-import { FunnelStageDistributionChart } from './FunnelStageDistributionChart';
+import { CustomerJourneyChart } from './CustomerJourneyChart';
 
 // Data Fetching Functions
 export async function fetchCustomers(): Promise<InqCustomers[]> {
@@ -196,8 +195,7 @@ export function Dashboard() {
             )}
           </CardContent>
         </Card>
-        <SentimentOverviewChart emails={allEmailsForCharts} isLoading={loadingCharts} />
-        <FunnelStageDistributionChart emails={allEmailsForCharts} isLoading={loadingCharts} />
+        <CustomerJourneyChart emails={allEmailsForCharts} isLoading={loadingCharts} />
       </div>
 
       {/* Center Pane: Selected Customer & Their Emails */}

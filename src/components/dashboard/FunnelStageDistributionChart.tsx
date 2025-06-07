@@ -4,6 +4,15 @@ import { InqEmails } from '@/integrations/supabase/types'; // Adjust if necessar
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Filter } from 'lucide-react'; // Icon for legend/empty state
 
+export const FUNNEL_STAGE_ORDER: string[] = [
+  'unrelated',
+  'awareness_inquiry',
+  'consideration_request',
+  'decision_confirmation',
+  'retention_feedback',
+  'unknown'
+];
+
 interface FunnelStageDistributionChartProps {
   emails: InqEmails[];
   isLoading?: boolean;
@@ -46,6 +55,18 @@ export function FunnelStageDistributionChart({ emails, isLoading }: FunnelStageD
     name: name.charAt(0).toUpperCase() + name.slice(1), // Capitalize
     count: value,
   }));
+
+  // Sort chartData based on FUNNEL_STAGE_ORDER
+  chartData.sort((a, b) => {
+    const aIndex = FUNNEL_STAGE_ORDER.indexOf(a.name.toLowerCase());
+    const bIndex = FUNNEL_STAGE_ORDER.indexOf(b.name.toLowerCase());
+
+    // If a stage isn't in FUNNEL_STAGE_ORDER, push it to the end.
+    if (aIndex === -1) return 1;
+    if (bIndex === -1) return -1;
+
+    return aIndex - bIndex;
+  });
 
   if (!chartData || chartData.length === 0) {
     return (
