@@ -122,16 +122,16 @@ async function processWithAgent(
     }
   } // Closing the main 'else' for senderIsVerified
 
-    // Check for X-KnowReply-Test header
-    let isTestEmail = false;
-    if (payload.Headers && Array.isArray(payload.Headers)) {
-      const testHeader = payload.Headers.find(h => h.Name.toLowerCase() === 'x-knowreply-test');
-      if (testHeader && testHeader.Value.toLowerCase() === 'true') {
-        isTestEmail = true;
-      }
+  // Check for X-KnowReply-Test header
+  let isTestEmail = false;
+  if (payload.Headers && Array.isArray(payload.Headers)) {
+    const testHeader = payload.Headers.find(h => h.Name.toLowerCase() === 'x-knowreply-test');
+    if (testHeader && testHeader.Value.toLowerCase() === 'true') {
+      isTestEmail = true;
     }
+  }
 
-    const knowReplyRequest = {
+  const knowReplyRequest = {
     agent_id: agentConfig.agent_id,
     email: {
       provider: 'postmark',

@@ -104,7 +104,16 @@ export async function handlePostmarkRequest(
       return new Response(JSON.stringify(responseData), { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' }});
     }
 
-    if (existingInteraction) {
+    // When using the UI testing feature, Postmark sends a header `X-KnowReply-Test: true`. Bypass blocking existing interactions for these test emails.
+    let isTestEmail = false;
+    if (payload.Headers && Array.isArray(payload.Headers)) {
+      const testHeader = payload.Headers.find(h => h.Name.toLowerCase() === 'x-knowreply-test');
+      if (testHeader && testHeader.Value.toLowerCase() === 'true') {
+        isTestEmail = true;
+      }
+    }
+
+    if (existingInteraction && !isTestEmail) {
       interactionRecordId = existingInteraction.id;
       originalInteractionStatusForLogging = existingInteraction.status;
       console.log(`Found existing interaction ${interactionRecordId} for MessageID ${payload.MessageID}. Current status: ${originalInteractionStatusForLogging}`);
@@ -134,7 +143,7 @@ export async function handlePostmarkRequest(
         callProcessEmailFunction = false;
       }
     } else {
-      // No existing interaction, this is a new email
+      // No existing interaction, this is a new email or test email
       responseData.message = `New interaction to be created for MessageID ${payload.MessageID}.`;
       console.log(responseData.message);
       const { data: newInteraction, error: insertError } = await supabase
