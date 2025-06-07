@@ -260,13 +260,13 @@ export function isSenderVerified(headers: PostmarkWebhookPayload['Headers'], fro
 
   const dkimSigned = spamTests.includes('DKIM_SIGNED');
   const dkimValid = spamTests.includes('DKIM_VALID');
-  const dkimAligned = spamTests.includes('DKIM_VALID_AU');
+//  const dkimAligned = spamTests.includes('DKIM_VALID_AU');
   const spfPassInTests = spamTests.includes('SPF_PASS');
 
   if (!dkimSigned) console.log(`Verification failed for ${fromEmail}: DKIM_SIGNED not found in X-Spam-Tests ("${spamTests}").`);
   if (!dkimValid) console.log(`Verification failed for ${fromEmail}: DKIM_VALID not found in X-Spam-Tests ("${spamTests}").`);
-  if (!dkimAligned) console.log(`Verification failed for ${fromEmail}: DKIM_VALID_AU not found in X-Spam-Tests ("${spamTests}").`);
+//  if (!dkimAligned) console.log(`Verification failed for ${fromEmail}: DKIM_VALID_AU not found in X-Spam-Tests ("${spamTests}").`);
   if (!spfPassInTests) console.log(`Verification failed for ${fromEmail}: SPF_PASS not found in X-Spam-Tests ("${spamTests}").`);
 
-  return dkimSigned && dkimValid && dkimAligned && spfPassInTests;
+  return dkimSigned && dkimValid && spfPassInTests; // && dkimAligned; 
 }

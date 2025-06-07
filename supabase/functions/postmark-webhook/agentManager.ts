@@ -6,6 +6,7 @@ import { isSenderVerified } from './handlerUtils.ts'; // Added import
 // Deno object is globally available in Deno runtime
 // SupabaseClient type is not strictly needed as supabase is 'any'
 import { getAgentIdsByEmails } from './db.ts';
+import { LLMResponse, storeLLMOutput } from './saveGeneratedResponse.ts'; // Importing to ensure the file is included in the bundle
 
 async function processWithAgent(
   workspaceConfig: any,
@@ -193,7 +194,6 @@ async function processWithAgent(
   let postmarkReplyStatus = null;
   let finalInteractionStatus = 'processed'; // Default status
 
-
   if (isTestEmail) {
     console.log(`🧪 Email for agent ${agentConfig.agent_id} (Interaction ID: ${emailInteractionId}) is a test email (X-KnowReply-Test: true). Skipping actual Postmark reply.`);
     postmarkReplyStatus = {
@@ -208,11 +208,18 @@ async function processWithAgent(
       action: 'postmark_reply_skipped_test', status: 'info',
       details: { agent_id: agentConfig.agent_id, reason: 'X-KnowReply-Test header was true.' },
     });
+
+    //***** use in test area for now */
+    console.log(`💬 KnowReply response for agent ${agentConfig.agent_id} (test email):`, responseData);
+    const generatedResponse = responseData.generatedResponse as LLMResponse;
+    storeLLMOutput(generatedResponse, emailInteractionId, knowReplyRequest.email.sender, knowReplyRequest.email.subject, userId, agentConfig.agent_id, payload.To);
+
   } else {
     // This is the original block for handling actual replies
     if (responseData.reply && responseData.reply.body && responseData.reply.subject) {
       console.log(`💬 KnowReply suggested a reply for agent ${agentConfig.agent_id}. Attempting to send via Postmark.`);
 
+   
       // 1. Fetch Postmark Server API Token from workspace_configs
     // Note: workspaceConfig passed to processWithAgent currently only has knowreply_webhook_url and knowreply_api_token.
     // We need to fetch the postmark_api_token separately or ensure it's added to the initial workspaceConfig load.
