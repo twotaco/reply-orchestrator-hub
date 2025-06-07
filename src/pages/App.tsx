@@ -9,6 +9,7 @@ import { KnowReplySetup } from '@/components/knowreply/KnowReplySetup';
 import { MCPManagement } from '@/components/mcp/MCPManagement';
 import { EmailTesting } from '@/components/email-testing/EmailTesting';
 import { ActivityLogs } from '@/components/activity-logs/ActivityLogs';
+import { BusinessDashboardPage } from '@/pages/BusinessDashboardPage'; // New Import
 
 function AppContent() {
   const { user, loading } = useAuth();
@@ -30,6 +31,8 @@ function AppContent() {
     switch (currentPage) {
       case 'dashboard':
         return <Dashboard />;
+      case 'businessDashboard': // New Case
+        return <BusinessDashboardPage />;
       case 'postmark':
         return <PostmarkSetup />;
       case 'knowreply':
