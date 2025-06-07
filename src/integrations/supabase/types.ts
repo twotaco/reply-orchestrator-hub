@@ -6,6 +6,69 @@ export type Json =
   | { [key: string]: Json | undefined }
   | Json[]
 
+export interface InqCustomers {
+  customer_id: string; // UUID
+  name: string | null;
+  email: string | null;
+  geographic_info: string | null;
+  loyalty_indicator: string | null; // Consider a more specific type if applicable, e.g., enum
+  created_at: string; // Timestamp
+  updated_at: string; // Timestamp
+  user_id: string; // UUID
+}
+
+export interface InqEmails {
+  email_id: string; // UUID
+  received_at: string; // Timestamp
+  customer_id: string | null; // UUID, foreign key to inq_customers
+  email_summary: string | null;
+  priority_level: string | null; // Consider enum: 'high', 'medium', 'low'
+  sentiment_overall: string | null; // Consider enum
+  customer_intent: string | null;
+  inquiry_email_id: string; // This seems like an external ID
+  language: string | null;
+  loyalty_indicator: string | null; // Consider enum
+  email_subject: string | null;
+  created_at: string; // Timestamp
+  updated_at: string; // Timestamp
+  include_manager: string | null; // Consider enum or boolean
+  email_account_id: string | null; // UUID, foreign key (assuming to an accounts table)
+  funnel_stage: string | null; // Consider enum
+}
+
+export interface InqKeyQuestions {
+  question_id: string; // UUID
+  email_id: string; // UUID, foreign key to inq_emails
+  question_text: string | null;
+  confidence_score: number | null; // Assuming numeric, potentially string if '0.7' is stored as string
+  created_at: string; // Timestamp
+  updated_at: string; // Timestamp
+}
+
+export interface InqProducts {
+  interest_id: string; // UUID
+  email_id: string; // UUID, foreign key to inq_emails
+  product_name: string | null;
+  created_at: string; // Timestamp
+  updated_at: string; // Timestamp
+}
+
+export interface InqResponses {
+  response_id: string; // UUID
+  email_id: string; // UUID, foreign key to inq_emails
+  response_text: string | null;
+  confidence_score: number | null; // Assuming numeric
+  response_type: string | null; // Consider enum
+  reply_email_id: string | null; // This might be a foreign key or external ID
+  agent_id: string | null; // UUID, foreign key (assuming to an agents table)
+  created_at: string; // Timestamp
+  updated_at: string; // Timestamp
+  llm_response_id: string | null;
+  llm_model: string | null;
+  llm_prompt_tokens: number | null;
+  llm_completion_tokens: number | null;
+}
+
 export type Database = {
   public: {
     Tables: {
@@ -393,6 +456,31 @@ export type Database = {
         }
         Relationships: []
       }
+      inq_customers: {
+        Row: InqCustomers;
+        Insert: Partial<InqCustomers>;
+        Update: Partial<InqCustomers>;
+      };
+      inq_emails: {
+        Row: InqEmails;
+        Insert: Partial<InqEmails>;
+        Update: Partial<InqEmails>;
+      };
+      inq_key_questions: {
+        Row: InqKeyQuestions;
+        Insert: Partial<InqKeyQuestions>;
+        Update: Partial<InqKeyQuestions>;
+      };
+      inq_products: {
+        Row: InqProducts;
+        Insert: Partial<InqProducts>;
+        Update: Partial<InqProducts>;
+      };
+      inq_responses: {
+        Row: InqResponses;
+        Insert: Partial<InqResponses>;
+        Update: Partial<InqResponses>;
+      };
     }
     Views: {
       [_ in never]: never
