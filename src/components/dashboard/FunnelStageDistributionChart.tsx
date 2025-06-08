@@ -87,31 +87,39 @@ export function FunnelStageDistributionChart({ emails, isLoading }: FunnelStageD
         <CardTitle className="text-lg font-semibold">Funnel Stage Distribution</CardTitle>
         <CardDescription>Distribution of emails across funnel stages.</CardDescription>
       </CardHeader>
-      <CardContent>
-        <ResponsiveContainer width="100%" height={300}>
-          {/* Ensure there's enough top margin for labels if position="top" is used, or enough bar height for "inside" positions */}
-          <BarChart data={chartData} layout="vertical" margin={{ top: 5, right: 35, left: 100, bottom: 5 }}>
+      <CardContent style={{ height: 300 }}> {/* fixed container height */}
+        <ResponsiveContainer width="100%" height="100%">
+          <BarChart
+            data={chartData}
+            layout="vertical"
+            margin={{ top: 5, right: 20, left: 20, bottom: 5 }}  {/* tighter gutters */}
+          >
             <CartesianGrid strokeDasharray="3 3" />
-            {/* XAxis is now numerical (for counts) */}
-            <XAxis type="number" allowDecimals={false} /> 
-            {/* YAxis is now categorical (for stage names) */}
-            <YAxis 
-              type="category" 
-              tick={{ fontSize: '10px' }} 
-              interval={0}       // Ensure all labels are shown
+            <XAxis type="number" allowDecimals={false} />
+            <YAxis
+              dataKey="name"            // explicitly map category
+              type="category"
+              tick={{ fontSize: 10 }}
+              width={100}               // reserve space for long names
+              interval={0}
             />
-            <Tooltip formatter={(value: number, name: string, entry) => [value, entry.payload.name]} />
-            <Bar dataKey="count"> {/* Bar still uses 'count' for its length */}
-              {/* LabelList to render stage names inside bars */}
+            <Tooltip formatter={(value: number, _name: string, entry) => [value, entry.payload.name]} />
+
+            <Bar dataKey="count">
               <LabelList
-                dataKey="name"      // Display the stage name
-                angle={0}           // Horizontal
-                style={{ fontSize: '10px', fill: '#000' }} // Black text for visibility
+                dataKey="count"           // show the numeric value
+                position="insideRight"    // inside the bar, on the right
+                offset={-5}               // nudge it a bit away from the edge
+                style={{ fontSize: 10, fill: '#fff' }}
               />
-              {chartData.map((entry, index) => (
+              {chartData.map((entry, idx) => (
                 <Cell
-                    key={`cell-${index}`}
-                    fill={FUNNEL_STAGE_COLORS[entry.name.toLowerCase() as keyof typeof FUNNEL_STAGE_COLORS] || FUNNEL_STAGE_COLORS.unknown}
+                  key={idx}
+                  fill={
+                    FUNNEL_STAGE_COLORS[
+                      entry.name.toLowerCase() as keyof typeof FUNNEL_STAGE_COLORS
+                    ] || FUNNEL_STAGE_COLORS.unknown
+                  }
                 />
               ))}
             </Bar>
@@ -119,5 +127,6 @@ export function FunnelStageDistributionChart({ emails, isLoading }: FunnelStageD
         </ResponsiveContainer>
       </CardContent>
     </Card>
+
   );
 }
