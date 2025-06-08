@@ -1,16 +1,23 @@
 import React from 'react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { InqEmails } from '@/integrations/supabase/types'; // Adjust path if necessary
-import { Mail, MessageSquare, CalendarDays, Tag, BarChart2, AlertTriangle, CheckCircle, Clock } from 'lucide-react'; // Example icons
+import { InqEmails } from '@/integrations/supabase/types';
+import { Mail, MessageSquare, CalendarDays, Tag, BarChart2, AlertTriangle, CheckCircle, Clock, UserCircle } from 'lucide-react';
+import { Skeleton } from "@/components/ui/skeleton";
 
 interface EmailDetailsCardProps {
   email: InqEmails;
+  respondingAgentEmail?: string | null;
+  isLoadingAgentEmail?: boolean;
 }
 
-export function EmailDetailsCard({ email }: EmailDetailsCardProps) {
+export function EmailDetailsCard({
+  email,
+  respondingAgentEmail,
+  isLoadingAgentEmail
+}: EmailDetailsCardProps) {
   if (!email) {
-    return null; // Or a loading/placeholder state
+    return null;
   }
 
   const getPriorityIcon = (priority?: string | null) => {
@@ -83,6 +90,25 @@ export function EmailDetailsCard({ email }: EmailDetailsCardProps) {
           )}
         </div>
 
+        {/* Responding Agent Section */}
+        <div className="pt-2 mt-2 border-t">
+          {isLoadingAgentEmail ? (
+            <div className="flex items-center">
+              <UserCircle className="mr-2 h-4 w-4 text-muted-foreground" />
+              <Skeleton className="h-4 w-32" /> {/* Adjusted width for typical email length */}
+            </div>
+          ) : respondingAgentEmail ? (
+            <div className="flex items-center">
+              <UserCircle className="mr-2 h-4 w-4 text-muted-foreground" />
+              <span className="text-xs text-muted-foreground">Responded by: {respondingAgentEmail}</span>
+            </div>
+          ) : email.status === 'replied' ? ( // Check email.status (assuming selectedEmail is passed as 'email' prop)
+              <div className="flex items-center">
+                <UserCircle className="mr-2 h-4 w-4 text-muted-foreground" />
+                <span className="text-xs text-muted-foreground">Agent not specified or response not found</span>
+              </div>
+          ) : null}
+        </div>
       </CardContent>
     </Card>
   );

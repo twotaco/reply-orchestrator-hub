@@ -1,15 +1,22 @@
 import React from 'react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
-import { InqCustomers } from '@/integrations/supabase/types'; // Adjust path if necessary
-import { UserCircle, Mail, Award, MapPin, CalendarDays } from 'lucide-react'; // Example icons
+import { InqCustomers } from '@/integrations/supabase/types';
+import { UserCircle, Mail, Award, MapPin, CalendarDays, Filter, Smile, Frown, Meh } from 'lucide-react';
+import { Badge } from '@/components/ui/badge';
 
 interface CustomerSummaryCardProps {
   customer: InqCustomers;
+  currentFunnelStage?: string | null;
+  currentSentiment?: string | null;
 }
 
-export function CustomerSummaryCard({ customer }: CustomerSummaryCardProps) {
+export function CustomerSummaryCard({
+  customer,
+  currentFunnelStage,
+  currentSentiment
+}: CustomerSummaryCardProps) {
   if (!customer) {
-    return null; // Or a loading/placeholder state
+    return null;
   }
 
   return (
@@ -35,6 +42,24 @@ export function CustomerSummaryCard({ customer }: CustomerSummaryCardProps) {
           <div className="flex items-center">
             <MapPin className="mr-2 h-4 w-4 text-muted-foreground" />
             <span>Location: {customer.geographic_info}</span>
+          </div>
+        )}
+        {currentFunnelStage && (
+          <div className="flex items-center">
+            <Filter className="mr-2 h-4 w-4 text-muted-foreground" />
+            <span>Stage: <Badge variant="outline" className="capitalize ml-1">{currentFunnelStage}</Badge></span>
+          </div>
+        )}
+        {currentSentiment && (
+          <div className="flex items-center">
+            {currentSentiment.toLowerCase() === 'positive' && <Smile className="mr-2 h-4 w-4 text-green-500" />}
+            {currentSentiment.toLowerCase() === 'negative' && <Frown className="mr-2 h-4 w-4 text-red-500" />}
+            {currentSentiment.toLowerCase() === 'neutral' && <Meh className="mr-2 h-4 w-4 text-blue-500" />}
+            {currentSentiment.toLowerCase() === 'mixed' && <Meh className="mr-2 h-4 w-4 text-yellow-500" />}
+            {!(currentSentiment.toLowerCase() === 'positive' || currentSentiment.toLowerCase() === 'negative' || currentSentiment.toLowerCase() === 'neutral' || currentSentiment.toLowerCase() === 'mixed') && (
+              <Meh className="mr-2 h-4 w-4 text-muted-foreground" /> // Default for unknown/other
+            )}
+            <span>Sentiment: <Badge variant="secondary" className="capitalize ml-1">{currentSentiment}</Badge></span>
           </div>
         )}
         <div className="flex items-center pt-2">
