@@ -17,6 +17,7 @@ import {
   LayoutGrid, // New Icon for Dashboard
   TestTube
 } from 'lucide-react';
+import { Link } from 'react-router-dom';
 
 interface AppLayoutProps {
   children: React.ReactNode;
@@ -25,12 +26,12 @@ interface AppLayoutProps {
 }
 
 const navigation = [
-  { id: 'unifiedDashboard', name: 'Dashboard', icon: LayoutGrid }, // New Entry
-  { id: 'postmark', name: 'Postmark Setup', icon: Mail },
-  { id: 'mcps', name: 'Agent Tools Setup', icon: Terminal },
-  { id: 'knowreply', name: 'Know Reply Setup', icon: Zap },
-  { id: 'email-testing', name: 'Email Testing', icon: TestTube },
-  { id: 'logs', name: 'Activity Logs', icon: Activity },
+  { id: 'unifiedDashboard', name: 'Dashboard', icon: LayoutGrid, path: '/unified-dashboard' }, // New Entry
+  { id: 'postmark', name: 'Postmark Setup', icon: Mail, path: '/postmark' },
+  { id: 'mcps', name: 'Agent Tools Setup', icon: Terminal, path: '/mcps' },
+  { id: 'knowreply', name: 'Know Reply Setup', icon: Zap, path: '/knowreply' },
+  { id: 'email-testing', name: 'Email Testing', icon: TestTube, path: '/email-testing' },
+  { id: 'logs', name: 'Activity Logs', icon: Activity, path: '/logs' },
 ];
 
 export function AppLayout({ children, currentPage, onPageChange }: AppLayoutProps) {
@@ -58,20 +59,11 @@ export function AppLayout({ children, currentPage, onPageChange }: AppLayoutProp
                 <X className="h-4 w-4" />
               </Button>
             </div>
-            <nav className="flex-1 p-4 space-y-2">
+            <nav>
               {navigation.map((item) => (
-                <Button
-                  key={item.id}
-                  variant={currentPage === item.id ? "default" : "ghost"}
-                  className="w-full justify-start"
-                  onClick={() => {
-                    onPageChange(item.id);
-                    setSidebarOpen(false);
-                  }}
-                >
-                  <item.icon className="h-4 w-4 mr-2" />
+                <Link key={item.id} to={item.path}>
                   {item.name}
-                </Button>
+                </Link>
               ))}
             </nav>
           </motion.div>
@@ -84,17 +76,11 @@ export function AppLayout({ children, currentPage, onPageChange }: AppLayoutProp
           <img src="/knowreply-black-512x512.png" alt="Know Reply Hub Logo" className="h-8 w-8" />
           <span className="font-semibold text-gray-900">Know Reply Hub</span>
         </div>
-        <nav className="flex-1 p-4 space-y-2">
+        <nav>
           {navigation.map((item) => (
-            <Button
-              key={item.id}
-              variant={currentPage === item.id ? "default" : "ghost"}
-              className="w-full justify-start"
-              onClick={() => onPageChange(item.id)}
-            >
-              <item.icon className="h-4 w-4 mr-2" />
+            <Link key={item.id} to={item.path}>
               {item.name}
-            </Button>
+            </Link>
           ))}
         </nav>
       </div>
