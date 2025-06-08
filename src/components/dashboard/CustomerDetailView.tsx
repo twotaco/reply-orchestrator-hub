@@ -62,7 +62,7 @@ export function CustomerDetailView({
   const [isLoadingCustomerEmails, setIsLoadingCustomerEmails] = useState(true);
 
   useEffect(() => {
-    console.log('[CustomerDetailView] useEffect triggered. Selected Customer ID:', selectedCustomerId, 'Date Range:', dateRange);
+    // console.log('[CustomerDetailView] useEffect triggered. Selected Customer ID:', selectedCustomerId, 'Date Range:', dateRange); // REMOVED
 
     // The parent (UnifiedDashboardPage) now provides a stable onEmailSelect via useCallback.
     // So, we use onEmailSelect directly in the dependency array.
@@ -71,20 +71,20 @@ export function CustomerDetailView({
       setIsLoadingCustomerEmails(true);
       onEmailSelect(null); // Use the onEmailSelect prop directly
 
-      console.log('[CustomerDetailView] Fetching emails for customer:', selectedCustomerId, 'with range:', dateRange);
+      // console.log('[CustomerDetailView] Fetching emails for customer:', selectedCustomerId, 'with range:', dateRange); // REMOVED
       fetchEmailsForCustomer(selectedCustomerId, dateRange)
         .then(emails => {
-          console.log('[CustomerDetailView] Fetched emails:', emails);
+          // console.log('[CustomerDetailView] Fetched emails:', emails); // REMOVED
           setCustomerEmails(emails);
           setIsLoadingCustomerEmails(false);
         })
         .catch(error => {
-          console.error("[CustomerDetailView] Failed to load customer emails:", error);
+          console.error("[CustomerDetailView] Failed to load customer emails:", error); // Kept as error
           setCustomerEmails([]);
           setIsLoadingCustomerEmails(false);
         });
     } else {
-      console.log('[CustomerDetailView] No selected customer, clearing emails.');
+      // console.log('[CustomerDetailView] No selected customer, clearing emails.'); // REMOVED
       setCustomerEmails([]);
       setIsLoadingCustomerEmails(false);
     }

@@ -9,7 +9,7 @@ import { supabase } from '@/integrations/supabase/client';
 // Import Chart Components
 import { FunnelStageDistributionChart } from './FunnelStageDistributionChart';
 import { SimplePieChart } from '@/components/charts/SimplePieChart';
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'; // Legend removed from imports
 import { LineChart as LineChartIcon, HelpCircle } from 'lucide-react';
 
 // Import shared functions and types from dashboardUtils
@@ -23,18 +23,13 @@ import {
 
 interface AccountDetailViewProps {
   selectedAccountId: string | null;
-  // dateRange prop removed
   aggregateEmailsData?: InqEmails[] | null;
   isAggregateView?: boolean;
   isLoadingAggregateEmails?: boolean;
+  dateRange?: DateRange; // Keep dateRange as it's used by fetchEmailsForAccount
 }
 
 async function fetchEmailsForAccount(accountId: string, dateRange?: DateRange): Promise<InqEmails[]> {
-    // This function still needs dateRange for its query logic, even if AccountDetailView doesn't receive it directly as a top-level prop for other uses
-    // This is because UnifiedDashboardPage passes dateRange to this component, which then uses it for this fetch.
-    // For consistency, I will add dateRange back to props if this fetch function is to remain as is.
-    // However, the prompt for this overall task was to make AccountDetailView take dateRange.
-    // Let's assume dateRange IS passed from UnifiedDashboardPage as per the last successful diff there.
     let query = supabase.from('inq_emails').select('*').eq('email_account_id', accountId);
     if (dateRange?.from && dateRange?.to) {
         const fromDateStr = dateRange.from.toISOString();
@@ -42,7 +37,7 @@ async function fetchEmailsForAccount(accountId: string, dateRange?: DateRange): 
         toDate.setHours(23, 59, 59, 999);
         const toDateStr = toDate.toISOString();
         query = query.gte('received_at', fromDateStr).lte('received_at', toDateStr);
-    } else { return []; } // dateRange is used here
+    } else { return []; }
     query = query.order('received_at', { ascending: false });
     const { data, error } = await query;
     if (error) { console.error(`Error fetching emails for account ${accountId}:`, error); return []; }
@@ -51,11 +46,11 @@ async function fetchEmailsForAccount(accountId: string, dateRange?: DateRange): 
 
 export function AccountDetailView({
   selectedAccountId,
-  dateRange, // Added dateRange back to props as fetchEmailsForAccount uses it.
+  dateRange,
   aggregateEmailsData,
   isAggregateView,
   isLoadingAggregateEmails
-}: AccountDetailViewProps & { dateRange?: DateRange }) { // Added dateRange to destructuring
+}: AccountDetailViewProps) {
   const [accountEmails, setAccountEmails] = useState<InqEmails[]>([]);
   const [isLoadingAccountEmails, setIsLoadingAccountEmails] = useState(false);
 
@@ -160,7 +155,12 @@ export function AccountDetailView({
     <div className="space-y-6">
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         <Card>
-            <CardHeader><CardTitle className="text-sm font-medium">Volume Trend for "{viewTitle}"</CardTitle></CardHeader>
+            <CardHeader>
+                <CardTitle className="text-sm font-medium">Volume Trend</CardTitle>
+                <CardDescription className="text-xs text-muted-foreground">
+                    {viewTitle === "All Inbound Accounts" ? "All Inbound Accounts (Aggregated)" : `Account: ${viewTitle}`}
+                </CardDescription>
+            </CardHeader>
             <CardContent className="h-64">
                 {currentOverallLoadingState ? <Skeleton className="h-full w-full" /> : volumeTrendData.length > 0 ? (
                     <ResponsiveContainer width="100%" height="100%">
@@ -169,7 +169,7 @@ export function AccountDetailView({
                             <XAxis dataKey="date" tickFormatter={(tick) => new Date(tick).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} angle={-30} textAnchor="end" height={50}/>
                             <YAxis allowDecimals={false} />
                             <Tooltip labelFormatter={(label) => new Date(label).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })} />
-                            <Legend />
+                            {/* <Legend /> */} {/* REMOVED */}
                             <Line type="monotone" dataKey="count" name="Emails" stroke="#8884d8" strokeWidth={2} dot={{ r: 3 }} activeDot={{ r: 6 }} />
                         </LineChart>
                     </ResponsiveContainer>

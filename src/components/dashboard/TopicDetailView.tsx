@@ -76,8 +76,14 @@ export function TopicDetailView({ selectedTopic }: TopicDetailViewProps) {
   return (
     <div className="space-y-6">
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        {/* Row 1, Cell 1: Volume Trend */}
         <Card>
-            <CardHeader><CardTitle className="text-sm font-medium">Volume Trend for "{selectedTopic.displayName}"</CardTitle></CardHeader>
+            <CardHeader>
+                <CardTitle className="text-sm font-medium">Volume Trend</CardTitle> {/* CHANGED */}
+                <CardDescription className="text-xs text-muted-foreground">
+                    {selectedTopic.displayName === "ALL_TOPICS_AGGREGATED" ? "All Topics (Aggregated)" : `Topic: ${selectedTopic.displayName}`}
+                </CardDescription> {/* ADDED */}
+            </CardHeader>
             <CardContent className="h-64">
                 {volumeTrendData.length > 0 ? (
                     <ResponsiveContainer width="100%" height="100%">
@@ -86,7 +92,7 @@ export function TopicDetailView({ selectedTopic }: TopicDetailViewProps) {
                             <XAxis dataKey="date" tickFormatter={(tick) => new Date(tick).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} angle={-30} textAnchor="end" height={50}/>
                             <YAxis allowDecimals={false} />
                             <Tooltip labelFormatter={(label) => new Date(label).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })} />
-                            <Legend />
+                            {/* <Legend /> */} {/* REMOVED */}
                             <Line type="monotone" dataKey="count" name="Emails" stroke="#8884d8" strokeWidth={2} dot={{ r: 3 }} activeDot={{ r: 6 }} />
                         </LineChart>
                     </ResponsiveContainer>

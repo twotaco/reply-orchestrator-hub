@@ -112,37 +112,33 @@ async function fetchInboundAccounts(dateRange?: DateRange): Promise<InboundAccou
     const toDateStr = toDate.toISOString();
     emailQuery = emailQuery.gte('received_at', fromDateStr).lte('received_at', toDateStr);
   } else {
-    console.warn("[fetchInboundAccounts] Date range is required.");
+    // console.warn("[fetchInboundAccounts] Date range is required."); // REMOVED
     return [];
   }
 
   const { data: emails, error } = await emailQuery;
 
   if (error) {
-    console.error('[fetchInboundAccounts] Error fetching emails for inbound accounts:', error);
+    console.error('[fetchInboundAccounts] Error fetching emails for inbound accounts:', error); // Kept this error log
     return [];
   }
 
-  console.log('[fetchInboundAccounts] Raw emails data from Supabase:', emails); // Logging point
+  // console.log('[fetchInboundAccounts] Raw emails data from Supabase:', emails); // REMOVED
 
   if (!emails || emails.length === 0) {
-    console.log('[fetchInboundAccounts] No emails found after query.');
+    // console.log('[fetchInboundAccounts] No emails found after query.'); // REMOVED
     return [];
   }
 
   const accountsMap = new Map<string, { name: string; count: number }>();
 
   emails.forEach(email => {
-    // Ensure email_account_id exists
     if (!email.email_account_id) {
-      // console.log('[fetchInboundAccounts] Skipping email due to missing email_account_id:', email);
       return;
     }
 
-    // Check the structure of agent_email_mappings
     const mapping = email.agent_email_mappings;
     if (mapping && !Array.isArray(mapping) && typeof mapping === 'object' && mapping.email_address) {
-      // This is the expected structure for a to-one join where mapping is an object
       const accountId = email.email_account_id;
       const emailAddress = mapping.email_address;
 
@@ -152,19 +148,13 @@ async function fetchInboundAccounts(dateRange?: DateRange): Promise<InboundAccou
       } else {
         accountsMap.set(accountId, { name: emailAddress, count: 1 });
       }
-    } else if (mapping) {
-        // Log if mapping exists but is not the expected structure or email_address is missing
-        // console.log('[fetchInboundAccounts] Skipping email due to unexpected mapping structure or missing email_address:', email.email_account_id, mapping);
-    } else {
-        // Log if no mapping found for an email_account_id (agent_email_mappings is null)
-        // console.log('[fetchInboundAccounts] No agent_email_mapping found for email_account_id:', email.email_account_id);
     }
   });
 
-  console.log('[fetchInboundAccounts] Processed accountsMap:', accountsMap);
+  // console.log('[fetchInboundAccounts] Processed accountsMap:', accountsMap); // REMOVED
 
   if (accountsMap.size === 0) {
-    console.log('[fetchInboundAccounts] No accounts with valid mappings and email addresses found.');
+    // console.log('[fetchInboundAccounts] No accounts with valid mappings and email addresses found.'); // REMOVED
   }
 
   return Array.from(accountsMap.entries())
@@ -345,8 +335,8 @@ export function UnifiedDashboardPage() {
     isAccountAggregateView = true;
   }
 
-  // New Logging Point
-  console.log('[UnifiedDashboardPage Render] isLoadingAccounts:', isLoadingAccounts, 'Accounts State:', accounts, 'Filtered Accounts:', filteredAccounts);
+
+  // console.log('[UnifiedDashboardPage Render] isLoadingAccounts:', isLoadingAccounts, 'Accounts State:', accounts, 'Filtered Accounts:', filteredAccounts); // REMOVED
 
   return (
     <div className="container mx-auto p-4 md:p-6 lg:p-8 space-y-6">

@@ -1,5 +1,5 @@
 import React from 'react';
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, Cell } from 'recharts';
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Cell, ResponsiveContainer, LabelList } from 'recharts'; // Added LabelList
 import { InqEmails } from '@/integrations/supabase/types'; // Adjust if necessary
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Filter } from 'lucide-react'; // Icon for legend/empty state
@@ -91,14 +91,27 @@ export function FunnelStageDistributionChart({ emails, isLoading }: FunnelStageD
       </CardHeader>
       <CardContent>
         <ResponsiveContainer width="100%" height={300}>
-          <BarChart data={chartData} margin={{ top: 5, right: 20, left: -20, bottom: 70 }}> {/* Adjusted bottom margin for XAxis labels */}
+          <BarChart data={chartData} margin={{ top: 20, right: 20, left: -20, bottom: 5 }}> {/* Adjusted margins */}
             <CartesianGrid strokeDasharray="3 3" />
-            <XAxis dataKey="name" angle={-45} textAnchor="end" height={70} interval={0} tick={{ fontSize: 10 }} />
+            {/* Simplified XAxis - ticks and labels are now on the bars */}
+            <XAxis dataKey="name" axisLine={true} tickLine={false} tick={false} height={10} />
             <YAxis allowDecimals={false} />
-            <Tooltip formatter={(value: number, name: string) => [value, name === 'count' ? 'Count' : name]} /> {/* Changed 'Emails' to 'Count' in tooltip for generality */}
-            <Bar dataKey="count"> {/* Removed name="Emails" */}
+            <Tooltip formatter={(value: number, name: string, entry) => [value, entry.payload.name]} /> {/* Tooltip shows stage name and count */}
+            {/* Legend was already removed in a previous step */}
+            <Bar dataKey="count">
+              {/* LabelList to render stage names inside/on bars */}
+              <LabelList
+                dataKey="name"
+                position="insideTop" // Try different positions: 'top', 'center', 'insideStart', 'insideEnd', 'insideBottom'
+                angle={-45}      // Angle for readability if names are long
+                offset={5}      // Adjust offset as needed
+                style={{ fontSize: '10px', fill: '#333' }} // Style for the label, fill color might need to be dynamic based on bar color
+              />
               {chartData.map((entry, index) => (
-                <Cell key={`cell-${index}`} fill={FUNNEL_STAGE_COLORS[entry.name.toLowerCase() as keyof typeof FUNNEL_STAGE_COLORS] || FUNNEL_STAGE_COLORS.unknown} />
+                <Cell
+                    key={`cell-${index}`}
+                    fill={FUNNEL_STAGE_COLORS[entry.name.toLowerCase() as keyof typeof FUNNEL_STAGE_COLORS] || FUNNEL_STAGE_COLORS.unknown}
+                />
               ))}
             </Bar>
           </BarChart>
