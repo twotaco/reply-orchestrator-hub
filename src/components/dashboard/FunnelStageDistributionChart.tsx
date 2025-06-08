@@ -90,30 +90,36 @@ export function FunnelStageDistributionChart({ emails, isLoading }: FunnelStageD
       <CardContent>
         <ResponsiveContainer width="100%" height={300}>
           {/* Ensure there's enough top margin for labels if position="top" is used, or enough bar height for "inside" positions */}
-      <BarChart data={chartData} margin={{ top: 25, right: 20, left: -20, bottom: 5 }}>
-        <CartesianGrid strokeDasharray="3 3" />
-        {/* Simplified XAxis - ticks and labels are now on the bars */}
-        <XAxis dataKey="name" axisLine={true} tickLine={false} tick={false} height={10} />
-        <YAxis allowDecimals={false} />
-        <Tooltip formatter={(value: number, name: string, entry) => [value, entry.payload.name]} /> {/* Tooltip shows stage name and count */}
-        {/* Legend was already removed in a previous step */}
-        <Bar dataKey="count">
-          {/* LabelList to render stage names inside/on bars */}
-          <LabelList
-            dataKey="name"
-            position="top" // Position labels at the top of the bars
-            angle={0}         // Horizontal labels
-            offset={5}        // Small offset from the top of the bar
-            style={{ fontSize: '10px', fill: '#555' }} // Adjusted fill for visibility, assuming light background
-          />
-          {chartData.map((entry, index) => (
-            <Cell
-                key={`cell-${index}`}
-                fill={FUNNEL_STAGE_COLORS[entry.name.toLowerCase() as keyof typeof FUNNEL_STAGE_COLORS] || FUNNEL_STAGE_COLORS.unknown}
+          <BarChart data={chartData} layout="vertical" margin={{ top: 5, right: 35, left: 100, bottom: 5 }}>
+            <CartesianGrid strokeDasharray="3 3" />
+            {/* XAxis is now numerical (for counts) */}
+            <XAxis type="number" allowDecimals={false} /> 
+            {/* YAxis is now categorical (for stage names) */}
+            <YAxis 
+              type="category" 
+              dataKey="name" 
+              width={100}        // Adjust width based on longest stage name
+              tick={{ fontSize: '10px' }} 
+              interval={0}       // Ensure all labels are shown
             />
-          ))}
-        </Bar>
-      </BarChart>
+            <Tooltip formatter={(value: number, name: string, entry) => [value, entry.payload.name]} />
+            <Bar dataKey="count"> {/* Bar still uses 'count' for its length */}
+              {/* LabelList to render stage names inside bars */}
+              <LabelList
+                dataKey="name"      // Display the stage name
+                position="insideRight" // e.g., inside the bar, to the right
+                angle={0}           // Horizontal
+                offset={5}          // Small offset from the inside edge
+                style={{ fontSize: '10px', fill: '#fff' }} // White fill for better contrast on colored bars
+              />
+              {chartData.map((entry, index) => (
+                <Cell
+                    key={`cell-${index}`}
+                    fill={FUNNEL_STAGE_COLORS[entry.name.toLowerCase() as keyof typeof FUNNEL_STAGE_COLORS] || FUNNEL_STAGE_COLORS.unknown}
+                />
+              ))}
+            </Bar>
+          </BarChart>
         </ResponsiveContainer>
       </CardContent>
     </Card>
