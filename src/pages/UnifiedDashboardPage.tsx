@@ -5,18 +5,18 @@ import { Button } from '@/components/ui/button';
 import { DateRangePicker } from '@/components/ui/DateRangePicker';
 import { KpiRow } from '@/components/dashboard/KpiRow';
 import { supabase } from '@/integrations/supabase/client';
-import type { InqCustomers, InqEmails, InqKeyQuestions } from '@/integrations/supabase/types';
+import type { InqCustomers, InqEmails, InqKeyQuestions, InqResponses } from '@/integrations/supabase/types';
 import { SelectionColumn, type SelectionType } from '@/components/dashboard/SelectionColumn';
 import { CustomerDetailView } from '@/components/dashboard/CustomerDetailView';
-import { TopicDetailView } from '@/components/dashboard/TopicDetailView'; // Import new component
+import { TopicDetailView } from '@/components/dashboard/TopicDetailView';
+import { AccountDetailView } from '@/components/dashboard/AccountDetailView'; // Import new component
 import { Card, CardContent } from '@/components/ui/card';
 
-// Local ProcessedTopic interface (ensure it matches what fetchAndProcessTopics returns)
 export interface ProcessedTopic {
   id: string;
   displayName: string;
   emailCount: number;
-  emails: Pick<InqEmails, 'sentiment_overall' | 'funnel_stage' | 'include_manager'>[];
+  emails: Pick<InqEmails, 'email_id' | 'sentiment_overall' | 'funnel_stage' | 'include_manager' | 'received_at'>[];
 }
 
 interface InboundAccount {
@@ -37,7 +37,7 @@ function normalizeSubject(subject: string | null): string {
 }
 
 async function fetchAndProcessTopics(dateRange?: DateRange): Promise<ProcessedTopic[]> {
-  let query = supabase.from('inq_emails').select('email_subject, sentiment_overall, funnel_stage, include_manager, received_at');
+  let query = supabase.from('inq_emails').select('email_id, email_subject, sentiment_overall, funnel_stage, include_manager, received_at');
   if (dateRange?.from && dateRange?.to) {
     const fromDateStr = dateRange.from.toISOString();
     const toDate = new Date(dateRange.to);
@@ -49,9 +49,9 @@ async function fetchAndProcessTopics(dateRange?: DateRange): Promise<ProcessedTo
   if (error) { console.error('Error fetching emails for topics:', error); return []; }
   if (!emails) return [];
   const topicsMap = new Map<string, ProcessedTopic>();
-  emails.forEach((email: Partial<InqEmails>) => {
+  emails.forEach((email: Pick<InqEmails, 'email_id' | 'email_subject' | 'sentiment_overall' | 'funnel_stage' | 'include_manager' | 'received_at'>) => {
     const normalized = normalizeSubject(email.email_subject);
-    const emailData = { sentiment_overall: email.sentiment_overall || null, funnel_stage: email.funnel_stage || null, include_manager: email.include_manager || null };
+    const emailData = { email_id: email.email_id, sentiment_overall: email.sentiment_overall || null, funnel_stage: email.funnel_stage || null, include_manager: email.include_manager || null, received_at: email.received_at, };
     if (topicsMap.has(normalized)) {
       const existingTopic = topicsMap.get(normalized)!;
       existingTopic.emailCount++; existingTopic.emails.push(emailData);
@@ -235,10 +235,13 @@ export function UnifiedDashboardPage() {
           ) : activeSelectionType === 'topic' && selectedTopicId && selectedTopicObject ? (
             <TopicDetailView
               selectedTopic={selectedTopicObject}
-              dateRange={dateRange} // Pass dateRange if TopicDetailView might use it
+              dateRange={dateRange}
             />
           ) : activeSelectionType === 'account' && selectedAccountId ? (
-            <Card className="h-full"><CardContent className="p-4 flex items-center justify-center min-h-[300px]"><p>Account Detail View for: <strong>{selectedAccountId}</strong> (Placeholder)</p></CardContent></Card>
+            <AccountDetailView
+              selectedAccountId={selectedAccountId}
+              dateRange={dateRange}
+            />
           ) : (
             <Card className="flex items-center justify-center min-h-[300px] h-full">
               <p className="text-muted-foreground">Select an item from the left panel to see details.</p>

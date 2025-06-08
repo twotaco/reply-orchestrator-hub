@@ -1,4 +1,3 @@
-
 import { useState } from 'react';
 import { AuthProvider, useAuth } from '@/hooks/useAuth';
 import { AuthPage } from '@/components/auth/AuthPage';
@@ -10,11 +9,12 @@ import { MCPManagement } from '@/components/mcp/MCPManagement';
 import { EmailTesting } from '@/components/email-testing/EmailTesting';
 import { ActivityLogs } from '@/components/activity-logs/ActivityLogs';
 import { BusinessDashboardPage } from '@/pages/BusinessDashboardPage';
-import { TopicsDashboardPage } from '@/pages/TopicsDashboardPage'; // New Import
+import { TopicsDashboardPage } from '@/pages/TopicsDashboardPage';
+import { UnifiedDashboardPage } from '@/pages/UnifiedDashboardPage'; // New Import
 
 function AppContent() {
   const { user, loading } = useAuth();
-  const [currentPage, setCurrentPage] = useState('dashboard');
+  const [currentPage, setCurrentPage] = useState('unifiedDashboard'); // Default to new page for testing
 
   if (loading) {
     return (
@@ -34,8 +34,10 @@ function AppContent() {
         return <Dashboard />;
       case 'businessDashboard':
         return <BusinessDashboardPage />;
-      case 'topicsDashboard': // New Case
+      case 'topicsDashboard':
         return <TopicsDashboardPage />;
+      case 'unifiedDashboard': // New Case
+        return <UnifiedDashboardPage />;
       case 'postmark':
         return <PostmarkSetup />;
       case 'knowreply':
@@ -45,9 +47,9 @@ function AppContent() {
       case 'email-testing':
         return <EmailTesting />;
       case 'logs':
-                return <ActivityLogs />;
+        return <ActivityLogs />;
       default:
-        return <Dashboard />;
+        return <UnifiedDashboardPage />; // Default to new page for testing
     }
   };
 

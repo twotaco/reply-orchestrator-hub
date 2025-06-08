@@ -1,4 +1,3 @@
-
 import { useState } from 'react';
 import { motion } from 'framer-motion';
 import { useAuth } from '@/hooks/useAuth';
@@ -14,7 +13,8 @@ import {
   Menu,
   X,
   Briefcase,
-  Tag, // Add Tag
+  Tag,
+  LayoutGrid, // New Icon for Unified Dashboard
   TestTube
 } from 'lucide-react';
 
@@ -27,7 +27,8 @@ interface AppLayoutProps {
 const navigation = [
   { id: 'dashboard', name: 'Dashboard', icon: LayoutDashboard },
   { id: 'businessDashboard', name: 'Business Dashboard', icon: Briefcase },
-  { id: 'topicsDashboard', name: 'Topics Dashboard', icon: Tag }, // New Entry
+  { id: 'topicsDashboard', name: 'Topics Dashboard', icon: Tag },
+  { id: 'unifiedDashboard', name: 'Unified Dashboard', icon: LayoutGrid }, // New Entry
   { id: 'postmark', name: 'Postmark Setup', icon: Mail },
   { id: 'mcps', name: 'Agent Tools Setup', icon: Terminal },
   { id: 'knowreply', name: 'Know Reply Setup', icon: Zap },
