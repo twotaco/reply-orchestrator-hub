@@ -72,8 +72,9 @@ async function fetchInboundAccounts(dateRange?: DateRange): Promise<InboundAccou
       received_at,
       agent_email_mappings ( id, email_address )
     `)
-    .not('email_account_id', 'is', null)
-    .not('agent_email_mappings', 'is', null); // Ensure we only get emails with a mapping
+    .not('email_account_id', 'is', null);
+    // Removed .not('agent_email_mappings', 'is', null') for now to see all results from inq_emails initially for debugging.
+    // We will filter client-side if agent_email_mappings is null.
 
   if (dateRange?.from && dateRange?.to) {
     const fromDateStr = dateRange.from.toISOString();
@@ -82,37 +83,60 @@ async function fetchInboundAccounts(dateRange?: DateRange): Promise<InboundAccou
     const toDateStr = toDate.toISOString();
     emailQuery = emailQuery.gte('received_at', fromDateStr).lte('received_at', toDateStr);
   } else {
-    return []; // Must have a date range
+    console.warn("[fetchInboundAccounts] Date range is required.");
+    return [];
   }
 
   const { data: emails, error } = await emailQuery;
 
   if (error) {
-    console.error('Error fetching emails for inbound accounts:', error);
+    console.error('[fetchInboundAccounts] Error fetching emails for inbound accounts:', error);
     return [];
   }
-  if (!emails) return [];
+
+  console.log('[fetchInboundAccounts] Raw emails data from Supabase:', emails); // Logging point
+
+  if (!emails || emails.length === 0) {
+    console.log('[fetchInboundAccounts] No emails found after query.');
+    return [];
+  }
 
   const accountsMap = new Map<string, { name: string; count: number }>();
 
   emails.forEach(email => {
-    // Ensure agent_email_mappings is not an array and has the needed properties
-    // Also ensure email_account_id is present.
-    if (email.email_account_id && email.agent_email_mappings && !Array.isArray(email.agent_email_mappings)) {
-      const mapping = email.agent_email_mappings as { id: string; email_address: string };
+    // Ensure email_account_id exists
+    if (!email.email_account_id) {
+      // console.log('[fetchInboundAccounts] Skipping email due to missing email_account_id:', email);
+      return;
+    }
+
+    // Check the structure of agent_email_mappings
+    const mapping = email.agent_email_mappings;
+    if (mapping && !Array.isArray(mapping) && typeof mapping === 'object' && mapping.email_address) {
+      // This is the expected structure for a to-one join where mapping is an object
       const accountId = email.email_account_id;
+      const emailAddress = mapping.email_address;
 
       const current = accountsMap.get(accountId);
       if (current) {
         accountsMap.set(accountId, { ...current, count: current.count + 1 });
       } else {
-        // Only set if mapping.email_address is valid
-        if (mapping.email_address) {
-          accountsMap.set(accountId, { name: mapping.email_address, count: 1 });
-        }
+        accountsMap.set(accountId, { name: emailAddress, count: 1 });
       }
+    } else if (mapping) {
+        // Log if mapping exists but is not the expected structure or email_address is missing
+        // console.log('[fetchInboundAccounts] Skipping email due to unexpected mapping structure or missing email_address:', email.email_account_id, mapping);
+    } else {
+        // Log if no mapping found for an email_account_id (agent_email_mappings is null)
+        // console.log('[fetchInboundAccounts] No agent_email_mapping found for email_account_id:', email.email_account_id);
     }
   });
+
+  console.log('[fetchInboundAccounts] Processed accountsMap:', accountsMap);
+
+  if (accountsMap.size === 0) {
+    console.log('[fetchInboundAccounts] No accounts with valid mappings and email addresses found.');
+  }
 
   return Array.from(accountsMap.entries())
     .map(([id, { name, count }]) => ({
@@ -123,18 +147,6 @@ async function fetchInboundAccounts(dateRange?: DateRange): Promise<InboundAccou
     .sort((a,b) => b.count - a.count);
 }
 
-
-async function fetchEmailById(emailId: string): Promise<InqEmails | null> {
-    const { data, error } = await supabase.from('inq_emails').select('*').eq('email_id', emailId).single();
-    if (error) { console.error(`Error fetching email ${emailId}:`, error); return null; }
-    return data;
-}
-
-async function fetchKeyQuestionsForEmail(emailId: string): Promise<InqKeyQuestions[]> {
-    const { data, error } = await supabase.from('inq_key_questions').select('*').eq('email_id', emailId).order('created_at', { ascending: true });
-    if (error) { console.error(`Error fetching key questions for email ${emailId}:`, error); return []; }
-    return data || [];
-}
 
 // New function to fetch all emails that have an email_account_id (for "All Accounts" view)
 async function fetchAllEmailsWithAccounts(dateRange?: DateRange): Promise<InqEmails[]> {
@@ -286,19 +298,13 @@ export function UnifiedDashboardPage() {
 
   const selectedCustomerObject = customers.find(c => c.customer_id === selectedCustomerId) || null;
 
-  // Logic for selectedTopicObject or "All Topics" aggregate
   let topicDetailViewData: ProcessedTopic | null = null;
   if (activeSelectionType === 'topic') {
     if (selectedTopicId) {
       topicDetailViewData = topics.find(t => t.id === selectedTopicId) || null;
-    } else if (topics.length > 0) { // If no specific topic selected, but 'topic' type is active and topics exist
+    } else if (topics.length > 0) {
       const allEmailsFromTopics = topics.reduce((acc, topic) => acc.concat(topic.emails), [] as ProcessedTopic['emails']);
-      topicDetailViewData = {
-        id: "ALL_TOPICS_AGGREGATED",
-        displayName: "All Topics (Aggregated)",
-        emailCount: allEmailsFromTopics.length,
-        emails: allEmailsFromTopics
-      };
+      topicDetailViewData = { id: "ALL_TOPICS_AGGREGATED", displayName: "All Topics (Aggregated)", emailCount: allEmailsFromTopics.length, emails: allEmailsFromTopics };
     }
   }
 
@@ -346,9 +352,9 @@ export function UnifiedDashboardPage() {
               keyQuestions={keyQuestions}
               isLoadingKeyQuestions={isLoadingKeyQuestions}
             />
-          ) : activeSelectionType === 'topic' && topicDetailViewData ? ( // Use the new topicDetailViewData
+          ) : activeSelectionType === 'topic' && topicDetailViewData ? (
             <TopicDetailView
-              selectedTopic={topicDetailViewData} // This can be a specific topic or the "All Topics" aggregate
+              selectedTopic={topicDetailViewData}
               dateRange={dateRange}
             />
           ) : activeSelectionType === 'account' ? (
