@@ -87,12 +87,12 @@ export function FunnelStageDistributionChart({ emails, isLoading }: FunnelStageD
         <CardTitle className="text-lg font-semibold">Funnel Stage Distribution</CardTitle>
         <CardDescription>Distribution of emails across funnel stages.</CardDescription>
       </CardHeader>
-      <CardContent style={{ height: 300 }}> {/* fixed container height */}
+      <CardContent style={{ height: 300 }}> 
         <ResponsiveContainer width="100%" height="100%">
           <BarChart
             data={chartData}
             layout="vertical"
-            margin={{ top: 5, right: 20, left: 20, bottom: 5 }}  {/* tighter gutters */}
+            margin={{ top: 5, right: 20, left: 20, bottom: 5 }} 
           >
             <CartesianGrid strokeDasharray="3 3" />
             <XAxis type="number" allowDecimals={false} />
