@@ -476,58 +476,6 @@ export function Dashboard() {
               )}
             </div>
           </>
-                </CardTitle>
-                <div className="flex flex-wrap items-center gap-4 pt-2">
-                  <div className="flex items-center gap-2">
-                    <Label htmlFor="priority-filter" className="text-sm">Priority:</Label>
-                    <Select value={priorityFilter} onValueChange={setPriorityFilter}>
-                      <SelectTrigger id="priority-filter" className="w-[120px] h-8 text-xs">
-                        <SelectValue placeholder="Select priority" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="all">All</SelectItem>
-                        <SelectItem value="high">High</SelectItem>
-                        <SelectItem value="medium">Medium</SelectItem>
-                        <SelectItem value="low">Low</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div className="flex items-center space-x-2">
-                    <Checkbox
-                      id="escalation-filter"
-                      checked={escalationFilter}
-                      onCheckedChange={(checked) => setEscalationFilter(checked as boolean)}
-                    />
-                    <Label htmlFor="escalation-filter" className="text-sm font-medium">
-                      Manager Escalated
-                    </Label>
-                  </div>
-                </div>
-              </CardHeader>
-              <CardContent className="flex-grow overflow-hidden">
-                {loadingCustomerDetails ? (
-                  <div className="space-y-2">
-                    {[...Array(5)].map((_, i) => <Skeleton key={i} className="h-10 w-full" />)}
-                  </div>
-                ) : (
-                  <ScrollArea className="h-full pr-3">
-                    {furtherFilteredEmails.length > 0 ? furtherFilteredEmails.map(email => (
-                      <div
-                        key={email.email_id}
-                        className={`p-3 mb-2 border rounded-lg hover:bg-accent cursor-pointer ${selectedEmail?.email_id === email.email_id ? 'bg-muted shadow-inner' : 'bg-card'}`}
-                        onClick={() => setSelectedEmail(email)}
-                      >
-                        <p className={`font-medium text-sm truncate ${selectedEmail?.email_id === email.email_id ? 'text-primary' : ''}`}>
-                          {email.email_subject || 'No Subject'}
-                        </p>
-                        <p className="text-xs text-muted-foreground">{new Date(email.received_at).toLocaleString()}</p>
-                      </div>
-                    )) : <p className="text-sm text-muted-foreground text-center py-10">No emails match your filters.</p>}
-                  </ScrollArea>
-                )}
-              </CardContent>
-            </Card>
-          </>
         ) : (
           <Card className="flex-grow flex items-center justify-center">
             <div className="text-center text-muted-foreground">
