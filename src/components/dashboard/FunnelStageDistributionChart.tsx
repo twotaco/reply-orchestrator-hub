@@ -107,10 +107,8 @@ export function FunnelStageDistributionChart({ emails, isLoading }: FunnelStageD
               {/* LabelList to render stage names inside bars */}
               <LabelList
                 dataKey="name"      // Display the stage name
-                position="insideRight" // e.g., inside the bar, to the right
                 angle={0}           // Horizontal
-                offset={5}          // Small offset from the inside edge
-                style={{ fontSize: '10px', fill: '#fff' }} // White fill for better contrast on colored bars
+                style={{ fontSize: '10px', fill: '#000' }} // Black text for visibility
               />
               {chartData.map((entry, index) => (
                 <Cell
