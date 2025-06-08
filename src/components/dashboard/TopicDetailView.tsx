@@ -3,7 +3,6 @@ import type { DateRange } from 'react-day-picker';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Skeleton } from '@/components/ui/skeleton';
-import { SentimentOverviewChart } from './SentimentOverviewChart';
 import { FunnelStageDistributionChart } from './FunnelStageDistributionChart';
 import { SimplePieChart } from '@/components/charts/SimplePieChart';
 import type { ProcessedTopic } from '@/pages/UnifiedDashboardPage';
@@ -120,7 +119,6 @@ export function TopicDetailView({ selectedTopic, dateRange }: TopicDetailViewPro
   return (
     <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 h-full">
       <div className="space-y-6">
-        <SentimentOverviewChart emails={topicEmailsForCharts} isLoading={false} />
         <FunnelStageDistributionChart emails={topicEmailsForCharts} isLoading={false} />
         <SimplePieChart title="Response Types" data={responseTypesData} isLoading={isLoadingResponseTypes} />
       </div>

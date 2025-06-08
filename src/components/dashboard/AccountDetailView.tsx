@@ -3,11 +3,10 @@ import type { DateRange } from 'react-day-picker';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Skeleton } from '@/components/ui/skeleton';
-import type { InqEmails, InqKeyQuestions } from '@/integrations/supabase/types'; // InqResponses no longer needed
+import type { InqEmails, InqKeyQuestions } from '@/integrations/supabase/types'; // InqResponses removed
 import { supabase } from '@/integrations/supabase/client'; // Keep for fetchEmailsForAccount
 
 // Import Chart Components
-import { SentimentOverviewChart } from './SentimentOverviewChart';
 import { FunnelStageDistributionChart } from './FunnelStageDistributionChart';
 import { SimplePieChart } from '@/components/charts/SimplePieChart';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
@@ -168,13 +167,12 @@ export function AccountDetailView({
   return (
     <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 h-full">
       <div className="space-y-6">
-        <SentimentOverviewChart emails={emailsToProcess || []} isLoading={!!currentOverallLoadingState} />
-        <FunnelStageDistributionChart emails={emailsToProcess || []} isLoading={!!currentOverallLoadingState} />
+        <FunnelStageDistributionChart emails={emailsToProcess || []} isLoading={currentOverallLoadingState || false} />
         <SimplePieChart title="Response Types" data={responseTypesData} isLoading={isLoadingResponseTypes} />
       </div>
 
       <div className="space-y-6">
-         <SimplePieChart data={managerEscalationData} title="Manager Escalation Status" isLoading={!!currentOverallLoadingState} />
+         <SimplePieChart data={managerEscalationData} title="Manager Escalation Status" isLoading={currentOverallLoadingState || false} />
          <Card>
             <CardHeader><CardTitle className="text-sm font-medium">Volume Trend for "{viewTitle}"</CardTitle></CardHeader>
             <CardContent className="h-64">

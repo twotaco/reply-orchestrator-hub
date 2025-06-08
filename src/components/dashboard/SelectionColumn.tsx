@@ -125,10 +125,11 @@ export function SelectionColumn({
         <p className="text-muted-foreground text-sm">No accounts found for this period.</p>
       ) : (
         <ScrollArea className="h-[200px]">
-          {/* Hardcoded debug item */}
+          {/* Hardcoded debug item REMOVED:
           <div className="p-2 border-b border-red-500 text-red-700">
             DEBUG: Static item in ScrollArea. Accounts count: {accounts.length}
           </div>
+          */}
           {accounts.map(account => (
             <Button
               key={account.id}

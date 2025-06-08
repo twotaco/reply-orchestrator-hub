@@ -95,9 +95,8 @@ export function FunnelStageDistributionChart({ emails, isLoading }: FunnelStageD
             <CartesianGrid strokeDasharray="3 3" />
             <XAxis dataKey="name" angle={-45} textAnchor="end" height={70} interval={0} tick={{ fontSize: 10 }} />
             <YAxis allowDecimals={false} />
-            <Tooltip formatter={(value: number, name: string) => [value, name === 'count' ? 'Emails' : name]} />
-            <Legend />
-            <Bar dataKey="count" name="Emails">
+            <Tooltip formatter={(value: number, name: string) => [value, name === 'count' ? 'Count' : name]} /> {/* Changed 'Emails' to 'Count' in tooltip for generality */}
+            <Bar dataKey="count"> {/* Removed name="Emails" */}
               {chartData.map((entry, index) => (
                 <Cell key={`cell-${index}`} fill={FUNNEL_STAGE_COLORS[entry.name.toLowerCase() as keyof typeof FUNNEL_STAGE_COLORS] || FUNNEL_STAGE_COLORS.unknown} />
               ))}
