@@ -159,7 +159,7 @@ export function AccountDetailView({
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         <Card>
             <CardHeader>
-                <CardTitle className="text-sm font-medium">Volume Trend</CardTitle>
+                <CardTitle className="text-lg font-semibold">Volume Trend</CardTitle>
                 <CardDescription className="text-xs text-muted-foreground">
                     {isAggregateView ? "All Inbound Accounts (Aggregated)" :
                      selectedAccountName ? `Account: ${selectedAccountName}` :

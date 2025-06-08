@@ -25,10 +25,7 @@ interface AppLayoutProps {
 }
 
 const navigation = [
-  { id: 'dashboard', name: 'Dashboard', icon: LayoutDashboard },
-  { id: 'businessDashboard', name: 'Business Dashboard', icon: Briefcase },
-  { id: 'topicsDashboard', name: 'Topics Dashboard', icon: Tag },
-  { id: 'unifiedDashboard', name: 'Unified Dashboard', icon: LayoutGrid }, // New Entry
+  { id: 'unifiedDashboard', name: 'Dashboard', icon: LayoutGrid }, // New Entry
   { id: 'postmark', name: 'Postmark Setup', icon: Mail },
   { id: 'mcps', name: 'Agent Tools Setup', icon: Terminal },
   { id: 'knowreply', name: 'Know Reply Setup', icon: Zap },

@@ -79,7 +79,7 @@ export function TopicDetailView({ selectedTopic }: TopicDetailViewProps) {
         {/* Row 1, Cell 1: Volume Trend */}
         <Card>
             <CardHeader>
-                <CardTitle className="text-sm font-medium">Volume Trend</CardTitle> {/* CHANGED */}
+                <CardTitle className="text-lg font-semibold">Volume Trend</CardTitle> {/* CHANGED */}
                 <CardDescription className="text-xs text-muted-foreground">
                     {selectedTopic.displayName === "ALL_TOPICS_AGGREGATED" ? "All Topics (Aggregated)" : `Topic: ${selectedTopic.displayName}`}
                 </CardDescription> {/* ADDED */}
