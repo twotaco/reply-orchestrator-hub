@@ -345,6 +345,9 @@ export function UnifiedDashboardPage() {
     isAccountAggregateView = true;
   }
 
+  // New Logging Point
+  console.log('[UnifiedDashboardPage Render] isLoadingAccounts:', isLoadingAccounts, 'Accounts State:', accounts, 'Filtered Accounts:', filteredAccounts);
+
   return (
     <div className="container mx-auto p-4 md:p-6 lg:p-8 space-y-6">
       <header className="flex flex-col sm:flex-row justify-between items-start sm:items-center space-y-2 sm:space-y-0 mb-4">
