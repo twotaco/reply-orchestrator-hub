@@ -97,8 +97,6 @@ export function FunnelStageDistributionChart({ emails, isLoading }: FunnelStageD
             {/* YAxis is now categorical (for stage names) */}
             <YAxis 
               type="category" 
-              dataKey="name" 
-              width={100}        // Adjust width based on longest stage name
               tick={{ fontSize: '10px' }} 
               interval={0}       // Ensure all labels are shown
             />
