@@ -89,12 +89,12 @@ async function fetchActiveAgentsCount(dateRange?: DateRange): Promise<number> {
 }
 
 async function fetchManagerEscalationsCount(dateRange?: DateRange): Promise<number> {
+  // Define the conditions for an escalation.
   let query = supabase
     .from('inq_emails')
-    // Using .select() without specific columns for a head:true count request is often fine.
-    // Supabase counts rows matching the filters.
-    .select('email_id', { count: 'exact', head: true })
-    .is('include_manager', true); // Changed from .eq() to .is() for boolean
+    .select('*', { count: 'exact', head: false }) // Using count exact, no head
+    .not('include_manager', 'eq', 'no_manager_needed') // Exclude 'no_manager_needed'
+    .not('include_manager', 'is', null); // Exclude nulls
 
   if (dateRange?.from && dateRange?.to) {
     const fromDateStr = dateRange.from.toISOString();
@@ -103,7 +103,9 @@ async function fetchManagerEscalationsCount(dateRange?: DateRange): Promise<numb
     const toDateStr = toDate.toISOString();
     query = query.gte('received_at', fromDateStr).lte('received_at', toDateStr);
   }
+
   const { count, error } = await query;
+
   if (error) {
     console.error('Error fetching manager escalations count:', error);
     return 0;

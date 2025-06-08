@@ -98,18 +98,24 @@ export function AccountDetailView({
     if (emailsToProcess && emailsToProcess.length > 0) {
       // Manager Escalations
       const reasonsCount = emailsToProcess.reduce((acc, email) => {
-        let reason = 'Not Escalated';
-        if (email.include_manager === true || String(email.include_manager).toLowerCase() === 'true') {
-            reason = 'Escalated (General)';
-        } else if (email.include_manager === 'escalated_by_agent') {
-            reason = 'Escalated by Agent';
-        } else if (email.include_manager === 'escalated_by_customer') {
-            reason = 'Escalated by Customer';
+        const reason = email.include_manager; // This is the enum value or null
+
+        // Only count actual escalation reasons (not null and not 'no_manager_needed')
+        if (reason && reason !== 'no_manager_needed') {
+          acc[reason] = (acc[reason] || 0) + 1;
         }
-        acc[reason] = (acc[reason] || 0) + 1;
         return acc;
       }, {} as Record<string, number>);
-      setManagerEscalationData(Object.entries(reasonsCount).map(([name, value]) => ({ name, value })).filter(item => item.value > 0).sort((a,b) => b.value - a.value));
+
+      const formattedData = Object.entries(reasonsCount)
+        .map(([name, value]) => ({
+            // Simple beautification: replace underscores with spaces and capitalize words
+            name: name.replace(/_/g, ' ').replace(/\b\w/g, char => char.toUpperCase()),
+            value
+        }))
+        .filter(item => item.value > 0) // Should already be true due to logic above, but good failsafe
+        .sort((a,b) => b.value - a.value);
+      setManagerEscalationData(formattedData);
 
       setVolumeTrendData(processEmailVolume(emailsToProcess));
 

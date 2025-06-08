@@ -119,8 +119,16 @@ export function SelectionColumn({
         />
         <Button variant="ghost" size="icon" className="border"><Search className="h-4 w-4"/></Button>
       </div>
-      {isLoadingAccounts ? <p>Loading accounts...</p> : accounts.length === 0 ? <p className="text-muted-foreground text-sm">No accounts found for this period.</p> : (
+      {isLoadingAccounts ? (
+        <p>Loading accounts...</p>
+      ) : accounts.length === 0 ? (
+        <p className="text-muted-foreground text-sm">No accounts found for this period.</p>
+      ) : (
         <ScrollArea className="h-[200px]">
+          {/* Hardcoded debug item */}
+          <div className="p-2 border-b border-red-500 text-red-700">
+            DEBUG: Static item in ScrollArea. Accounts count: {accounts.length}
+          </div>
           {accounts.map(account => (
             <Button
               key={account.id}
@@ -130,7 +138,7 @@ export function SelectionColumn({
             >
               <div className="flex flex-col items-start">
                 <span className="text-sm">{account.name}</span>
-                 <span className="text-xs text-muted-foreground">{account.count} emails</span>
+                <span className="text-xs text-muted-foreground">{account.count} emails</span>
               </div>
             </Button>
           ))}
