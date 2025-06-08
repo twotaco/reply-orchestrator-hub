@@ -343,7 +343,7 @@ export function UnifiedDashboardPage() {
   return (
     <div className="container mx-auto p-4 md:p-6 lg:p-8 space-y-6">
       <header className="flex flex-col sm:flex-row justify-between items-start sm:items-center space-y-2 sm:space-y-0 mb-4">
-        <h1 className="text-2xl font-bold tracking-tight md:text-3xl">Unified Dashboard</h1>
+        <h1 className="text-2xl font-bold tracking-tight md:text-3xl">Dashboard</h1>
         <div className="flex flex-wrap items-center gap-2">
           <Button variant={activePreset === 'last7days' ? 'default' : 'outline'} size="sm" onClick={() => handleSetPresetRange('last7days')}>Last 7 days</Button>
           <Button variant={activePreset === 'last30days' ? 'default' : 'outline'} size="sm" onClick={() => handleSetPresetRange('last30days')}>Last 30 days</Button>
