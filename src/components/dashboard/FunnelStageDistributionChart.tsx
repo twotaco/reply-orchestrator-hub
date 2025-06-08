@@ -91,7 +91,8 @@ export function FunnelStageDistributionChart({ emails, isLoading }: FunnelStageD
       </CardHeader>
       <CardContent>
         <ResponsiveContainer width="100%" height={300}>
-          <BarChart data={chartData} margin={{ top: 20, right: 20, left: -20, bottom: 5 }}> {/* Adjusted margins */}
+          {/* Ensure there's enough top margin for labels if position="top" is used, or enough bar height for "inside" positions */}
+          <BarChart data={chartData} margin={{ top: 25, right: 20, left: -20, bottom: 5 }}>
             <CartesianGrid strokeDasharray="3 3" />
             {/* Simplified XAxis - ticks and labels are now on the bars */}
             <XAxis dataKey="name" axisLine={true} tickLine={false} tick={false} height={10} />
@@ -102,10 +103,10 @@ export function FunnelStageDistributionChart({ emails, isLoading }: FunnelStageD
               {/* LabelList to render stage names inside/on bars */}
               <LabelList
                 dataKey="name"
-                position="insideTop" // Try different positions: 'top', 'center', 'insideStart', 'insideEnd', 'insideBottom'
-                angle={-45}      // Angle for readability if names are long
-                offset={5}      // Adjust offset as needed
-                style={{ fontSize: '10px', fill: '#333' }} // Style for the label, fill color might need to be dynamic based on bar color
+                position="top" // Position labels at the top of the bars
+                angle={0}         // Horizontal labels
+                offset={5}        // Small offset from the top of the bar
+                style={{ fontSize: '10px', fill: '#555' }} // Adjusted fill for visibility, assuming light background
               />
               {chartData.map((entry, index) => (
                 <Cell

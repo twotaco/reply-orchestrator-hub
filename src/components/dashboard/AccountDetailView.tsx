@@ -23,10 +23,11 @@ import {
 
 interface AccountDetailViewProps {
   selectedAccountId: string | null;
+  selectedAccountName?: string | null;
   aggregateEmailsData?: InqEmails[] | null;
   isAggregateView?: boolean;
   isLoadingAggregateEmails?: boolean;
-  dateRange?: DateRange; // Keep dateRange as it's used by fetchEmailsForAccount
+  dateRange?: DateRange;
 }
 
 async function fetchEmailsForAccount(accountId: string, dateRange?: DateRange): Promise<InqEmails[]> {
@@ -46,6 +47,7 @@ async function fetchEmailsForAccount(accountId: string, dateRange?: DateRange): 
 
 export function AccountDetailView({
   selectedAccountId,
+  selectedAccountName,
   dateRange,
   aggregateEmailsData,
   isAggregateView,
@@ -146,10 +148,11 @@ export function AccountDetailView({
     return <Card className="flex items-center justify-center min-h-[300px] h-full"><p className="text-muted-foreground">No account selected.</p></Card>;
   }
   if (emailsToProcess && emailsToProcess.length === 0 && !currentOverallLoadingState) {
-     return <Card className="flex items-center justify-center min-h-[300px] h-full"><p className="text-muted-foreground">No emails found for {isAggregateView ? 'any account' : `account "${selectedAccountId}"`} in the selected period.</p></Card>;
+     return <Card className="flex items-center justify-center min-h-[300px] h-full"><p className="text-muted-foreground">No emails found for {isAggregateView ? 'any account' : `account "${selectedAccountName || selectedAccountId}"`} in the selected period.</p></Card>;
   }
 
-  const viewTitle = isAggregateView ? "All Inbound Accounts" : selectedAccountId;
+  // const viewTitle = isAggregateView ? "All Inbound Accounts" : selectedAccountId; // Old version
+  const viewTitle = isAggregateView ? "All Inbound Accounts" : selectedAccountName || selectedAccountId; // Use selectedAccountName
 
   return (
     <div className="space-y-6">
@@ -158,7 +161,9 @@ export function AccountDetailView({
             <CardHeader>
                 <CardTitle className="text-sm font-medium">Volume Trend</CardTitle>
                 <CardDescription className="text-xs text-muted-foreground">
-                    {viewTitle === "All Inbound Accounts" ? "All Inbound Accounts (Aggregated)" : `Account: ${viewTitle}`}
+                    {isAggregateView ? "All Inbound Accounts (Aggregated)" :
+                     selectedAccountName ? `Account: ${selectedAccountName}` :
+                     selectedAccountId ? `Account ID: ${selectedAccountId}` : "Account data"}
                 </CardDescription>
             </CardHeader>
             <CardContent className="h-64">

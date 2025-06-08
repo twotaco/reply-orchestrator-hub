@@ -335,6 +335,8 @@ export function UnifiedDashboardPage() {
     isAccountAggregateView = true;
   }
 
+  const selectedAccountObject = accounts.find(acc => acc.id === selectedAccountId);
+  const selectedAccountName = selectedAccountObject?.name || selectedAccountId;
 
   // console.log('[UnifiedDashboardPage Render] isLoadingAccounts:', isLoadingAccounts, 'Accounts State:', accounts, 'Filtered Accounts:', filteredAccounts); // REMOVED
 
@@ -382,6 +384,7 @@ export function UnifiedDashboardPage() {
           ) : activeSelectionType === 'account' ? (
             <AccountDetailView
               selectedAccountId={selectedAccountId}
+              selectedAccountName={selectedAccountId ? selectedAccountName : null}
               aggregateEmailsData={selectedAccountId ? null : accountDetailViewAggregateEmails}
               isAggregateView={isAccountAggregateView}
               isLoadingAggregateEmails={selectedAccountId ? false : isLoadingAllAccountEmails}
