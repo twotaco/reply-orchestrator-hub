@@ -147,10 +147,13 @@ export function UnifiedDashboardPage() {
     if (accountId) setActiveSelectionType('account'); else if (activeSelectionType === 'account') setActiveSelectionType(null);
   };
 
-  const handleEmailSelect = (emailId: string | null) => {
+  const handleEmailSelect = useCallback((emailId: string | null) => {
     setSelectedEmailId(emailId);
-    if (!emailId) { setEmailDetails(null); setKeyQuestions([]); }
-  };
+    if (!emailId) {
+      setEmailDetails(null);
+      setKeyQuestions([]);
+    }
+  }, []); // Empty dependency array as setSelectedEmailId, setEmailDetails, setKeyQuestions are stable setters from useState
 
   useEffect(() => {
     setIsLoadingCustomers(true);

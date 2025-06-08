@@ -61,34 +61,34 @@ export function CustomerDetailView({
   const [customerEmails, setCustomerEmails] = useState<InqEmails[]>([]);
   const [isLoadingCustomerEmails, setIsLoadingCustomerEmails] = useState(true);
 
-  // Create a stable version of onEmailSelect for the useEffect dependency array.
-  // This is because the onEmailSelect function itself might be recreated on every render of the parent component
-  // if it's not memoized there (e.g., with useCallback in UnifiedDashboardPage).
-  const stableOnEmailSelect = useCallback(onEmailSelect, [onEmailSelect]);
-
   useEffect(() => {
+    console.log('[CustomerDetailView] useEffect triggered. Selected Customer ID:', selectedCustomerId, 'Date Range:', dateRange);
+
+    // The parent (UnifiedDashboardPage) now provides a stable onEmailSelect via useCallback.
+    // So, we use onEmailSelect directly in the dependency array.
+
     if (selectedCustomerId) {
       setIsLoadingCustomerEmails(true);
-      // Call the stable version of onEmailSelect to reset selected email.
-      // This ensures that if onEmailSelect from props changes, the effect re-runs if necessary,
-      // but typically onEmailSelect itself (the prop) is what we want to ensure is stable from the parent.
-      // For this effect, using stableOnEmailSelect ensures this effect's dependency on the function is stable.
-      stableOnEmailSelect(null);
+      onEmailSelect(null); // Use the onEmailSelect prop directly
+
+      console.log('[CustomerDetailView] Fetching emails for customer:', selectedCustomerId, 'with range:', dateRange);
       fetchEmailsForCustomer(selectedCustomerId, dateRange)
         .then(emails => {
+          console.log('[CustomerDetailView] Fetched emails:', emails);
           setCustomerEmails(emails);
           setIsLoadingCustomerEmails(false);
         })
         .catch(error => {
-          console.error("Failed to load customer emails:", error);
+          console.error("[CustomerDetailView] Failed to load customer emails:", error);
           setCustomerEmails([]);
           setIsLoadingCustomerEmails(false);
         });
     } else {
+      console.log('[CustomerDetailView] No selected customer, clearing emails.');
       setCustomerEmails([]);
       setIsLoadingCustomerEmails(false);
     }
-  }, [selectedCustomerId, dateRange, stableOnEmailSelect]);
+  }, [selectedCustomerId, dateRange, onEmailSelect]); // Add onEmailSelect back to deps
 
 
   return (
