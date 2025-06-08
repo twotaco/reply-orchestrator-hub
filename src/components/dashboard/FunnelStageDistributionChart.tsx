@@ -20,12 +20,10 @@ interface FunnelStageDistributionChartProps {
 
 // Define a color palette for funnel stages, can be expanded
 const FUNNEL_STAGE_COLORS: { [key: string]: string } = {
-  awareness: '#8884d8',
-  interest: '#82ca9d',
-  consideration: '#ffc658',
-  conversion: '#ff8042',
-  retention: '#00C49F',
-  advocacy: '#0088FE',
+  awareness_inquiry: '#8884d8',
+  consideration_request: '#82ca9d',
+  decision_confirmation: '#ffc658',
+  retention_feedback: '#ff8042',
   unrelated: '#A9A9A9', // DarkGray for 'unrelated'
   unknown: '#D3D3D3',   // LightGray for 'unknown'
 };
@@ -92,30 +90,30 @@ export function FunnelStageDistributionChart({ emails, isLoading }: FunnelStageD
       <CardContent>
         <ResponsiveContainer width="100%" height={300}>
           {/* Ensure there's enough top margin for labels if position="top" is used, or enough bar height for "inside" positions */}
-          <BarChart data={chartData} margin={{ top: 25, right: 20, left: -20, bottom: 5 }}>
-            <CartesianGrid strokeDasharray="3 3" />
-            {/* Simplified XAxis - ticks and labels are now on the bars */}
-            <XAxis dataKey="name" axisLine={true} tickLine={false} tick={false} height={10} />
-            <YAxis allowDecimals={false} />
-            <Tooltip formatter={(value: number, name: string, entry) => [value, entry.payload.name]} /> {/* Tooltip shows stage name and count */}
-            {/* Legend was already removed in a previous step */}
-            <Bar dataKey="count">
-              {/* LabelList to render stage names inside/on bars */}
-              <LabelList
-                dataKey="name"
-                position="top" // Position labels at the top of the bars
-                angle={0}         // Horizontal labels
-                offset={5}        // Small offset from the top of the bar
-                style={{ fontSize: '10px', fill: '#555' }} // Adjusted fill for visibility, assuming light background
-              />
-              {chartData.map((entry, index) => (
-                <Cell
-                    key={`cell-${index}`}
-                    fill={FUNNEL_STAGE_COLORS[entry.name.toLowerCase() as keyof typeof FUNNEL_STAGE_COLORS] || FUNNEL_STAGE_COLORS.unknown}
-                />
-              ))}
-            </Bar>
-          </BarChart>
+      <BarChart data={chartData} margin={{ top: 25, right: 20, left: -20, bottom: 5 }}>
+        <CartesianGrid strokeDasharray="3 3" />
+        {/* Simplified XAxis - ticks and labels are now on the bars */}
+        <XAxis dataKey="name" axisLine={true} tickLine={false} tick={false} height={10} />
+        <YAxis allowDecimals={false} />
+        <Tooltip formatter={(value: number, name: string, entry) => [value, entry.payload.name]} /> {/* Tooltip shows stage name and count */}
+        {/* Legend was already removed in a previous step */}
+        <Bar dataKey="count">
+          {/* LabelList to render stage names inside/on bars */}
+          <LabelList
+            dataKey="name"
+            position="top" // Position labels at the top of the bars
+            angle={0}         // Horizontal labels
+            offset={5}        // Small offset from the top of the bar
+            style={{ fontSize: '10px', fill: '#555' }} // Adjusted fill for visibility, assuming light background
+          />
+          {chartData.map((entry, index) => (
+            <Cell
+                key={`cell-${index}`}
+                fill={FUNNEL_STAGE_COLORS[entry.name.toLowerCase() as keyof typeof FUNNEL_STAGE_COLORS] || FUNNEL_STAGE_COLORS.unknown}
+            />
+          ))}
+        </Bar>
+      </BarChart>
         </ResponsiveContainer>
       </CardContent>
     </Card>
