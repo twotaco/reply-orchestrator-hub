@@ -59,11 +59,20 @@ export function AppLayout({ children, currentPage, onPageChange }: AppLayoutProp
                 <X className="h-4 w-4" />
               </Button>
             </div>
-            <nav>
+            <nav className="flex-1 p-4 space-y-2">
               {navigation.map((item) => (
-                <Link key={item.id} to={item.path}>
+                <Button
+                  key={item.id}
+                  variant={currentPage === item.id ? "default" : "ghost"}
+                  className="w-full justify-start"
+                  onClick={() => {
+                    onPageChange(item.id);
+                    setSidebarOpen(false);
+                  }}
+                >
+                  <item.icon className="h-4 w-4 mr-2" />
                   {item.name}
-                </Link>
+                </Button>
               ))}
             </nav>
           </motion.div>
@@ -76,11 +85,17 @@ export function AppLayout({ children, currentPage, onPageChange }: AppLayoutProp
           <img src="/knowreply-black-512x512.png" alt="Know Reply Hub Logo" className="h-8 w-8" />
           <span className="font-semibold text-gray-900">Know Reply Hub</span>
         </div>
-        <nav>
+        <nav className="flex-1 p-4 space-y-2">
           {navigation.map((item) => (
-            <Link key={item.id} to={item.path}>
+            <Button
+              key={item.id}
+              variant={currentPage === item.id ? "default" : "ghost"}
+              className="w-full justify-start"
+              onClick={() => onPageChange(item.id)}
+            >
+              <item.icon className="h-4 w-4 mr-2" />
               {item.name}
-            </Link>
+            </Button>
           ))}
         </nav>
       </div>

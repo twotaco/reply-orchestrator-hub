@@ -1,4 +1,4 @@
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { useState } from 'react';
 import { AuthProvider, useAuth } from '@/hooks/useAuth';
 import { AuthPage } from '@/components/auth/AuthPage';
 import { AppLayout } from '@/components/layout/AppLayout';
@@ -7,10 +7,11 @@ import { KnowReplySetup } from '@/components/knowreply/KnowReplySetup';
 import { MCPManagement } from '@/components/mcp/MCPManagement';
 import { EmailTesting } from '@/components/email-testing/EmailTesting';
 import { ActivityLogs } from '@/components/activity-logs/ActivityLogs';
-import { UnifiedDashboardPage } from '@/pages/UnifiedDashboardPage';
+import { UnifiedDashboardPage } from '@/pages/UnifiedDashboardPage'; // New Import
 
 function AppContent() {
   const { user, loading } = useAuth();
+  const [currentPage, setCurrentPage] = useState('unifiedDashboard'); // Default to new page for testing
 
   if (loading) {
     return (
@@ -24,18 +25,28 @@ function AppContent() {
     return <AuthPage />;
   }
 
+  const renderPage = () => {
+    switch (currentPage) {
+      case 'unifiedDashboard': // New Case
+        return <UnifiedDashboardPage />;
+      case 'postmark':
+        return <PostmarkSetup />;
+      case 'knowreply':
+        return <KnowReplySetup />;
+      case 'mcps':
+        return <MCPManagement />;
+      case 'email-testing':
+        return <EmailTesting />;
+      case 'logs':
+        return <ActivityLogs />;
+      default:
+        return <UnifiedDashboardPage />; // Default to new page for testing
+    }
+  };
+
   return (
-    <AppLayout>
-      <Routes>
-        <Route path="/" element={<Navigate to="/unified-dashboard" />} />
-        <Route path="/unified-dashboard" element={<UnifiedDashboardPage />} />
-        <Route path="/postmark" element={<PostmarkSetup />} />
-        <Route path="/knowreply" element={<KnowReplySetup />} />
-        <Route path="/mcps" element={<MCPManagement />} />
-        <Route path="/email-testing" element={<EmailTesting />} />
-        <Route path="/logs" element={<ActivityLogs />} />
-        <Route path="*" element={<Navigate to="/unified-dashboard" />} />
-      </Routes>
+    <AppLayout currentPage={currentPage} onPageChange={setCurrentPage}>
+      {renderPage()}
     </AppLayout>
   );
 }
@@ -43,9 +54,7 @@ function AppContent() {
 function App() {
   return (
     <AuthProvider>
-      <BrowserRouter>
-        <AppContent />
-      </BrowserRouter>
+      <AppContent />
     </AuthProvider>
   );
 }
