@@ -23,8 +23,11 @@ import {
 } from '@/lib/dashboardUtils';
 
 interface AccountDetailViewProps {
-  selectedAccountId: string | null;
+  selectedAccountId: string | null; // Can be null if isAggregateView is true
   dateRange?: DateRange;
+  aggregateEmailsData?: InqEmails[] | null; // For "All Accounts" view
+  isAggregateView?: boolean;
+  isLoadingAggregateEmails?: boolean; // Loading state for aggregateEmailsData
 }
 
 // This function remains local as it's specific to fetching all emails for an *account*
@@ -45,9 +48,15 @@ async function fetchEmailsForAccount(accountId: string, dateRange?: DateRange): 
 
 // Local helper functions (fetchResponseTypesForEmails, processEmailVolume, fetchKeyQuestionsForEmailList) are now removed
 
-export function AccountDetailView({ selectedAccountId, dateRange }: AccountDetailViewProps) {
-  const [accountEmails, setAccountEmails] = useState<InqEmails[]>([]);
-  const [isLoadingAccountEmails, setIsLoadingAccountEmails] = useState(false);
+export function AccountDetailView({
+  selectedAccountId,
+  dateRange,
+  aggregateEmailsData,
+  isAggregateView,
+  isLoadingAggregateEmails
+}: AccountDetailViewProps) {
+  const [accountEmails, setAccountEmails] = useState<InqEmails[]>([]); // For specific account
+  const [isLoadingAccountEmails, setIsLoadingAccountEmails] = useState(false); // For specific account
 
   const [responseTypesData, setResponseTypesData] = useState<ResponseTypeData[]>([]);
   const [isLoadingResponseTypes, setIsLoadingResponseTypes] = useState(false);
@@ -56,13 +65,13 @@ export function AccountDetailView({ selectedAccountId, dateRange }: AccountDetai
   const [faqData, setFaqData] = useState<InqKeyQuestions[]>([]);
   const [isLoadingFaq, setIsLoadingFaq] = useState(false);
 
+
+  // Fetch emails for a SPECIFIC account
   useEffect(() => {
-    if (selectedAccountId && dateRange?.from && dateRange?.to) {
+    if (!isAggregateView && selectedAccountId && dateRange?.from && dateRange?.to) {
       setIsLoadingAccountEmails(true);
-      setResponseTypesData([]); setIsLoadingResponseTypes(false);
-      setManagerEscalationData([]);
-      setVolumeTrendData([]);
-      setFaqData([]); setIsLoadingFaq(false);
+      setResponseTypesData([]); setIsLoadingResponseTypes(false); // Clear derived data
+      setManagerEscalationData([]); setVolumeTrendData([]); setFaqData([]); setIsLoadingFaq(false);
 
       fetchEmailsForAccount(selectedAccountId, dateRange)
         .then(emails => {
@@ -70,19 +79,25 @@ export function AccountDetailView({ selectedAccountId, dateRange }: AccountDetai
           setIsLoadingAccountEmails(false);
         })
         .catch(error => {
-          console.error("Failed to load account emails:", error);
+          console.error("Failed to load specific account emails:", error);
           setAccountEmails([]);
           setIsLoadingAccountEmails(false);
         });
-    } else {
-      setAccountEmails([]);
+    } else if (!isAggregateView && !selectedAccountId) {
+      setAccountEmails([]); // Clear if no specific account selected (and not aggregate view)
       setIsLoadingAccountEmails(false);
     }
-  }, [selectedAccountId, dateRange]);
+  }, [selectedAccountId, dateRange, isAggregateView]);
 
+  // Determine which email list to use for chart processing
+  const emailsToProcess = isAggregateView ? aggregateEmailsData : accountEmails;
+  const currentOverallLoadingState = isAggregateView ? isLoadingAggregateEmails : isLoadingAccountEmails;
+
+  // Effects to process emailsToProcess for charts
   useEffect(() => {
-    if (accountEmails.length > 0) {
-      const reasonsCount = accountEmails.reduce((acc, email) => {
+    if (emailsToProcess && emailsToProcess.length > 0) {
+      // Manager Escalations
+      const reasonsCount = emailsToProcess.reduce((acc, email) => {
         let reason = 'Not Escalated';
         if (email.include_manager === true || String(email.include_manager).toLowerCase() === 'true') {
             reason = 'Escalated (General)';
@@ -96,59 +111,68 @@ export function AccountDetailView({ selectedAccountId, dateRange }: AccountDetai
       }, {} as Record<string, number>);
       setManagerEscalationData(Object.entries(reasonsCount).map(([name, value]) => ({ name, value })).filter(item => item.value > 0).sort((a,b) => b.value - a.value));
 
-      setVolumeTrendData(processEmailVolume(accountEmails)); // Use imported util
+      setVolumeTrendData(processEmailVolume(emailsToProcess));
 
-      const emailIds = accountEmails.map(e => e.email_id).filter(id => !!id);
+      const emailIds = emailsToProcess.map(e => e.email_id).filter(id => !!id);
       if (emailIds.length > 0) {
         setIsLoadingResponseTypes(true);
         fetchResponseTypesForEmails(emailIds).then(data => { setResponseTypesData(data); setIsLoadingResponseTypes(false); }).catch(() => setIsLoadingResponseTypes(false));
 
         setIsLoadingFaq(true);
         fetchKeyQuestionsForEmailList(emailIds).then(data => { setFaqData(data); setIsLoadingFaq(false); }).catch(() => setIsLoadingFaq(false));
-      } else {
-          setResponseTypesData([]); setIsLoadingResponseTypes(false);
-          setFaqData([]); setIsLoadingFaq(false);
+      }
+      else {
+        setResponseTypesData([]); setIsLoadingResponseTypes(false);
+        setFaqData([]); setIsLoadingFaq(false);
       }
     } else {
-        setManagerEscalationData([]);
-        setVolumeTrendData([]);
+        setManagerEscalationData([]); setVolumeTrendData([]);
         setResponseTypesData([]); setIsLoadingResponseTypes(false);
         setFaqData([]); setIsLoadingFaq(false);
     }
-  }, [accountEmails]);
+  }, [emailsToProcess]);
 
 
-  if (!selectedAccountId) {
-    return <Card className="flex items-center justify-center min-h-[300px] h-full"><p className="text-muted-foreground">No account selected.</p></Card>;
-  }
-
-  if (isLoadingAccountEmails) {
-     return (
+  // Main loading/empty states
+  if (isAggregateView && isLoadingAggregateEmails) {
+    return (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 h-full">
-            <Card><CardHeader><CardTitle className="text-base">Loading emails for {selectedAccountId}...</CardTitle></CardHeader><CardContent><Skeleton className="h-64 w-full" /></CardContent></Card>
-            <Card><CardHeader><CardTitle className="text-base">Loading emails for {selectedAccountId}...</CardTitle></CardHeader><CardContent><Skeleton className="h-64 w-full" /></CardContent></Card>
+            <Card><CardHeader><CardTitle>Loading All Accounts Data...</CardTitle></CardHeader><CardContent><Skeleton className="h-64 w-full" /></CardContent></Card>
+            <Card><CardHeader><CardTitle>Loading All Accounts Data...</CardTitle></CardHeader><CardContent><Skeleton className="h-64 w-full" /></CardContent></Card>
         </div>
     );
   }
-
-  if (accountEmails.length === 0 && !isLoadingAccountEmails) {
-     return <Card className="flex items-center justify-center min-h-[300px] h-full"><p className="text-muted-foreground">No emails found for account "{selectedAccountId}" in the selected period.</p></Card>;
+  if (!isAggregateView && selectedAccountId && isLoadingAccountEmails) {
+    return (
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 h-full">
+            <Card><CardHeader><CardTitle>Loading emails for {selectedAccountId}...</CardTitle></CardHeader><CardContent><Skeleton className="h-64 w-full" /></CardContent></Card>
+            <Card><CardHeader><CardTitle>Loading emails for {selectedAccountId}...</CardTitle></CardHeader><CardContent><Skeleton className="h-64 w-full" /></CardContent></Card>
+        </div>
+    );
   }
+  if (!selectedAccountId && !isAggregateView) {
+    return <Card className="flex items-center justify-center min-h-[300px] h-full"><p className="text-muted-foreground">No account selected.</p></Card>;
+  }
+  if (emailsToProcess && emailsToProcess.length === 0 && !currentOverallLoadingState) {
+     return <Card className="flex items-center justify-center min-h-[300px] h-full"><p className="text-muted-foreground">No emails found for {isAggregateView ? 'any account' : `account "${selectedAccountId}"`} in the selected period.</p></Card>;
+  }
+
+  const viewTitle = isAggregateView ? "All Inbound Accounts" : selectedAccountId;
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 h-full">
       <div className="space-y-6">
-        <SentimentOverviewChart emails={accountEmails} isLoading={isLoadingAccountEmails} />
-        <FunnelStageDistributionChart emails={accountEmails} isLoading={isLoadingAccountEmails} />
+        <SentimentOverviewChart emails={emailsToProcess || []} isLoading={!!currentOverallLoadingState} />
+        <FunnelStageDistributionChart emails={emailsToProcess || []} isLoading={!!currentOverallLoadingState} />
         <SimplePieChart title="Response Types" data={responseTypesData} isLoading={isLoadingResponseTypes} />
       </div>
 
       <div className="space-y-6">
-         <SimplePieChart data={managerEscalationData} title="Manager Escalation Status" isLoading={isLoadingAccountEmails} />
+         <SimplePieChart data={managerEscalationData} title="Manager Escalation Status" isLoading={!!currentOverallLoadingState} />
          <Card>
-            <CardHeader><CardTitle className="text-sm font-medium">Volume Trend for "{selectedAccountId}"</CardTitle></CardHeader>
+            <CardHeader><CardTitle className="text-sm font-medium">Volume Trend for "{viewTitle}"</CardTitle></CardHeader>
             <CardContent className="h-64">
-                {isLoadingAccountEmails ? <Skeleton className="h-full w-full" /> : volumeTrendData.length > 0 ? (
+                {currentOverallLoadingState ? <Skeleton className="h-full w-full" /> : volumeTrendData.length > 0 ? (
                     <ResponsiveContainer width="100%" height="100%">
                         <LineChart data={volumeTrendData} margin={{ top: 5, right: 20, bottom: 50, left: -20 }}>
                             <CartesianGrid strokeDasharray="3 3" />

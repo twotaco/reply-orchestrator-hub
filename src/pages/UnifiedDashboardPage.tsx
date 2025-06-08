@@ -9,7 +9,7 @@ import type { InqCustomers, InqEmails, InqKeyQuestions, InqResponses } from '@/i
 import { SelectionColumn, type SelectionType } from '@/components/dashboard/SelectionColumn';
 import { CustomerDetailView } from '@/components/dashboard/CustomerDetailView';
 import { TopicDetailView } from '@/components/dashboard/TopicDetailView';
-import { AccountDetailView } from '@/components/dashboard/AccountDetailView'; // Import new component
+import { AccountDetailView } from '@/components/dashboard/AccountDetailView';
 import { Card, CardContent } from '@/components/ui/card';
 
 export interface ProcessedTopic {
@@ -19,9 +19,10 @@ export interface ProcessedTopic {
   emails: Pick<InqEmails, 'email_id' | 'sentiment_overall' | 'funnel_stage' | 'include_manager' | 'received_at'>[];
 }
 
+// Updated InboundAccount interface
 interface InboundAccount {
-  id: string;
-  name: string;
+  id: string;    // This will be agent_email_mappings.id (which is inq_emails.email_account_id)
+  name: string;  // This will be agent_email_mappings.email_address
   count: number;
 }
 
@@ -62,27 +63,66 @@ async function fetchAndProcessTopics(dateRange?: DateRange): Promise<ProcessedTo
   return Array.from(topicsMap.values()).sort((a,b) => b.emailCount - a.emailCount);
 }
 
+// Updated fetchInboundAccounts function
 async function fetchInboundAccounts(dateRange?: DateRange): Promise<InboundAccount[]> {
-  let query = supabase.from('inq_emails').select('email_account_id, received_at');
+  let emailQuery = supabase
+    .from('inq_emails')
+    .select(`
+      email_account_id,
+      received_at,
+      agent_email_mappings ( id, email_address )
+    `)
+    .not('email_account_id', 'is', null)
+    .not('agent_email_mappings', 'is', null); // Ensure we only get emails with a mapping
+
   if (dateRange?.from && dateRange?.to) {
     const fromDateStr = dateRange.from.toISOString();
     const toDate = new Date(dateRange.to);
     toDate.setHours(23, 59, 59, 999);
     const toDateStr = toDate.toISOString();
-    query = query.gte('received_at', fromDateStr).lte('received_at', toDateStr);
-  } else { return []; }
-  query = query.not('email_account_id', 'is', null);
-  const { data: emails, error } = await query;
-  if (error) { console.error('Error fetching emails for inbound accounts:', error); return []; }
+    emailQuery = emailQuery.gte('received_at', fromDateStr).lte('received_at', toDateStr);
+  } else {
+    return []; // Must have a date range
+  }
+
+  const { data: emails, error } = await emailQuery;
+
+  if (error) {
+    console.error('Error fetching emails for inbound accounts:', error);
+    return [];
+  }
   if (!emails) return [];
-  const accountsMap = new Map<string, number>();
+
+  const accountsMap = new Map<string, { name: string; count: number }>();
+
   emails.forEach(email => {
-    if (email.email_account_id) {
-      accountsMap.set(email.email_account_id, (accountsMap.get(email.email_account_id) || 0) + 1);
+    // Ensure agent_email_mappings is not an array and has the needed properties
+    // Also ensure email_account_id is present.
+    if (email.email_account_id && email.agent_email_mappings && !Array.isArray(email.agent_email_mappings)) {
+      const mapping = email.agent_email_mappings as { id: string; email_address: string };
+      const accountId = email.email_account_id;
+
+      const current = accountsMap.get(accountId);
+      if (current) {
+        accountsMap.set(accountId, { ...current, count: current.count + 1 });
+      } else {
+        // Only set if mapping.email_address is valid
+        if (mapping.email_address) {
+          accountsMap.set(accountId, { name: mapping.email_address, count: 1 });
+        }
+      }
     }
   });
-  return Array.from(accountsMap.entries()).map(([id, count]) => ({ id, name: id, count })).sort((a,b) => b.count - a.count);
+
+  return Array.from(accountsMap.entries())
+    .map(([id, { name, count }]) => ({
+      id,
+      name,
+      count
+    }))
+    .sort((a,b) => b.count - a.count);
 }
+
 
 async function fetchEmailById(emailId: string): Promise<InqEmails | null> {
     const { data, error } = await supabase.from('inq_emails').select('*').eq('email_id', emailId).single();
@@ -95,6 +135,32 @@ async function fetchKeyQuestionsForEmail(emailId: string): Promise<InqKeyQuestio
     if (error) { console.error(`Error fetching key questions for email ${emailId}:`, error); return []; }
     return data || [];
 }
+
+// New function to fetch all emails that have an email_account_id (for "All Accounts" view)
+async function fetchAllEmailsWithAccounts(dateRange?: DateRange): Promise<InqEmails[]> {
+  let query = supabase
+    .from('inq_emails')
+    .select('*') // Select all fields needed by AccountDetailView's charts
+    .not('email_account_id', 'is', null);
+
+  if (dateRange?.from && dateRange?.to) {
+    const fromDateStr = dateRange.from.toISOString();
+    const toDate = new Date(dateRange.to);
+    toDate.setHours(23, 59, 59, 999);
+    const toDateStr = toDate.toISOString();
+    query = query.gte('received_at', fromDateStr).lte('received_at', toDateStr);
+  } else {
+    return []; // Date range is essential
+  }
+  query = query.order('received_at', { ascending: false });
+  const { data, error } = await query;
+  if (error) {
+    console.error('Error fetching all emails with accounts:', error);
+    return [];
+  }
+  return data || [];
+}
+
 
 export function UnifiedDashboardPage() {
   const [dateRange, setDateRange] = useState<DateRange | undefined>(() => ({ from: subDays(new Date(), 6), to: new Date() }));
@@ -115,6 +181,8 @@ export function UnifiedDashboardPage() {
   const [isLoadingTopics, setIsLoadingTopics] = useState(true);
   const [accounts, setAccounts] = useState<InboundAccount[]>([]);
   const [isLoadingAccounts, setIsLoadingAccounts] = useState(true);
+  const [allAccountEmails, setAllAccountEmails] = useState<InqEmails[]>([]);
+  const [isLoadingAllAccountEmails, setIsLoadingAllAccountEmails] = useState(false);
 
   const [selectedEmailId, setSelectedEmailId] = useState<string | null>(null);
   const [emailDetails, setEmailDetails] = useState<InqEmails | null>(null);
@@ -153,7 +221,7 @@ export function UnifiedDashboardPage() {
       setEmailDetails(null);
       setKeyQuestions([]);
     }
-  }, []); // Empty dependency array as setSelectedEmailId, setEmailDetails, setKeyQuestions are stable setters from useState
+  }, []);
 
   useEffect(() => {
     setIsLoadingCustomers(true);
@@ -177,6 +245,26 @@ export function UnifiedDashboardPage() {
     } else { setAccounts([]); setIsLoadingAccounts(false); }
   }, [dateRange]);
 
+  // useEffect for fetching all emails for "All Accounts" view
+  useEffect(() => {
+    if (activeSelectionType === 'account' && !selectedAccountId && dateRange?.from && dateRange?.to) {
+      setIsLoadingAllAccountEmails(true);
+      fetchAllEmailsWithAccounts(dateRange)
+        .then(emails => {
+          setAllAccountEmails(emails);
+          setIsLoadingAllAccountEmails(false);
+        })
+        .catch(error => {
+          console.error("Failed to load all account emails:", error);
+          setAllAccountEmails([]);
+          setIsLoadingAllAccountEmails(false);
+        });
+    } else if (activeSelectionType !== 'account' || selectedAccountId) {
+      // Clear if not in "all accounts" view to free up memory
+      setAllAccountEmails([]);
+    }
+  }, [activeSelectionType, selectedAccountId, dateRange]);
+
   useEffect(() => {
     if (selectedEmailId) {
       setIsLoadingEmailDetails(true); setIsLoadingKeyQuestions(true);
@@ -197,7 +285,30 @@ export function UnifiedDashboardPage() {
   const filteredAccounts = accounts.filter(a => (a.name?.toLowerCase() || '').includes(accountSearchTerm.toLowerCase()));
 
   const selectedCustomerObject = customers.find(c => c.customer_id === selectedCustomerId) || null;
-  const selectedTopicObject = topics.find(t => t.id === selectedTopicId) || null;
+
+  // Logic for selectedTopicObject or "All Topics" aggregate
+  let topicDetailViewData: ProcessedTopic | null = null;
+  if (activeSelectionType === 'topic') {
+    if (selectedTopicId) {
+      topicDetailViewData = topics.find(t => t.id === selectedTopicId) || null;
+    } else if (topics.length > 0) { // If no specific topic selected, but 'topic' type is active and topics exist
+      const allEmailsFromTopics = topics.reduce((acc, topic) => acc.concat(topic.emails), [] as ProcessedTopic['emails']);
+      topicDetailViewData = {
+        id: "ALL_TOPICS_AGGREGATED",
+        displayName: "All Topics (Aggregated)",
+        emailCount: allEmailsFromTopics.length,
+        emails: allEmailsFromTopics
+      };
+    }
+  }
+
+  let accountDetailViewAggregateEmails: InqEmails[] | null = null;
+  let isAccountAggregateView = false;
+
+  if (activeSelectionType === 'account' && !selectedAccountId) {
+    accountDetailViewAggregateEmails = allAccountEmails;
+    isAccountAggregateView = true;
+  }
 
   return (
     <div className="container mx-auto p-4 md:p-6 lg:p-8 space-y-6">
@@ -235,14 +346,17 @@ export function UnifiedDashboardPage() {
               keyQuestions={keyQuestions}
               isLoadingKeyQuestions={isLoadingKeyQuestions}
             />
-          ) : activeSelectionType === 'topic' && selectedTopicId && selectedTopicObject ? (
+          ) : activeSelectionType === 'topic' && topicDetailViewData ? ( // Use the new topicDetailViewData
             <TopicDetailView
-              selectedTopic={selectedTopicObject}
+              selectedTopic={topicDetailViewData} // This can be a specific topic or the "All Topics" aggregate
               dateRange={dateRange}
             />
-          ) : activeSelectionType === 'account' && selectedAccountId ? (
+          ) : activeSelectionType === 'account' ? (
             <AccountDetailView
               selectedAccountId={selectedAccountId}
+              aggregateEmailsData={selectedAccountId ? null : accountDetailViewAggregateEmails}
+              isAggregateView={isAccountAggregateView}
+              isLoadingAggregateEmails={selectedAccountId ? false : isLoadingAllAccountEmails}
               dateRange={dateRange}
             />
           ) : (
