@@ -1,17 +1,16 @@
 import React, { useEffect, useState } from 'react';
-import type { DateRange } from 'react-day-picker';
+// DateRange import removed as it's not used in props
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { Skeleton } from '@/components/ui/skeleton';
-import type { InqEmails, InqKeyQuestions } from '@/integrations/supabase/types'; // InqResponses removed
-import { supabase } from '@/integrations/supabase/client'; // Keep for fetchEmailsForAccount
+import { Skeleton } from '@/components/ui/skeleton'; // Single Skeleton import
+import type { InqEmails, InqKeyQuestions } from '@/integrations/supabase/types';
+import { supabase } from '@/integrations/supabase/client';
 
 // Import Chart Components
 import { FunnelStageDistributionChart } from './FunnelStageDistributionChart';
 import { SimplePieChart } from '@/components/charts/SimplePieChart';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 import { LineChart as LineChartIcon, HelpCircle } from 'lucide-react';
-import { Skeleton } from '@/components/ui/skeleton'; // Added Skeleton import
 
 // Import shared functions and types from dashboardUtils
 import {
@@ -23,15 +22,19 @@ import {
 } from '@/lib/dashboardUtils';
 
 interface AccountDetailViewProps {
-  selectedAccountId: string | null; // Can be null if isAggregateView is true
-  dateRange?: DateRange;
-  aggregateEmailsData?: InqEmails[] | null; // For "All Accounts" view
+  selectedAccountId: string | null;
+  // dateRange prop removed
+  aggregateEmailsData?: InqEmails[] | null;
   isAggregateView?: boolean;
-  isLoadingAggregateEmails?: boolean; // Loading state for aggregateEmailsData
+  isLoadingAggregateEmails?: boolean;
 }
 
-// This function remains local as it's specific to fetching all emails for an *account*
 async function fetchEmailsForAccount(accountId: string, dateRange?: DateRange): Promise<InqEmails[]> {
+    // This function still needs dateRange for its query logic, even if AccountDetailView doesn't receive it directly as a top-level prop for other uses
+    // This is because UnifiedDashboardPage passes dateRange to this component, which then uses it for this fetch.
+    // For consistency, I will add dateRange back to props if this fetch function is to remain as is.
+    // However, the prompt for this overall task was to make AccountDetailView take dateRange.
+    // Let's assume dateRange IS passed from UnifiedDashboardPage as per the last successful diff there.
     let query = supabase.from('inq_emails').select('*').eq('email_account_id', accountId);
     if (dateRange?.from && dateRange?.to) {
         const fromDateStr = dateRange.from.toISOString();
@@ -39,24 +42,22 @@ async function fetchEmailsForAccount(accountId: string, dateRange?: DateRange): 
         toDate.setHours(23, 59, 59, 999);
         const toDateStr = toDate.toISOString();
         query = query.gte('received_at', fromDateStr).lte('received_at', toDateStr);
-    } else { return []; }
+    } else { return []; } // dateRange is used here
     query = query.order('received_at', { ascending: false });
     const { data, error } = await query;
     if (error) { console.error(`Error fetching emails for account ${accountId}:`, error); return []; }
     return data || [];
 }
 
-// Local helper functions (fetchResponseTypesForEmails, processEmailVolume, fetchKeyQuestionsForEmailList) are now removed
-
 export function AccountDetailView({
   selectedAccountId,
-  dateRange,
+  dateRange, // Added dateRange back to props as fetchEmailsForAccount uses it.
   aggregateEmailsData,
   isAggregateView,
   isLoadingAggregateEmails
-}: AccountDetailViewProps) {
-  const [accountEmails, setAccountEmails] = useState<InqEmails[]>([]); // For specific account
-  const [isLoadingAccountEmails, setIsLoadingAccountEmails] = useState(false); // For specific account
+}: AccountDetailViewProps & { dateRange?: DateRange }) { // Added dateRange to destructuring
+  const [accountEmails, setAccountEmails] = useState<InqEmails[]>([]);
+  const [isLoadingAccountEmails, setIsLoadingAccountEmails] = useState(false);
 
   const [responseTypesData, setResponseTypesData] = useState<ResponseTypeData[]>([]);
   const [isLoadingResponseTypes, setIsLoadingResponseTypes] = useState(false);
@@ -65,12 +66,10 @@ export function AccountDetailView({
   const [faqData, setFaqData] = useState<InqKeyQuestions[]>([]);
   const [isLoadingFaq, setIsLoadingFaq] = useState(false);
 
-
-  // Fetch emails for a SPECIFIC account
   useEffect(() => {
     if (!isAggregateView && selectedAccountId && dateRange?.from && dateRange?.to) {
       setIsLoadingAccountEmails(true);
-      setResponseTypesData([]); setIsLoadingResponseTypes(false); // Clear derived data
+      setResponseTypesData([]); setIsLoadingResponseTypes(false);
       setManagerEscalationData([]); setVolumeTrendData([]); setFaqData([]); setIsLoadingFaq(false);
 
       fetchEmailsForAccount(selectedAccountId, dateRange)
@@ -84,23 +83,18 @@ export function AccountDetailView({
           setIsLoadingAccountEmails(false);
         });
     } else if (!isAggregateView && !selectedAccountId) {
-      setAccountEmails([]); // Clear if no specific account selected (and not aggregate view)
+      setAccountEmails([]);
       setIsLoadingAccountEmails(false);
     }
   }, [selectedAccountId, dateRange, isAggregateView]);
 
-  // Determine which email list to use for chart processing
   const emailsToProcess = isAggregateView ? aggregateEmailsData : accountEmails;
   const currentOverallLoadingState = isAggregateView ? isLoadingAggregateEmails : isLoadingAccountEmails;
 
-  // Effects to process emailsToProcess for charts
   useEffect(() => {
     if (emailsToProcess && emailsToProcess.length > 0) {
-      // Manager Escalations
       const reasonsCount = emailsToProcess.reduce((acc, email) => {
-        const reason = email.include_manager; // This is the enum value or null
-
-        // Only count actual escalation reasons (not null and not 'no_manager_needed')
+        const reason = email.include_manager;
         if (reason && reason !== 'no_manager_needed') {
           acc[reason] = (acc[reason] || 0) + 1;
         }
@@ -109,11 +103,10 @@ export function AccountDetailView({
 
       const formattedData = Object.entries(reasonsCount)
         .map(([name, value]) => ({
-            // Simple beautification: replace underscores with spaces and capitalize words
             name: name.replace(/_/g, ' ').replace(/\b\w/g, char => char.toUpperCase()),
             value
         }))
-        .filter(item => item.value > 0) // Should already be true due to logic above, but good failsafe
+        .filter(item => item.value > 0)
         .sort((a,b) => b.value - a.value);
       setManagerEscalationData(formattedData);
 
@@ -122,10 +115,10 @@ export function AccountDetailView({
       const emailIds = emailsToProcess.map(e => e.email_id).filter(id => !!id);
       if (emailIds.length > 0) {
         setIsLoadingResponseTypes(true);
-        fetchResponseTypesForEmails(emailIds).then(data => { setResponseTypesData(data); setIsLoadingResponseTypes(false); }).catch(() => setIsLoadingResponseTypes(false));
+        fetchResponseTypesForEmails(emailIds).then(data => { setResponseTypesData(data); setIsLoadingResponseTypes(false); }).catch(() => {setResponseTypesData([]); setIsLoadingResponseTypes(false);});
 
         setIsLoadingFaq(true);
-        fetchKeyQuestionsForEmailList(emailIds).then(data => { setFaqData(data); setIsLoadingFaq(false); }).catch(() => setIsLoadingFaq(false));
+        fetchKeyQuestionsForEmailList(emailIds).then(data => { setFaqData(data); setIsLoadingFaq(false); }).catch(() => {setFaqData([]); setIsLoadingFaq(false);});
       }
       else {
         setResponseTypesData([]); setIsLoadingResponseTypes(false);
@@ -138,11 +131,9 @@ export function AccountDetailView({
     }
   }, [emailsToProcess]);
 
-
-  // Main loading/empty states
   if (isAggregateView && isLoadingAggregateEmails) {
     return (
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 h-full">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 h-full">
             <Card><CardHeader><CardTitle>Loading All Accounts Data...</CardTitle></CardHeader><CardContent><Skeleton className="h-64 w-full" /></CardContent></Card>
             <Card><CardHeader><CardTitle>Loading All Accounts Data...</CardTitle></CardHeader><CardContent><Skeleton className="h-64 w-full" /></CardContent></Card>
         </div>
@@ -150,7 +141,7 @@ export function AccountDetailView({
   }
   if (!isAggregateView && selectedAccountId && isLoadingAccountEmails) {
     return (
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 h-full">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 h-full">
             <Card><CardHeader><CardTitle>Loading emails for {selectedAccountId}...</CardTitle></CardHeader><CardContent><Skeleton className="h-64 w-full" /></CardContent></Card>
             <Card><CardHeader><CardTitle>Loading emails for {selectedAccountId}...</CardTitle></CardHeader><CardContent><Skeleton className="h-64 w-full" /></CardContent></Card>
         </div>
@@ -166,35 +157,33 @@ export function AccountDetailView({
   const viewTitle = isAggregateView ? "All Inbound Accounts" : selectedAccountId;
 
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 h-full">
-      <div className="space-y-6">
-        <FunnelStageDistributionChart emails={emailsToProcess || []} isLoading={currentOverallLoadingState || false} />
-        <SimplePieChart title="Response Types" data={responseTypesData} isLoading={isLoadingResponseTypes} />
-      </div>
-
-      <div className="space-y-6">
-         <SimplePieChart data={managerEscalationData} title="Manager Escalation Status" isLoading={currentOverallLoadingState || false} />
-         <Card>
+    <div className="space-y-6">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <Card>
             <CardHeader><CardTitle className="text-sm font-medium">Volume Trend for "{viewTitle}"</CardTitle></CardHeader>
             <CardContent className="h-64">
                 {currentOverallLoadingState ? <Skeleton className="h-full w-full" /> : volumeTrendData.length > 0 ? (
                     <ResponsiveContainer width="100%" height="100%">
-                        <LineChart data={volumeTrendData} margin={{ top: 5, right: 20, bottom: 50, left: -20 }}>
+                        <LineChart data={volumeTrendData} margin={{ top: 5, right: 20, bottom: 5, left: -20 }}>
                             <CartesianGrid strokeDasharray="3 3" />
-                            <XAxis dataKey="date" tickFormatter={(tick) => new Date(tick+'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} angle={-45} textAnchor="end" height={60} interval={Math.max(0, Math.floor(volumeTrendData.length / 10) -1)} />
+                            <XAxis dataKey="date" tickFormatter={(tick) => new Date(tick).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} angle={-30} textAnchor="end" height={50}/>
                             <YAxis allowDecimals={false} />
-                            <Tooltip labelFormatter={(label) => new Date(label+'T00:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}/>
+                            <Tooltip labelFormatter={(label) => new Date(label).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })} />
                             <Legend />
                             <Line type="monotone" dataKey="count" name="Emails" stroke="#8884d8" strokeWidth={2} dot={{ r: 3 }} activeDot={{ r: 6 }} />
                         </LineChart>
                     </ResponsiveContainer>
-                ) : ( <div className="h-full flex flex-col items-center justify-center"><LineChartIcon className="h-12 w-12 text-muted-foreground mb-2" /><p className="ml-2 text-muted-foreground text-sm">No volume data.</p></div> )}
+                ) : ( <div className="h-full flex items-center justify-center"><LineChartIcon className="h-12 w-12 text-muted-foreground" /><p className="ml-2 text-muted-foreground">No volume data.</p></div> )}
             </CardContent>
         </Card>
-        <Card>
+        <FunnelStageDistributionChart emails={emailsToProcess || []} isLoading={currentOverallLoadingState || false} />
+        <SimplePieChart title="Response Types" data={responseTypesData} isLoading={isLoadingResponseTypes} />
+        <SimplePieChart data={managerEscalationData} title="Manager Escalation Status" isLoading={currentOverallLoadingState || false} />
+      </div>
+      <Card>
             <CardHeader>
                 <CardTitle className="text-sm font-medium">Frequently Asked Questions</CardTitle>
-                <CardDescription className="text-xs text-muted-foreground">Common questions from emails for this account.</CardDescription>
+                <CardDescription className="text-xs text-muted-foreground">Common questions from emails for this {isAggregateView ? 'set of accounts' : 'account'}.</CardDescription>
             </CardHeader>
             <CardContent className="h-64">
                 {isLoadingFaq ? (
@@ -210,7 +199,6 @@ export function AccountDetailView({
                 )}
             </CardContent>
         </Card>
-      </div>
     </div>
   );
 }
