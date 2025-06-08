@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { motion } from 'framer-motion';
+import { Link, useLocation } from 'react-router-dom';
 import { useAuth } from '@/hooks/useAuth';
 import { Button } from '@/components/ui/button';
 import { 
@@ -20,22 +21,21 @@ import {
 
 interface AppLayoutProps {
   children: React.ReactNode;
-  currentPage: string;
-  onPageChange: (page: string) => void;
 }
 
 const navigation = [
-  { id: 'unifiedDashboard', name: 'Dashboard', icon: LayoutGrid }, // New Entry
-  { id: 'postmark', name: 'Postmark Setup', icon: Mail },
-  { id: 'mcps', name: 'Agent Tools Setup', icon: Terminal },
-  { id: 'knowreply', name: 'Know Reply Setup', icon: Zap },
-  { id: 'email-testing', name: 'Email Testing', icon: TestTube },
-  { id: 'logs', name: 'Activity Logs', icon: Activity },
+  { id: 'unifiedDashboard', name: 'Dashboard', icon: LayoutGrid, path: '/' }, // New Entry
+  { id: 'postmark', name: 'Postmark Setup', icon: Mail, path: '/postmark' },
+  { id: 'mcps', name: 'Agent Tools Setup', icon: Terminal, path: '/mcps' },
+  { id: 'knowreply', name: 'Know Reply Setup', icon: Zap, path: '/knowreply' },
+  { id: 'email-testing', name: 'Email Testing', icon: TestTube, path: '/email-testing' },
+  { id: 'logs', name: 'Activity Logs', icon: Activity, path: '/logs' },
 ];
 
-export function AppLayout({ children, currentPage, onPageChange }: AppLayoutProps) {
+export function AppLayout({ children }: AppLayoutProps) {
   const { user, signOut } = useAuth();
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const location = useLocation();
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -60,17 +60,11 @@ export function AppLayout({ children, currentPage, onPageChange }: AppLayoutProp
             </div>
             <nav className="flex-1 p-4 space-y-2">
               {navigation.map((item) => (
-                <Button
-                  key={item.id}
-                  variant={currentPage === item.id ? "default" : "ghost"}
-                  className="w-full justify-start"
-                  onClick={() => {
-                    onPageChange(item.id);
-                    setSidebarOpen(false);
-                  }}
-                >
-                  <item.icon className="h-4 w-4 mr-2" />
-                  {item.name}
+                <Button asChild key={item.id} variant={location.pathname === item.path ? "default" : "ghost"} className="w-full justify-start">
+                  <Link to={item.path} onClick={() => setSidebarOpen(false)}>
+                    <item.icon className="h-4 w-4 mr-2" />
+                    {item.name}
+                  </Link>
                 </Button>
               ))}
             </nav>
@@ -86,14 +80,11 @@ export function AppLayout({ children, currentPage, onPageChange }: AppLayoutProp
         </div>
         <nav className="flex-1 p-4 space-y-2">
           {navigation.map((item) => (
-            <Button
-              key={item.id}
-              variant={currentPage === item.id ? "default" : "ghost"}
-              className="w-full justify-start"
-              onClick={() => onPageChange(item.id)}
-            >
-              <item.icon className="h-4 w-4 mr-2" />
-              {item.name}
+            <Button asChild key={item.id} variant={location.pathname === item.path ? "default" : "ghost"} className="w-full justify-start">
+              <Link to={item.path}>
+                <item.icon className="h-4 w-4 mr-2" />
+                {item.name}
+              </Link>
             </Button>
           ))}
         </nav>
@@ -113,7 +104,7 @@ export function AppLayout({ children, currentPage, onPageChange }: AppLayoutProp
               <Menu className="h-4 w-4" />
             </Button>
             <h1 className="text-xl font-semibold text-gray-900 capitalize">
-              {navigation.find(item => item.id === currentPage)?.name || 'Dashboard'}
+              {navigation.find(item => item.path === location.pathname)?.name || 'Dashboard'}
             </h1>
           </div>
           <div className="flex items-center gap-4">

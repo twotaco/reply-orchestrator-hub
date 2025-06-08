@@ -1,17 +1,11 @@
-import { useState } from 'react';
-import { AuthProvider, useAuth } from '@/hooks/useAuth';
+import { AppLayout } from "@/components/layout/AppLayout";
+import { Outlet } from "react-router-dom";
+import { useAuth } from '@/hooks/useAuth';
 import { AuthPage } from '@/components/auth/AuthPage';
-import { AppLayout } from '@/components/layout/AppLayout';
-import { PostmarkSetup } from '@/components/postmark/PostmarkSetup';
-import { KnowReplySetup } from '@/components/knowreply/KnowReplySetup';
-import { MCPManagement } from '@/components/mcp/MCPManagement';
-import { EmailTesting } from '@/components/email-testing/EmailTesting';
-import { ActivityLogs } from '@/components/activity-logs/ActivityLogs';
-import { UnifiedDashboardPage } from '@/pages/UnifiedDashboardPage'; // New Import
 
-function AppContent() {
+// This component now primarily serves as the layout for authenticated routes
+function PagesApp() {
   const { user, loading } = useAuth();
-  const [currentPage, setCurrentPage] = useState('unifiedDashboard'); // Default to new page for testing
 
   if (loading) {
     return (
@@ -22,41 +16,16 @@ function AppContent() {
   }
 
   if (!user) {
+    // AuthPage might redirect or show a login form.
+    // This ensures that AppLayout and Outlet are only rendered for authenticated users.
     return <AuthPage />;
   }
 
-  const renderPage = () => {
-    switch (currentPage) {
-      case 'unifiedDashboard': // New Case
-        return <UnifiedDashboardPage />;
-      case 'postmark':
-        return <PostmarkSetup />;
-      case 'knowreply':
-        return <KnowReplySetup />;
-      case 'mcps':
-        return <MCPManagement />;
-      case 'email-testing':
-        return <EmailTesting />;
-      case 'logs':
-        return <ActivityLogs />;
-      default:
-        return <UnifiedDashboardPage />; // Default to new page for testing
-    }
-  };
-
   return (
-    <AppLayout currentPage={currentPage} onPageChange={setCurrentPage}>
-      {renderPage()}
+    <AppLayout>
+      <Outlet /> {/* Child routes defined in AppRouter will render here */}
     </AppLayout>
   );
 }
 
-function App() {
-  return (
-    <AuthProvider>
-      <AppContent />
-    </AuthProvider>
-  );
-}
-
-export default App;
+export default PagesApp;
