@@ -23,15 +23,14 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
 
 // Lucide Icons
-import { Users, Mail, MessageSquareText, ShoppingBag, BarChartHorizontalBig, PieChartIcon, Briefcase, Search } from 'lucide-react'; // Added Search
+import { Users, Mail, MessageSquareText, ShoppingBag, BarChartHorizontalBig, PieChartIcon, Briefcase, Search } from 'lucide-react';
 
 // New Dashboard Components
 import { CustomerSummaryCard } from './CustomerSummaryCard';
 import { EmailDetailsCard } from './EmailDetailsCard';
 import { KeyQuestionsList } from './KeyQuestionsList';
 import { ProductInterestsList } from './ProductInterestsList';
-// import { CustomerJourneyChart } from './CustomerJourneyChart'; // Removed
-import { CustomerActivityChart } from '@/components/charts/CustomerActivityChart'; // Added
+import { CustomerActivityChart } from '@/components/charts/CustomerActivityChart';
 
 // Data Fetching Functions
 export async function fetchCustomers(): Promise<InqCustomers[]> {
@@ -106,7 +105,7 @@ export async function fetchResponsesForEmail(emailId: string): Promise<InqRespon
 }
 
 export async function fetchAllEmails(dateRange?: DateRange): Promise<InqEmails[]> {
-  let query = supabase.from('inq_emails').select('*').order('received_at', { ascending: false }); // Fetches all fields, including agent_id if present
+  let query = supabase.from('inq_emails').select('*').order('received_at', { ascending: false });
 
   if (dateRange?.from && dateRange?.to) {
     const fromDateStr = dateRange.from.toISOString();
@@ -171,7 +170,7 @@ export function Dashboard() {
   const [dateRange, setDateRange] = useState<DateRange | undefined>(() => {
     const today = new Date();
     return {
-      from: subDays(today, 6), // Default to last 7 days
+      from: subDays(today, 6),
       to: today,
     };
   });
@@ -182,7 +181,7 @@ export function Dashboard() {
     let fromDate;
     if (preset === 'last7days') {
       fromDate = subDays(today, 6);
-    } else { // last30days
+    } else {
       fromDate = subDays(today, 29);
     }
     setDateRange({ from: fromDate, to: today });
@@ -194,23 +193,19 @@ export function Dashboard() {
     setActivePreset(null);
   };
 
-  // Initial Load: Customers and All Emails for Charts (respecting dateRange)
   useEffect(() => {
     const loadInitialData = async () => {
       setLoadingCustomers(true);
       setLoadingCharts(true);
 
-      // Customers list is not filtered by date for now
       const customersData = await fetchCustomers();
       setCustomers(customersData);
       setLoadingCustomers(false);
 
-      // Fetch all emails for charts, respecting the dateRange
       const allEmailsData = await fetchAllEmails(dateRange);
       setAllEmailsForCharts(allEmailsData);
       setLoadingCharts(false);
 
-      // When dateRange changes, reset selected customer and their specific details
       setSelectedCustomer(null);
       setCustomerEmails([]);
       setSelectedEmail(null);
@@ -233,7 +228,6 @@ export function Dashboard() {
     }
   }, [dateRange]);
 
-  // On selectedCustomer change (now also depends on dateRange)
   useEffect(() => {
     if (selectedCustomer) {
       setLoadingCustomerDetails(true);
@@ -241,13 +235,13 @@ export function Dashboard() {
       setEmailKeyQuestions([]);
       setEmailProducts([]);
       setEmailResponses([]);
-      setCurrentFunnelStage(null); // Reset while loading new emails
-      setCurrentSentiment(null);   // Reset while loading new emails
+      setCurrentFunnelStage(null);
+      setCurrentSentiment(null);
 
       fetchEmailsForCustomer(selectedCustomer.customer_id, dateRange).then(emails => {
         setCustomerEmails(emails);
         if (emails && emails.length > 0) {
-          const latestEmail = emails[0]; // Emails are sorted by received_at descending
+          const latestEmail = emails[0];
           setCurrentFunnelStage(latestEmail.funnel_stage || null);
           setCurrentSentiment(latestEmail.sentiment_overall || null);
         } else {
@@ -265,7 +259,6 @@ export function Dashboard() {
     }
   }, [selectedCustomer, dateRange]);
 
-  // On selectedEmail change
   useEffect(() => {
     if (selectedEmail) {
       setLoadingEmailDetails(true);
@@ -329,7 +322,6 @@ export function Dashboard() {
     return emails;
   }, [customerEmails, priorityFilter, escalationFilter]);
 
-  // UI Structure
   return (
     <div className="flex flex-col h-[calc(100vh-theme(spacing.16))]"> {/* Outer container for flex direction */}
       {/* Date Filters Bar */}
@@ -356,160 +348,157 @@ export function Dashboard() {
         />
       </div>
 
-      {/* Existing 3-Pane Layout (ensure it's wrapped to allow flex-col for the bar above) */}
-      <div className="flex flex-grow gap-4 p-4 overflow-hidden"> {/* Add flex-grow and overflow-hidden */}
-        {/* Left Pane: Customer List & Charts */}
+      <div className="flex flex-grow gap-4 p-4 overflow-hidden">
+        {/* Left Pane: Customer List */}
         <div className="flex flex-col w-1/4 space-y-4">
-        <Card className="flex-shrink-0">
-          <CardHeader>
-            <CardTitle className="flex items-center"><Users className="mr-2 h-5 w-5" /> Customers</CardTitle>
-            <div className="relative mt-2">
-              <Search className="absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-              <Input
-                type="search"
-                placeholder="Search customers..."
-                value={customerSearchTerm}
-                onChange={(e) => setCustomerSearchTerm(e.target.value)}
-                className="pl-8 w-full"
-              />
-            </div>
-          </CardHeader>
-          <CardContent>
-            {loadingCustomers ? (
-              <div className="space-y-2">
-                {[...Array(5)].map((_, i) => <Skeleton key={i} className="h-8 w-full" />)}
-              </div>
-            ) : (
-              <ScrollArea className="h-[150px]"> {/* Adjusted height */}
-                {filteredCustomers.length > 0 ? filteredCustomers.map(customer => (
-                  <div
-                    key={customer.customer_id}
-                    className={`p-2 hover:bg-accent cursor-pointer rounded-md text-sm ${selectedCustomer?.customer_id === customer.customer_id ? 'bg-muted font-semibold' : ''}`}
-                    onClick={() => {
-                      setSelectedCustomer(customer);
-                      // setCustomerSearchTerm(""); // Optional: clear search on select
-                    }}
-                  >
-                    {customer.name || customer.email || 'Unnamed Customer'}
-                  </div>
-                )) : <p className="text-sm text-muted-foreground text-center py-4">No customers match your search.</p>}
-              </ScrollArea>
-            )}
-          </CardContent>
-        </Card>
-        {/* CustomerJourneyChart removed from here */}
-      </div>
-
-      {/* Center Pane: Selected Customer & Their Emails */}
-      <div className="flex flex-col w-1/2 space-y-4">
-        {selectedCustomer ? (
-          <>
-            <CustomerSummaryCard
-              customer={selectedCustomer}
-              currentFunnelStage={currentFunnelStage}
-              currentSentiment={currentSentiment}
-            />
-            {/* Container for Email List Card and CustomerActivityChart */}
-            <div className="flex flex-col space-y-4 flex-grow">
-              <Card className="flex-grow flex flex-col"> {/* Email List Card */}
-                <CardHeader>
-                  <CardTitle className="flex items-center">
-                    <Mail className="mr-2 h-5 w-5" /> Emails from {selectedCustomer.name || 'Customer'}
-                  </CardTitle>
-                  <div className="flex flex-wrap items-center gap-4 pt-2">
-                    {/* Priority and Escalation Filters */}
-                    <div className="flex items-center gap-2">
-                      <Label htmlFor="priority-filter" className="text-sm">Priority:</Label>
-                      <Select value={priorityFilter} onValueChange={setPriorityFilter}>
-                        <SelectTrigger id="priority-filter" className="w-[120px] h-8 text-xs">
-                          <SelectValue placeholder="Select priority" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="all">All</SelectItem>
-                          <SelectItem value="high">High</SelectItem>
-                          <SelectItem value="medium">Medium</SelectItem>
-                          <SelectItem value="low">Low</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
-                    <div className="flex items-center space-x-2">
-                      <Checkbox
-                        id="escalation-filter"
-                        checked={escalationFilter}
-                        onCheckedChange={(checked) => setEscalationFilter(checked as boolean)}
-                      />
-                      <Label htmlFor="escalation-filter" className="text-sm font-medium">
-                        Manager Escalated
-                      </Label>
-                    </div>
-                  </div>
-                </CardHeader>
-                <CardContent className="flex-grow overflow-hidden">
-                  {loadingCustomerDetails ? (
-                    <div className="space-y-2">
-                      {[...Array(5)].map((_, i) => <Skeleton key={i} className="h-10 w-full" />)}
-                    </div>
-                  ) : (
-                    <ScrollArea className="h-full pr-3">
-                      {furtherFilteredEmails.length > 0 ? furtherFilteredEmails.map(email => (
-                        <div
-                          key={email.email_id}
-                          className={`p-3 mb-2 border rounded-lg hover:bg-accent cursor-pointer ${selectedEmail?.email_id === email.email_id ? 'bg-muted shadow-inner' : 'bg-card'}`}
-                          onClick={() => setSelectedEmail(email)}
-                        >
-                          <p className={`font-medium text-sm truncate ${selectedEmail?.email_id === email.email_id ? 'text-primary' : ''}`}>
-                            {email.email_subject || 'No Subject'}
-                          </p>
-                          <p className="text-xs text-muted-foreground">{new Date(email.received_at).toLocaleString()}</p>
-                        </div>
-                      )) : <p className="text-sm text-muted-foreground text-center py-10">No emails match your filters.</p>}
-                    </ScrollArea>
-                  )}
-                </CardContent>
-              </Card>
-
-              {furtherFilteredEmails && ( // Render CustomerActivityChart if emails are available
-                <CustomerActivityChart
-                  emails={furtherFilteredEmails}
-                  isLoading={loadingCustomerDetails}
+          <Card className="flex-shrink-0">
+            <CardHeader>
+              <CardTitle className="flex items-center"><Users className="mr-2 h-5 w-5" /> Customers</CardTitle>
+              <div className="relative mt-2">
+                <Search className="absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                <Input
+                  type="search"
+                  placeholder="Search customers..."
+                  value={customerSearchTerm}
+                  onChange={(e) => setCustomerSearchTerm(e.target.value)}
+                  className="pl-8 w-full"
                 />
+              </div>
+            </CardHeader>
+            <CardContent>
+              {loadingCustomers ? (
+                <div className="space-y-2">
+                  {[...Array(5)].map((_, i) => <Skeleton key={i} className="h-8 w-full" />)}
+                </div>
+              ) : (
+                <ScrollArea className="h-[150px]">
+                  {filteredCustomers.length > 0 ? filteredCustomers.map(customer => (
+                    <div
+                      key={customer.customer_id}
+                      className={`p-2 hover:bg-accent cursor-pointer rounded-md text-sm ${selectedCustomer?.customer_id === customer.customer_id ? 'bg-muted font-semibold' : ''}`}
+                      onClick={() => {
+                        setSelectedCustomer(customer);
+                      }}
+                    >
+                      {customer.name || customer.email || 'Unnamed Customer'}
+                    </div>
+                  )) : <p className="text-sm text-muted-foreground text-center py-4">No customers match your search.</p>}
+                </ScrollArea>
               )}
-            </div>
-          </>
-        ) : (
-          <Card className="flex-grow flex items-center justify-center">
-            <div className="text-center text-muted-foreground">
-              <Users className="mx-auto h-12 w-12 mb-2" />
-              <p>Select a customer to view details.</p>
-            </div>
+            </CardContent>
           </Card>
-        )}
-      </div>
+          {/* CustomerJourneyChart was removed from here, left pane might be shorter or have other content later */}
+        </div>
 
-      {/* Right Pane: Selected Email Details */}
-      <div className="flex flex-col w-1/4 space-y-4">
-        {selectedEmail ? (
-          <ScrollArea className="h-full pr-3">
-            <div className="space-y-4">
-              <EmailDetailsCard
-                email={selectedEmail}
-                respondingAgentEmail={respondingAgentEmail}
-                isLoadingAgentEmail={isLoadingAgentEmail}
+        {/* Center Pane: Selected Customer & Their Emails */}
+        <div className="flex flex-col w-1/2 space-y-4">
+          {selectedCustomer ? (
+            <>
+              <CustomerSummaryCard
+                customer={selectedCustomer}
+                currentFunnelStage={currentFunnelStage}
+                currentSentiment={currentSentiment}
               />
-              <KeyQuestionsList questions={emailKeyQuestions} isLoading={loadingEmailDetails} />
-              <ProductInterestsList products={emailProducts} isLoading={loadingEmailDetails} />
-              {/* Responses card removed */}
-            </div>
-          </ScrollArea>
-        ) : (
-          <Card className="flex-grow flex items-center justify-center">
-            <div className="text-center text-muted-foreground">
-              <Mail className="mx-auto h-12 w-12 mb-2" />
-              <p>Select an email to view details.</p>
-            </div>
-          </Card>
-        )}
-      </div>
-    </div>
+              <div className="flex flex-col space-y-4 flex-grow">
+                <Card className="flex-grow flex flex-col">
+                  <CardHeader>
+                    <CardTitle className="flex items-center">
+                      <Mail className="mr-2 h-5 w-5" /> Emails from {selectedCustomer.name || 'Customer'}
+                    </CardTitle>
+                    <div className="flex flex-wrap items-center gap-4 pt-2">
+                      <div className="flex items-center gap-2">
+                        <Label htmlFor="priority-filter" className="text-sm">Priority:</Label>
+                        <Select value={priorityFilter} onValueChange={setPriorityFilter}>
+                          <SelectTrigger id="priority-filter" className="w-[120px] h-8 text-xs">
+                            <SelectValue placeholder="Select priority" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="all">All</SelectItem>
+                            <SelectItem value="high">High</SelectItem>
+                            <SelectItem value="medium">Medium</SelectItem>
+                            <SelectItem value="low">Low</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div className="flex items-center space-x-2">
+                        <Checkbox
+                          id="escalation-filter"
+                          checked={escalationFilter}
+                          onCheckedChange={(checked) => setEscalationFilter(checked as boolean)}
+                        />
+                        <Label htmlFor="escalation-filter" className="text-sm font-medium">
+                          Manager Escalated
+                        </Label>
+                      </div>
+                    </div>
+                  </CardHeader>
+                  <CardContent className="flex-grow overflow-hidden">
+                    {loadingCustomerDetails ? (
+                      <div className="space-y-2">
+                        {[...Array(5)].map((_, i) => <Skeleton key={i} className="h-10 w-full" />)}
+                      </div>
+                    ) : (
+                      <ScrollArea className="h-full pr-3">
+                        {furtherFilteredEmails.length > 0 ? furtherFilteredEmails.map(email => (
+                          <div
+                            key={email.email_id}
+                            className={`p-3 mb-2 border rounded-lg hover:bg-accent cursor-pointer ${selectedEmail?.email_id === email.email_id ? 'bg-muted shadow-inner' : 'bg-card'}`}
+                            onClick={() => setSelectedEmail(email)}
+                          >
+                            <p className={`font-medium text-sm truncate ${selectedEmail?.email_id === email.email_id ? 'text-primary' : ''}`}>
+                              {email.email_subject || 'No Subject'}
+                            </p>
+                            <p className="text-xs text-muted-foreground">{new Date(email.received_at).toLocaleString()}</p>
+                          </div>
+                        )) : <p className="text-sm text-muted-foreground text-center py-10">No emails match your filters.</p>}
+                      </ScrollArea>
+                    )}
+                  </CardContent>
+                </Card>
+
+                {furtherFilteredEmails && (
+                  <CustomerActivityChart
+                    emails={furtherFilteredEmails}
+                    isLoading={loadingCustomerDetails}
+                  />
+                )}
+              </div>
+            </>
+          ) : (
+            <Card className="flex-grow flex items-center justify-center">
+              <div className="text-center text-muted-foreground">
+                <Users className="mx-auto h-12 w-12 mb-2" />
+                <p>Select a customer to view details.</p>
+              </div>
+            </Card>
+          )}
+        </div>
+
+        {/* Right Pane: Selected Email Details */}
+        <div className="flex flex-col w-1/4 space-y-4">
+          {selectedEmail ? (
+            <ScrollArea className="h-full pr-3">
+              <div className="space-y-4">
+                <EmailDetailsCard
+                  email={selectedEmail}
+                  respondingAgentEmail={respondingAgentEmail}
+                  isLoadingAgentEmail={isLoadingAgentEmail}
+                />
+                <KeyQuestionsList questions={emailKeyQuestions} isLoading={loadingEmailDetails} />
+                <ProductInterestsList products={emailProducts} isLoading={loadingEmailDetails} />
+                {/* Responses card removed */}
+              </div>
+            </ScrollArea>
+          ) : (
+            <Card className="flex-grow flex items-center justify-center">
+              <div className="text-center text-muted-foreground">
+                <Mail className="mx-auto h-12 w-12 mb-2" />
+                <p>Select an email to view details.</p>
+              </div>
+            </Card>
+          )}
+        </div>
+      </div> {/* Closes 3-Pane Container: div className="flex flex-grow gap-4 p-4 overflow-hidden" */}
+    </div> // ADDED: Closes Outer container: div className="flex flex-col h-[calc(100vh-theme(spacing.16))]"
   );
 }
