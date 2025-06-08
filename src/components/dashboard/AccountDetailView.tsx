@@ -11,6 +11,7 @@ import { FunnelStageDistributionChart } from './FunnelStageDistributionChart';
 import { SimplePieChart } from '@/components/charts/SimplePieChart';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 import { LineChart as LineChartIcon, HelpCircle } from 'lucide-react';
+import { Skeleton } from '@/components/ui/skeleton'; // Added Skeleton import
 
 // Import shared functions and types from dashboardUtils
 import {

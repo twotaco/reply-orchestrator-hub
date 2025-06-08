@@ -19,15 +19,15 @@ import {
   type ResponseTypeData,
   type VolumeDataPoint
 } from '@/lib/dashboardUtils';
+import { Skeleton } from '@/components/ui/skeleton';
+
 
 interface TopicDetailViewProps {
   selectedTopic: ProcessedTopic | null;
-  dateRange?: DateRange;
+  // dateRange?: DateRange; // Removed as topic emails are pre-filtered
 }
 
-// Local helper functions are now removed and imported from dashboardUtils
-
-export function TopicDetailView({ selectedTopic, dateRange }: TopicDetailViewProps) {
+export function TopicDetailView({ selectedTopic }: TopicDetailViewProps) {
   const [responseTypesData, setResponseTypesData] = useState<ResponseTypeData[]>([]);
   const [isLoadingResponseTypes, setIsLoadingResponseTypes] = useState(false);
   const [managerEscalationData, setManagerEscalationData] = useState<ResponseTypeData[]>([]);
@@ -113,43 +113,44 @@ export function TopicDetailView({ selectedTopic, dateRange }: TopicDetailViewPro
     return <Card className="flex items-center justify-center min-h-[300px] h-full"><p className="text-muted-foreground">No topic data available.</p></Card>;
   }
   // Casting to InqEmails[] might still be needed if charts expect full InqEmails type and ProcessedTopic.emails is a Pick<...>
-  // However, specific charts use specific fields which are now included in the Pick.
-  const topicEmailsForCharts = selectedTopic.emails as InqEmails[];
+  // This cast might still be an issue if FunnelStageDistributionChart strictly needs all InqEmails fields not in Pick.
+  // Assuming for now that the Pick in ProcessedTopic.emails includes what FunnelStageDistributionChart needs (e.g. funnel_stage)
+  const topicEmailsForFunnelChart = selectedTopic.emails as InqEmails[];
 
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 h-full">
-      <div className="space-y-6">
-        <FunnelStageDistributionChart emails={topicEmailsForCharts} isLoading={false} />
-        <SimplePieChart title="Response Types" data={responseTypesData} isLoading={isLoadingResponseTypes} />
-      </div>
-
-      <div className="space-y-6">
-         <SimplePieChart data={managerEscalationData} title="Manager Escalation Status" isLoading={false} />
-         <Card>
+    <div className="space-y-6"> {/* Main container is now a single column flow */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6"> {/* 2x2 Grid for charts */}
+        {/* Row 1, Cell 1: Volume Trend */}
+        <Card>
             <CardHeader><CardTitle className="text-sm font-medium">Volume Trend for "{selectedTopic.displayName}"</CardTitle></CardHeader>
             <CardContent className="h-64">
                 {volumeTrendData.length > 0 ? (
                     <ResponsiveContainer width="100%" height="100%">
-                        <LineChart data={volumeTrendData} margin={{ top: 5, right: 20, bottom: 50, left: -20 }}>
+                        <LineChart data={volumeTrendData} margin={{ top: 5, right: 20, bottom: 5, left: -20 }}>
                             <CartesianGrid strokeDasharray="3 3" />
-                            <XAxis
-                                dataKey="date"
-                                tickFormatter={(tick) => new Date(tick + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
-                                angle={-45}
-                                textAnchor="end"
-                                interval={Math.max(0, Math.floor(volumeTrendData.length / 10) -1)}
-                                height={60}
-                            />
+                            <XAxis dataKey="date" tickFormatter={(tick) => new Date(tick).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} angle={-30} textAnchor="end" height={50}/>
                             <YAxis allowDecimals={false} />
-                            <Tooltip labelFormatter={(label) => new Date(label + 'T00:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })} />
+                            <Tooltip labelFormatter={(label) => new Date(label).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })} />
                             <Legend />
                             <Line type="monotone" dataKey="count" name="Emails" stroke="#8884d8" strokeWidth={2} dot={{ r: 3 }} activeDot={{ r: 6 }} />
                         </LineChart>
                     </ResponsiveContainer>
-                ) : ( <div className="h-full flex flex-col items-center justify-center"><LineChartIcon className="h-12 w-12 text-muted-foreground mb-2" /><p className="ml-2 text-muted-foreground text-sm">No volume data for this topic.</p></div> )}
+                ) : ( <div className="h-full flex items-center justify-center"><LineChartIcon className="h-12 w-12 text-muted-foreground" /><p className="ml-2 text-muted-foreground">No volume data.</p></div> )}
             </CardContent>
         </Card>
-        <Card>
+
+        {/* Row 1, Cell 2: Funnel Stage Distribution */}
+        <FunnelStageDistributionChart emails={topicEmailsForFunnelChart} isLoading={false} />
+
+        {/* Row 2, Cell 1: Response Types */}
+        <SimplePieChart title="Response Types" data={responseTypesData} isLoading={isLoadingResponseTypes} />
+
+        {/* Row 2, Cell 2: Manager Escalation Stats */}
+        <SimplePieChart data={managerEscalationData} title="Manager Escalation Distribution" isLoading={false} />
+      </div>
+
+      {/* FAQ Section (Full Width) */}
+      <Card>
             <CardHeader>
                 <CardTitle className="text-sm font-medium">Frequently Asked Questions</CardTitle>
                 <CardDescription className="text-xs text-muted-foreground">Common questions from emails in this topic (top 10 by confidence).</CardDescription>
