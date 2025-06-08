@@ -32,6 +32,35 @@ async function fetchCustomers(): Promise<InqCustomers[]> {
   return data || [];
 }
 
+// Add these missing functions:
+async function fetchEmailById(emailId: string): Promise<InqEmails | null> {
+  const { data, error } = await supabase
+    .from('inq_emails')
+    .select('*')
+    .eq('email_id', emailId)
+    .single();
+  if (error) {
+    console.error(`Error fetching email ${emailId}:`, error);
+    // Potentially return a more specific error or throw,
+    // but for now, null indicates failure or not found.
+    return null;
+  }
+  return data;
+}
+
+async function fetchKeyQuestionsForEmail(emailId: string): Promise<InqKeyQuestions[]> {
+  const { data, error } = await supabase
+    .from('inq_key_questions')
+    .select('*')
+    .eq('email_id', emailId)
+    .order('created_at', { ascending: true });
+  if (error) {
+    console.error(`Error fetching key questions for email ${emailId}:`, error);
+    return [];
+  }
+  return data || [];
+}
+
 function normalizeSubject(subject: string | null): string {
   if (!subject) return "No Subject";
   return subject.toLowerCase().replace(/^(re:|fw:|fwd:)\s*/i, '').replace(/[\[\(]?msg:\s*\d+[\]\)]?/i, '').replace(/\s+/g, ' ').trim() || "No Subject";

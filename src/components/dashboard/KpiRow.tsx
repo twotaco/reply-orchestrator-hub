@@ -91,8 +91,10 @@ async function fetchActiveAgentsCount(dateRange?: DateRange): Promise<number> {
 async function fetchManagerEscalationsCount(dateRange?: DateRange): Promise<number> {
   let query = supabase
     .from('inq_emails')
-    .select('*', { count: 'exact', head: true })
-    .eq('include_manager', true); // Assuming 'include_manager' is a boolean field
+    // Using .select() without specific columns for a head:true count request is often fine.
+    // Supabase counts rows matching the filters.
+    .select('email_id', { count: 'exact', head: true })
+    .is('include_manager', true); // Changed from .eq() to .is() for boolean
 
   if (dateRange?.from && dateRange?.to) {
     const fromDateStr = dateRange.from.toISOString();
