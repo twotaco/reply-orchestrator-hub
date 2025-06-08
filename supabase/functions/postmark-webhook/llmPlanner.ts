@@ -94,8 +94,8 @@ JSON schema:
   {
     "tool": "string", // The exact name of the tool from the 'Available Tools' list
     "args": { // The arguments object for the tool, using exact keys from args_schema_keys
-      "argName1": "value1", // Use exact argument names as per args_schema_keys
-      "argName2": "value2" // Use exact argument names as per args_schema_keys
+      "argName1": "value1", // Use exact argument names as per args_schema keys
+      "argName2": "value2" // Use exact argument names as per args_schema keys
     },
     "reasoning": "string" // A brief explanation of why this tool is needed and what you want to accomplish by calling it
   }
@@ -111,7 +111,7 @@ Example of a multi-step plan using tool outputs as input values for subsequent s
     "reasoning": "To identify the customer based on the email sender information."
   },
   {
-    "tool": "orders.getLatestOrder",
+    "tool": "orders.getOrders",
     "args": { "customerId": "{{steps[0].outputs.id}}" },
     "reasoning": "To fetch the latest order for the identified customer."
   },
@@ -124,7 +124,7 @@ Example of a multi-step plan using tool outputs as input values for subsequent s
 
 `;
 
-  console.log('📝 Constructed Prompt for Gemini (first 200 chars):', geminiPrompt.substring(0,200));
+  console.log('📝 Constructed Prompt for Gemini:', geminiPrompt);
 
   // Gemini API expects contents.parts.text format
   const requestPayloadForGemini = {
