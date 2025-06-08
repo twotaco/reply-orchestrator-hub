@@ -197,7 +197,7 @@ export function UnifiedDashboardPage() {
   const [dateRange, setDateRange] = useState<DateRange | undefined>(() => ({ from: subDays(new Date(), 6), to: new Date() }));
   const [activePreset, setActivePreset] = useState<string | null>('last7days');
 
-  const [activeSelectionType, setActiveSelectionType] = useState<SelectionType>(null);
+  const [activeSelectionType, setActiveSelectionType] = useState<SelectionType>('topic');
   const [selectedCustomerId, setSelectedCustomerId] = useState<string | null>(null);
   const [selectedTopicId, setSelectedTopicId] = useState<string | null>(null);
   const [selectedAccountId, setSelectedAccountId] = useState<string | null>(null);
