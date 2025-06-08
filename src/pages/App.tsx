@@ -10,7 +10,8 @@ import { MCPManagement } from '@/components/mcp/MCPManagement';
 import { EmailTesting } from '@/components/email-testing/EmailTesting';
 import { ActivityLogs } from '@/components/activity-logs/ActivityLogs';
 import { BusinessDashboardPage } from '@/pages/BusinessDashboardPage';
-import { TopicsDashboardPage } from '@/pages/TopicsDashboardPage'; // New Import
+import { TopicsDashboardPage } from '@/pages/TopicsDashboardPage';
+import { FAQDashboardPage } from '@/pages/FAQDashboardPage'; // New Import
 
 function AppContent() {
   const { user, loading } = useAuth();
@@ -34,8 +35,10 @@ function AppContent() {
         return <Dashboard />;
       case 'businessDashboard':
         return <BusinessDashboardPage />;
-      case 'topicsDashboard': // New Case
+      case 'topicsDashboard':
         return <TopicsDashboardPage />;
+      case 'faqDashboard': // New Case
+        return <FAQDashboardPage />;
       case 'postmark':
         return <PostmarkSetup />;
       case 'knowreply':

@@ -14,7 +14,8 @@ import {
   Menu,
   X,
   Briefcase,
-  Tag, // Add Tag
+  Tag,
+  HelpCircle, // Add HelpCircle
   TestTube
 } from 'lucide-react';
 
@@ -27,7 +28,8 @@ interface AppLayoutProps {
 const navigation = [
   { id: 'dashboard', name: 'Dashboard', icon: LayoutDashboard },
   { id: 'businessDashboard', name: 'Business Dashboard', icon: Briefcase },
-  { id: 'topicsDashboard', name: 'Topics Dashboard', icon: Tag }, // New Entry
+  { id: 'topicsDashboard', name: 'Topics Dashboard', icon: Tag },
+  { id: 'faqDashboard', name: 'FAQ Dashboard', icon: HelpCircle }, // New Entry
   { id: 'postmark', name: 'Postmark Setup', icon: Mail },
   { id: 'mcps', name: 'Agent Tools Setup', icon: Terminal },
   { id: 'knowreply', name: 'Know Reply Setup', icon: Zap },
