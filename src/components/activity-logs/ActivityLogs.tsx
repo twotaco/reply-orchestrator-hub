@@ -105,7 +105,7 @@ function RenderEmailDetails({ emailData, showJson }: { emailData: any; showJson:
       : null;
 
   const subject = parsedData.Subject || parsedData.subject || "N/A";
-  const dateValue = parsedData.Date || parsedData.date || "";
+  const dateValue = parsedData.Date || parsedData.date || "N/A";
   const replyTo = parsedData.ReplyTo || parsedData.reply_to || null;
 
   const bodyHtml = parsedData.HtmlBody || parsedData.html_body || null;
