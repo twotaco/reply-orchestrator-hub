@@ -373,7 +373,7 @@ export function MCPForm({
           )}
 
           <div className="flex gap-2">
-            <Button type="submit"> {/* Changed to type="submit" */}
+            <Button type="submit" disabled={userRole === 'demo'}> {/* Added disabled logic */}
               <Save className="h-4 w-4 mr-2" />
               Save Configuration
             </Button>
