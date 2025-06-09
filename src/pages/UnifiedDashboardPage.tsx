@@ -6,6 +6,7 @@ import { DateRangePicker } from '@/components/ui/DateRangePicker';
 import { KpiRow } from '@/components/dashboard/KpiRow';
 import { supabase } from '@/integrations/supabase/client';
 import type { InqCustomers, InqEmails, InqKeyQuestions, InqResponses } from '@/integrations/supabase/types';
+import { useAuth } from '@/hooks/useAuth';
 import { SelectionColumn, type SelectionType } from '@/components/dashboard/SelectionColumn';
 import { CustomerDetailView } from '@/components/dashboard/CustomerDetailView';
 import { TopicDetailView } from '@/components/dashboard/TopicDetailView';
@@ -26,8 +27,8 @@ interface InboundAccount {
   count: number;
 }
 
-async function fetchCustomers(): Promise<InqCustomers[]> {
-  const { data, error } = await supabase.from('inq_customers').select('*').order('name', { ascending: true });
+async function fetchCustomers(userId: string): Promise<InqCustomers[]> {
+  const { data, error } = await supabase.from('inq_customers').select('*').eq('user_id', userId).order('name', { ascending: true });
   if (error) { console.error('Error fetching customers:', error); return []; }
   return data || [];
 }
@@ -66,8 +67,12 @@ function normalizeSubject(subject: string | null): string {
   return subject.toLowerCase().replace(/^(re:|fw:|fwd:)\s*/i, '').replace(/[\[\(]?msg:\s*\d+[\]\)]?/i, '').replace(/\s+/g, ' ').trim() || "No Subject";
 }
 
-async function fetchAndProcessTopics(dateRange?: DateRange): Promise<ProcessedTopic[]> {
-  let query = supabase.from('inq_emails').select('email_id, email_subject, sentiment_overall, funnel_stage, include_manager, received_at');
+async function fetchAndProcessTopics(userId: string, dateRange?: DateRange): Promise<ProcessedTopic[]> {
+  let query = supabase
+    .from('inq_emails')
+    .select('email_id, email_subject, sentiment_overall, funnel_stage, include_manager, received_at, inq_customers!inner(user_id)')
+    .eq('inq_customers.user_id', userId);
+
   if (dateRange?.from && dateRange?.to) {
     const fromDateStr = dateRange.from.toISOString();
     const toDate = new Date(dateRange.to);
@@ -93,14 +98,16 @@ async function fetchAndProcessTopics(dateRange?: DateRange): Promise<ProcessedTo
 }
 
 // Updated fetchInboundAccounts function
-async function fetchInboundAccounts(dateRange?: DateRange): Promise<InboundAccount[]> {
+async function fetchInboundAccounts(userId: string, dateRange?: DateRange): Promise<InboundAccount[]> {
   let emailQuery = supabase
     .from('inq_emails')
     .select(`
       email_account_id,
       received_at,
-      agent_email_mappings ( id, email_address )
+      agent_email_mappings ( id, email_address ),
+      inq_customers!inner(user_id)
     `)
+    .eq('inq_customers.user_id', userId)
     .not('email_account_id', 'is', null);
     // Removed .not('agent_email_mappings', 'is', null') for now to see all results from inq_emails initially for debugging.
     // We will filter client-side if agent_email_mappings is null.
@@ -168,10 +175,11 @@ async function fetchInboundAccounts(dateRange?: DateRange): Promise<InboundAccou
 
 
 // New function to fetch all emails that have an email_account_id (for "All Accounts" view)
-async function fetchAllEmailsWithAccounts(dateRange?: DateRange): Promise<InqEmails[]> {
+async function fetchAllEmailsWithAccounts(userId: string, dateRange?: DateRange): Promise<InqEmails[]> {
   let query = supabase
     .from('inq_emails')
-    .select('*') // Select all fields needed by AccountDetailView's charts
+    .select('*, inq_customers!inner(user_id)') // Select all from inq_emails and join for filtering
+    .eq('inq_customers.user_id', userId)      // Filter by user_id
     .not('email_account_id', 'is', null);
 
   if (dateRange?.from && dateRange?.to) {
@@ -191,9 +199,10 @@ async function fetchAllEmailsWithAccounts(dateRange?: DateRange): Promise<InqEma
   }
   return data || [];
 }
-
-
 export function UnifiedDashboardPage() {
+  const { user } = useAuth();
+  const userId = user?.id;
+
   const [dateRange, setDateRange] = useState<DateRange | undefined>(() => ({ from: subDays(new Date(), 6), to: new Date() }));
   const [activePreset, setActivePreset] = useState<string | null>('last7days');
 
@@ -255,46 +264,54 @@ export function UnifiedDashboardPage() {
   }, []);
 
   useEffect(() => {
-    setIsLoadingCustomers(true);
-    fetchCustomers().then(data => { setCustomers(data); setIsLoadingCustomers(false); })
-    .catch(error => { console.error("Failed to load customers", error); setCustomers([]); setIsLoadingCustomers(false); });
-  }, []);
+    if (userId) {
+      setIsLoadingCustomers(true);
+      fetchCustomers(userId).then(data => { setCustomers(data); setIsLoadingCustomers(false); })
+      .catch(error => { console.error("Failed to load customers for user " + userId, error); setCustomers([]); setIsLoadingCustomers(false); });
+    } else {
+      // Optionally, clear customers if userId becomes null after being set
+      setCustomers([]);
+      setIsLoadingCustomers(false);
+    }
+  }, [userId]);
 
   useEffect(() => {
-    if (dateRange?.from && dateRange?.to) {
+    if (userId && dateRange?.from && dateRange?.to) {
       setIsLoadingTopics(true);
-      fetchAndProcessTopics(dateRange).then(data => { setTopics(data); setIsLoadingTopics(false); })
-      .catch(error => { console.error("Failed to load topics", error); setTopics([]); setIsLoadingTopics(false); });
+      fetchAndProcessTopics(userId, dateRange).then(data => { setTopics(data); setIsLoadingTopics(false); })
+      .catch(error => { console.error("Failed to load topics for user " + userId, error); setTopics([]); setIsLoadingTopics(false); });
     } else { setTopics([]); setIsLoadingTopics(false); }
-  }, [dateRange]);
+  }, [userId, dateRange]);
 
   useEffect(() => {
-    if (dateRange?.from && dateRange?.to) {
+    if (userId && dateRange?.from && dateRange?.to) {
       setIsLoadingAccounts(true);
-      fetchInboundAccounts(dateRange).then(data => { setAccounts(data); setIsLoadingAccounts(false); })
-      .catch(error => { console.error("Failed to load inbound accounts", error); setAccounts([]); setIsLoadingAccounts(false); });
+      fetchInboundAccounts(userId, dateRange).then(data => { setAccounts(data); setIsLoadingAccounts(false); })
+      .catch(error => { console.error("Failed to load inbound accounts for user " + userId, error); setAccounts([]); setIsLoadingAccounts(false); });
     } else { setAccounts([]); setIsLoadingAccounts(false); }
-  }, [dateRange]);
+  }, [userId, dateRange]);
 
   // useEffect for fetching all emails for "All Accounts" view
   useEffect(() => {
-    if (activeSelectionType === 'account' && !selectedAccountId && dateRange?.from && dateRange?.to) {
+    if (userId && activeSelectionType === 'account' && !selectedAccountId && dateRange?.from && dateRange?.to) {
       setIsLoadingAllAccountEmails(true);
-      fetchAllEmailsWithAccounts(dateRange)
+      fetchAllEmailsWithAccounts(userId, dateRange)
         .then(emails => {
           setAllAccountEmails(emails);
           setIsLoadingAllAccountEmails(false);
         })
         .catch(error => {
-          console.error("Failed to load all account emails:", error);
+          console.error("Failed to load all account emails for user " + userId, error);
           setAllAccountEmails([]);
           setIsLoadingAllAccountEmails(false);
         });
-    } else if (activeSelectionType !== 'account' || selectedAccountId) {
-      // Clear if not in "all accounts" view to free up memory
+    } else if (!userId || activeSelectionType !== 'account' || selectedAccountId) {
+      // Clear if not in "all accounts" view or if userId is not available
       setAllAccountEmails([]);
+      // also ensure loading state is reset if userId is missing
+      if (!userId) setIsLoadingAllAccountEmails(false);
     }
-  }, [activeSelectionType, selectedAccountId, dateRange]);
+  }, [userId, activeSelectionType, selectedAccountId, dateRange]);
 
   useEffect(() => {
     if (selectedEmailId) {
