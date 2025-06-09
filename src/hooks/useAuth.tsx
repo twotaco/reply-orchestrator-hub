@@ -20,25 +20,51 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [role, setRole] = useState<string | null>(null);
 
   useEffect(() => {
+    const updateUserRole = async (currentSession: Session | null) => {
+      setUser(currentSession?.user ?? null);
+      setSession(currentSession);
+
+      if (currentSession?.user) {
+        try {
+          const { data: profile, error } = await supabase
+            .from('profiles')
+            .select('roles')
+            .eq('id', currentSession.user.id)
+            .single();
+
+          if (error || !profile) {
+            console.warn('Error fetching profile or profile not found:', error);
+            setRole(null);
+          } else {
+            setRole(profile.roles as string | null);
+          }
+        } catch (e) {
+          console.warn('Exception fetching profile:', e);
+          setRole(null);
+        } finally {
+          setLoading(false);
+        }
+      } else {
+        setRole(null);
+        setLoading(false);
+      }
+    };
+
     // Set up auth state listener
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      (event, session) => {
-        setSession(session);
-        setUser(session?.user ?? null);
-        setRole(session?.user?.user_metadata?.role ?? null);
-        setLoading(false);
+      async (event, session) => {
+        await updateUserRole(session);
       }
     );
 
     // Check for existing session
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setSession(session);
-      setUser(session?.user ?? null);
-      setRole(session?.user?.user_metadata?.role ?? null);
-      setLoading(false);
+    supabase.auth.getSession().then(async ({ data: { session } }) => {
+      await updateUserRole(session);
     });
 
-    return () => subscription.unsubscribe();
+    return () => {
+      subscription.unsubscribe();
+    };
   }, []);
 
   const signOut = async () => {
