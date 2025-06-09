@@ -20,7 +20,7 @@ import { MCPTableComponent } from './MCPTableComponent';
 
 export function MCPManagement() {
   const { user, role } = useAuth(); // Added role
-  const isContributor = role === 'Contributor'; // Defined isContributor
+  const isContributor = role === 'contributor'; // Defined isContributor
   const { discoveredProviders, discoveryLoading, discoveryError, fetchDiscoveryData } = useMCPDiscovery();
   const { savedConfiguredActions, loadingEndpoints, fetchEndpoints, deleteEndpoint, toggleEndpointActive } = useMCPEndpoints(user);
   const [showAddForm, setShowAddForm] = useState(false); // Controls visibility of the configuration section

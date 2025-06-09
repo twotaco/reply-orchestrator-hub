@@ -35,7 +35,7 @@ export function PostmarkSetup() {
   const [testing, setTesting] = useState(false);
   const [regeneratingKey, setRegeneratingKey] = useState(false);
 
-  const isContributor = role === 'Contributor'; // Defined isContributor
+  const isContributor = role === 'contributor'; // Defined isContributor
 
   useEffect(() => {
     if (user) {

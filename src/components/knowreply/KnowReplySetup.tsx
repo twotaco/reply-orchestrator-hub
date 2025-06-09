@@ -79,7 +79,7 @@ export function KnowReplySetup() {
   // Removed: const [currentEmailInput, setCurrentEmailInput] = useState<Record<string, string>>({});
   // Removed: const handleEmailInputChange = (agentId: string, value: string) => { ... };
 
-  const isContributor = role === 'Contributor'; // Defined isContributor
+  const isContributor = role === 'contributor'; // Defined isContributor
 
   const handleAddNewEmailRow = (agentId: string) => {
     setAgentConfigs(prevAgentConfigs =>
