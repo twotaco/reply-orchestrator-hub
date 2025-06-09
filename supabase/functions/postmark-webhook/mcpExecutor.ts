@@ -60,7 +60,7 @@ export async function executeMCPPlan(
   }
 
   const mcpServerInternalApiKey = Deno.env.get('MCP_SERVER_INTERNAL_API_KEY');
-  const placeholderRegex = /^{{steps\[(\d+)]\.outputs\.([\w.\[\]-]+)}}$/;
+  const placeholderRegex = /^{{steps\[(\d+)\]\.outputs(?:\[(\d+)\])?\.(.+)}}$/; //Old: /^{{steps\[(\d+)]\.outputs\.([\w.\[\]-]+)}}$/;
 
   for (let i = 0; i < mcpPlan.length; i++) {
     const actionToExecute = mcpPlan[i];
@@ -169,56 +169,68 @@ export async function executeMCPPlan(
 
     for (const key in actionToExecute.args) {
       const value = actionToExecute.args[key];
+      console.log(`[Step ${i}] Processing arg '${key}':`, value);
+      console.log(`From actionToExecute.args:`, JSON.stringify(actionToExecute.args, null, 2));
+
       if (typeof value === 'string') {
         const match = value.match(placeholderRegex);
+
         if (match) {
           console.log(`[Step ${i}] Found placeholder for arg '${key}': ${value}`);
+
           const refStepIndex = parseInt(match[1], 10);
-          const refFieldName = match[2];
+          const outputIndex = match[2] !== undefined ? parseInt(match[2], 10) : undefined;
+          const fieldPath = match[3]; // nested field path like "id", "orders[0].id"
 
           if (refStepIndex < 0 || refStepIndex >= i) {
             placeholderError = `Invalid placeholder: step index ${refStepIndex} is out of bounds for current step ${i}.`;
             console.error(`❌ [Step ${i}] ${placeholderError}`);
             break;
           }
-          const referencedOutput = executionOutputs[refStepIndex];
+
+          let referencedOutput = executionOutputs[refStepIndex];
           if (!referencedOutput || referencedOutput.error) {
             placeholderError = `Invalid placeholder: step ${refStepIndex} for '${value}' failed or produced no output.`;
             console.error(`❌ [Step ${i}] ${placeholderError} Output was:`, referencedOutput);
             break;
           }
-          // --- START OF NEW LOGIC ---
-          const resolvedValue = getValueByPath(referencedOutput, refFieldName);
+
+          // Drill into outputs[<index>] if specified
+          if (outputIndex !== undefined) {
+            referencedOutput = referencedOutput[outputIndex];
+          }
+
+          const resolvedValue = getValueByPath(referencedOutput, fieldPath);
 
           if (resolvedValue !== undefined) {
             resolvedArgs[key] = resolvedValue;
-            // Using JSON.stringify for consistent logging of complex objects/arrays
-            console.log(`[Step ${i}] Resolved placeholder '${value}' (path: '${refFieldName}') to:`, JSON.stringify(resolvedArgs[key]));
+            console.log(`[Step ${i}] Resolved placeholder '${value}' (path: '${fieldPath}') to:`, JSON.stringify(resolvedArgs[key]));
           } else {
             let availablePathHint = "";
-            if (referencedOutput === null || referencedOutput === undefined) {
-                availablePathHint = `Referenced output from step ${refStepIndex} is null or undefined.`;
-            } else if (typeof referencedOutput === 'object' && !Array.isArray(referencedOutput)) { // Check if it's an object but not an array
-                availablePathHint = `Available top-level keys on referenced output object (step ${refStepIndex}): ${Object.keys(referencedOutput).join(', ')}.`;
+            if (referencedOutput == null) {
+              availablePathHint = `Referenced output from step ${refStepIndex} is null or undefined.`;
             } else if (Array.isArray(referencedOutput)) {
-                availablePathHint = `Referenced output (step ${refStepIndex}) is an array of length ${referencedOutput.length}.`;
-            } else { // Is a primitive
-                availablePathHint = `Referenced output (step ${refStepIndex}) is a primitive: ${String(referencedOutput)}.`;
+              availablePathHint = `Referenced output (step ${refStepIndex}) is an array of length ${referencedOutput.length}.`;
+            } else if (typeof referencedOutput === 'object') {
+              availablePathHint = `Available top-level keys: ${Object.keys(referencedOutput).join(', ')}.`;
+            } else {
+              availablePathHint = `Referenced output is a primitive: ${String(referencedOutput)}.`;
             }
 
-            placeholderError = `Invalid placeholder: Could not resolve path '${refFieldName}' in output of step ${refStepIndex} for argument '${key}'. ${availablePathHint}`;
-            // Log a snippet of the referenced output for easier debugging
-            console.error(`❌ [Step ${i}] ${placeholderError}. Full referenced output snippet (up to 500 chars):`, JSON.stringify(referencedOutput, null, 2).substring(0, 500));
-            break; // Exit the loop for this action's args, will be handled by if(placeholderError)
+            placeholderError = `Could not resolve path '${fieldPath}' in step ${refStepIndex} for arg '${key}'. ${availablePathHint}`;
+            console.error(`❌ [Step ${i}] ${placeholderError}. Output snippet:`, JSON.stringify(referencedOutput, null, 2).substring(0, 500));
+            break;
           }
-          // --- END OF NEW LOGIC ---
+
         } else {
-          resolvedArgs[key] = value;
+          resolvedArgs[key] = value; // Not a placeholder — just use it as is
         }
+
       } else {
-        resolvedArgs[key] = value;
+        resolvedArgs[key] = value; // Not a string — just pass through
       }
     }
+
 
     if (placeholderError) {
       results.push({
