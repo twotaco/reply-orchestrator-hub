@@ -313,6 +313,12 @@ async function processWithAgent(
             details: { agent_id: agentConfig.agent_id, error: replyResult.error, to: toEmail, from: fromEmail },
           });
         }
+
+        //***** used in test area for now */
+        console.log(`💬 KnowReply response for agent ${agentConfig.agent_id} (test email):`, responseData);
+        const generatedResponse = responseData.generatedResponse as LLMResponse;
+        storeLLMOutput(generatedResponse, emailInteractionId, knowReplyRequest.email.sender, knowReplyRequest.email.subject, userId, agentConfig.agent_id, payload.To);
+
       }
       }
     } else {
