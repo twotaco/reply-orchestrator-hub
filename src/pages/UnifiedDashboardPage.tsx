@@ -5,6 +5,8 @@ import { Button } from '@/components/ui/button';
 import { DateRangePicker } from '@/components/ui/DateRangePicker';
 import { KpiRow } from '@/components/dashboard/KpiRow';
 import { supabase } from '@/integrations/supabase/client';
+import { useAuth } from '@/hooks/useAuth';
+import { fetchUserEmailAccountIds } from '@/lib/userUtils';
 import type { InqCustomers, InqEmails, InqKeyQuestions, InqResponses } from '@/integrations/supabase/types';
 import { SelectionColumn, type SelectionType } from '@/components/dashboard/SelectionColumn';
 import { CustomerDetailView } from '@/components/dashboard/CustomerDetailView';
@@ -26,8 +28,40 @@ interface InboundAccount {
   count: number;
 }
 
-async function fetchCustomers(): Promise<InqCustomers[]> {
-  const { data, error } = await supabase.from('inq_customers').select('*').order('name', { ascending: true });
+async function fetchCustomers(userEmailAccountIds: string[] | null): Promise<InqCustomers[]> {
+  if (!userEmailAccountIds || userEmailAccountIds.length === 0) {
+    return [];
+  }
+
+  // Step 1: Query inq_emails to get a distinct list of customer_id's
+  const { data: emailData, error: emailError } = await supabase
+    .from('inq_emails')
+    .select('customer_id')
+    .in('email_account_id', userEmailAccountIds)
+    .not('customer_id', 'is', null);
+
+  if (emailError) {
+    console.error('Error fetching customer_ids from inq_emails:', emailError);
+    return [];
+  }
+  if (!emailData || emailData.length === 0) {
+    return [];
+  }
+
+  // Extract unique customer_id's
+  const customerIds = [...new Set(emailData.map(e => e.customer_id))].filter(id => id !== null);
+
+  if (customerIds.length === 0) {
+    return [];
+  }
+
+  // Step 2: Fetch customers
+  const { data, error } = await supabase
+    .from('inq_customers')
+    .select('*')
+    .in('customer_id', customerIds)
+    .order('name', { ascending: true });
+
   if (error) { console.error('Error fetching customers:', error); return []; }
   return data || [];
 }
@@ -66,9 +100,13 @@ function normalizeSubject(subject: string | null): string {
   return subject.toLowerCase().replace(/^(re:|fw:|fwd:)\s*/i, '').replace(/[\[\(]?msg:\s*\d+[\]\)]?/i, '').replace(/\s+/g, ' ').trim() || "No Subject";
 }
 
-async function fetchAndProcessTopics(dateRange?: DateRange): Promise<ProcessedTopic[]> {
+async function fetchAndProcessTopics(dateRange: DateRange | undefined, userEmailAccountIds: string[] | null): Promise<ProcessedTopic[]> {
+  if (!userEmailAccountIds || userEmailAccountIds.length === 0) {
+    return [];
+  }
   let query = supabase.from('inq_emails').select('email_id, email_subject, sentiment_overall, funnel_stage, include_manager, received_at');
   if (dateRange?.from && dateRange?.to) {
+    query = query.in('email_account_id', userEmailAccountIds); // Added filter
     const fromDateStr = dateRange.from.toISOString();
     const toDate = new Date(dateRange.to);
     toDate.setHours(23, 59, 59, 999);
@@ -93,7 +131,11 @@ async function fetchAndProcessTopics(dateRange?: DateRange): Promise<ProcessedTo
 }
 
 // Updated fetchInboundAccounts function
-async function fetchInboundAccounts(dateRange?: DateRange): Promise<InboundAccount[]> {
+async function fetchInboundAccounts(dateRange: DateRange | undefined, userEmailAccountIds: string[] | null): Promise<InboundAccount[]> {
+  if (!userEmailAccountIds || userEmailAccountIds.length === 0) {
+    return [];
+  }
+
   let emailQuery = supabase
     .from('inq_emails')
     .select(`
@@ -101,6 +143,7 @@ async function fetchInboundAccounts(dateRange?: DateRange): Promise<InboundAccou
       received_at,
       agent_email_mappings ( id, email_address )
     `)
+    .in('email_account_id', userEmailAccountIds) // Added filter
     .not('email_account_id', 'is', null);
     // Removed .not('agent_email_mappings', 'is', null') for now to see all results from inq_emails initially for debugging.
     // We will filter client-side if agent_email_mappings is null.
@@ -168,10 +211,14 @@ async function fetchInboundAccounts(dateRange?: DateRange): Promise<InboundAccou
 
 
 // New function to fetch all emails that have an email_account_id (for "All Accounts" view)
-async function fetchAllEmailsWithAccounts(dateRange?: DateRange): Promise<InqEmails[]> {
+async function fetchAllEmailsWithAccounts(dateRange: DateRange | undefined, userEmailAccountIds: string[] | null): Promise<InqEmails[]> {
+  if (!userEmailAccountIds || userEmailAccountIds.length === 0) {
+    return [];
+  }
   let query = supabase
     .from('inq_emails')
     .select('*') // Select all fields needed by AccountDetailView's charts
+    .in('email_account_id', userEmailAccountIds) // Added filter
     .not('email_account_id', 'is', null);
 
   if (dateRange?.from && dateRange?.to) {
@@ -194,6 +241,10 @@ async function fetchAllEmailsWithAccounts(dateRange?: DateRange): Promise<InqEma
 
 
 export function UnifiedDashboardPage() {
+  const { user } = useAuth();
+  const [userEmailAccountIds, setUserEmailAccountIds] = useState<string[] | null>(null);
+  const [isLoadingUserEmailAccountIds, setIsLoadingUserEmailAccountIds] = useState(true);
+
   const [dateRange, setDateRange] = useState<DateRange | undefined>(() => ({ from: subDays(new Date(), 6), to: new Date() }));
   const [activePreset, setActivePreset] = useState<string | null>('last7days');
 
@@ -258,29 +309,39 @@ export function UnifiedDashboardPage() {
     setIsLoadingCustomers(true);
     fetchCustomers().then(data => { setCustomers(data); setIsLoadingCustomers(false); })
     .catch(error => { console.error("Failed to load customers", error); setCustomers([]); setIsLoadingCustomers(false); });
-  }, []);
+  }, [userEmailAccountIds, isLoadingUserEmailAccountIds]); // Add dependencies
 
   useEffect(() => {
-    if (dateRange?.from && dateRange?.to) {
+    // Wait for userEmailAccountIds to be loaded and not null
+    if (dateRange?.from && dateRange?.to && userEmailAccountIds && !isLoadingUserEmailAccountIds) {
       setIsLoadingTopics(true);
-      fetchAndProcessTopics(dateRange).then(data => { setTopics(data); setIsLoadingTopics(false); })
-      .catch(error => { console.error("Failed to load topics", error); setTopics([]); setIsLoadingTopics(false); });
-    } else { setTopics([]); setIsLoadingTopics(false); }
-  }, [dateRange]);
+      fetchAndProcessTopics(dateRange, userEmailAccountIds) // Pass it here
+        .then(data => { setTopics(data); setIsLoadingTopics(false); })
+        .catch(error => { console.error("Failed to load topics", error); setTopics([]); setIsLoadingTopics(false); });
+    } else if (!userEmailAccountIds && !isLoadingUserEmailAccountIds) {
+      // If user has no accounts or not loaded yet, set empty
+      setTopics([]);
+      setIsLoadingTopics(false);
+    }
+  }, [dateRange, userEmailAccountIds, isLoadingUserEmailAccountIds]); // Add dependencies
 
   useEffect(() => {
-    if (dateRange?.from && dateRange?.to) {
+    if (dateRange?.from && dateRange?.to && userEmailAccountIds && !isLoadingUserEmailAccountIds) {
       setIsLoadingAccounts(true);
-      fetchInboundAccounts(dateRange).then(data => { setAccounts(data); setIsLoadingAccounts(false); })
-      .catch(error => { console.error("Failed to load inbound accounts", error); setAccounts([]); setIsLoadingAccounts(false); });
-    } else { setAccounts([]); setIsLoadingAccounts(false); }
-  }, [dateRange]);
+      fetchInboundAccounts(dateRange, userEmailAccountIds) // Pass it here
+        .then(data => { setAccounts(data); setIsLoadingAccounts(false); })
+        .catch(error => { console.error("Failed to load inbound accounts", error); setAccounts([]); setIsLoadingAccounts(false); });
+    } else if (!userEmailAccountIds && !isLoadingUserEmailAccountIds) {
+      setAccounts([]);
+      setIsLoadingAccounts(false);
+    }
+  }, [dateRange, userEmailAccountIds, isLoadingUserEmailAccountIds]); // Add dependencies
 
   // useEffect for fetching all emails for "All Accounts" view
   useEffect(() => {
-    if (activeSelectionType === 'account' && !selectedAccountId && dateRange?.from && dateRange?.to) {
+    if (activeSelectionType === 'account' && !selectedAccountId && dateRange?.from && dateRange?.to && userEmailAccountIds && !isLoadingUserEmailAccountIds) {
       setIsLoadingAllAccountEmails(true);
-      fetchAllEmailsWithAccounts(dateRange)
+      fetchAllEmailsWithAccounts(dateRange, userEmailAccountIds) // Pass it here
         .then(emails => {
           setAllAccountEmails(emails);
           setIsLoadingAllAccountEmails(false);
@@ -290,14 +351,17 @@ export function UnifiedDashboardPage() {
           setAllAccountEmails([]);
           setIsLoadingAllAccountEmails(false);
         });
+    } else if (!userEmailAccountIds && !isLoadingUserEmailAccountIds) {
+      setAllAccountEmails([]);
+      setIsLoadingAllAccountEmails(false);
     } else if (activeSelectionType !== 'account' || selectedAccountId) {
       // Clear if not in "all accounts" view to free up memory
       setAllAccountEmails([]);
     }
-  }, [activeSelectionType, selectedAccountId, dateRange]);
+  }, [activeSelectionType, selectedAccountId, dateRange, userEmailAccountIds, isLoadingUserEmailAccountIds]); // Add dependencies
 
   useEffect(() => {
-    if (selectedEmailId) {
+    if (selectedEmailId) { // This useEffect does not depend on userEmailAccountIds as it fetches specific email details
       setIsLoadingEmailDetails(true); setIsLoadingKeyQuestions(true);
       Promise.all([ fetchEmailById(selectedEmailId), fetchKeyQuestionsForEmail(selectedEmailId) ])
       .then(([emailData, questionsData]) => {
@@ -310,6 +374,24 @@ export function UnifiedDashboardPage() {
       });
     }
   }, [selectedEmailId]);
+
+  useEffect(() => {
+    if (user?.id) {
+      setIsLoadingUserEmailAccountIds(true);
+      fetchUserEmailAccountIds(user.id, supabase)
+        .then(ids => {
+          setUserEmailAccountIds(ids);
+          setIsLoadingUserEmailAccountIds(false);
+        })
+        .catch(() => {
+          setUserEmailAccountIds(null);
+          setIsLoadingUserEmailAccountIds(false);
+        });
+    } else {
+      setUserEmailAccountIds(null);
+      setIsLoadingUserEmailAccountIds(false);
+    }
+  }, [user?.id]);
 
   const filteredCustomers = customers.filter(c => (c.name?.toLowerCase() || c.email?.toLowerCase() || '').includes(customerSearchTerm.toLowerCase()));
   const filteredTopics = topics.filter(t => (t.displayName?.toLowerCase() || '').includes(topicSearchTerm.toLowerCase()));
@@ -351,7 +433,7 @@ export function UnifiedDashboardPage() {
         </div>
       </header>
 
-      <KpiRow dateRange={dateRange} />
+      <KpiRow dateRange={dateRange} userEmailAccountIds={userEmailAccountIds} />
 
       <main className="grid grid-cols-1 md:grid-cols-12 gap-6">
         <div className="md:col-span-4 lg:col-span-3 space-y-4">

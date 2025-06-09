@@ -4,14 +4,18 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Mail, ThumbsUp, Users, ShieldAlert, HelpCircle } from 'lucide-react';
 import { Skeleton } from "@/components/ui/skeleton";
 import type { DateRange } from 'react-day-picker';
+import type { SupabaseClient } from '@supabase/supabase-js';
 
 interface KpiRowProps {
   dateRange?: DateRange;
+  userEmailAccountIds: string[] | null;
 }
 
-async function fetchTotalEmailsProcessedCount(dateRange?: DateRange): Promise<number> {
+async function fetchTotalEmailsProcessedCount(dateRange: DateRange | undefined, userEmailAccountIds: string[] | null): Promise<number> {
+  if (!userEmailAccountIds || userEmailAccountIds.length === 0) return 0;
   let query = supabase
     .from('inq_emails')
+    .in('email_account_id', userEmailAccountIds)
     .select('*', { count: 'exact', head: true });
 
   if (dateRange?.from && dateRange?.to) {
@@ -30,16 +34,33 @@ async function fetchTotalEmailsProcessedCount(dateRange?: DateRange): Promise<nu
   return count || 0;
 }
 
-async function fetchAverageConfidenceScore(dateRange?: DateRange): Promise<number | null> {
-  let query = supabase
+async function fetchAverageConfidenceScore(dateRange: DateRange | undefined, userEmailAccountIds: string[] | null, supabaseClient: SupabaseClient): Promise<number | null> {
+  if (!userEmailAccountIds || userEmailAccountIds.length === 0) return null;
+
+  const { data: emailData, error: emailError } = await supabaseClient
+    .from('inq_emails')
+    .select('email_id')
+    .in('email_account_id', userEmailAccountIds);
+
+  if (emailError || !emailData || emailData.length === 0) {
+    console.error('Error fetching email_ids for confidence score or no emails found:', emailError);
+    return null;
+  }
+  const emailIds = emailData.map(e => e.email_id);
+  if (emailIds.length === 0) return null;
+
+  let query = supabaseClient
     .from('inq_responses')
-    .select('confidence_score');
+    .select('confidence_score')
+    .in('email_id', emailIds); // Filter by fetched email_ids
 
   if (dateRange?.from && dateRange?.to) {
     const fromDateStr = dateRange.from.toISOString();
     const toDate = new Date(dateRange.to);
     toDate.setHours(23, 59, 59, 999);
     const toDateStr = toDate.toISOString();
+    // Assuming inq_responses also has a timestamp like created_at related to the dateRange
+    // If not, this part of the query might need adjustment or removal if filtering by email_id is sufficient
     query = query.gte('created_at', fromDateStr).lte('created_at', toDateStr);
   }
 
@@ -55,19 +76,14 @@ async function fetchAverageConfidenceScore(dateRange?: DateRange): Promise<numbe
   return sum / validScores.length;
 }
 
-async function fetchActiveAgentsCount(dateRange?: DateRange): Promise<number> {
+async function fetchActiveAgentsCount(dateRange: DateRange | undefined, userEmailAccountIds: string[] | null): Promise<number> {
+  if (!userEmailAccountIds || userEmailAccountIds.length === 0) return 0;
   if (!dateRange?.from || !dateRange?.to) return 0;
+
   const fromDateStr = dateRange.from.toISOString();
   const toDate = new Date(dateRange.to);
   toDate.setHours(23, 59, 59, 999);
   const toDateStr = toDate.toISOString();
-
-  const { data, error } = await supabase
-    .from('inq_emails')
-    .select('email_account_id', { count: 'exact' })
-    .not('email_account_id', 'is', null)
-    .gte('received_at', fromDateStr)
-    .lte('received_at', toDateStr);
 
   // The query above with { count: 'exact' } on a select might not give distinct count.
   // Fetching distinct values and counting them client-side for simplicity here.
@@ -75,6 +91,7 @@ async function fetchActiveAgentsCount(dateRange?: DateRange): Promise<number> {
   const { data: distinctData, error: distinctError } = await supabase
     .from('inq_emails')
     .select('email_account_id')
+    .in('email_account_id', userEmailAccountIds) // Added filter
     .not('email_account_id', 'is', null)
     .gte('received_at', fromDateStr)
     .lte('received_at', toDateStr);
@@ -88,11 +105,13 @@ async function fetchActiveAgentsCount(dateRange?: DateRange): Promise<number> {
   return distinctAgentIds.size;
 }
 
-async function fetchManagerEscalationsCount(dateRange?: DateRange): Promise<number> {
+async function fetchManagerEscalationsCount(dateRange: DateRange | undefined, userEmailAccountIds: string[] | null): Promise<number> {
+  if (!userEmailAccountIds || userEmailAccountIds.length === 0) return 0;
   // Define the conditions for an escalation.
   let query = supabase
     .from('inq_emails')
     .select('*', { count: 'exact', head: false }) // Using count exact, no head
+    .in('email_account_id', userEmailAccountIds) // Added filter
     .not('include_manager', 'eq', 'no_manager_needed') // Exclude 'no_manager_needed'
     .not('include_manager', 'is', null); // Exclude nulls
 
@@ -114,7 +133,7 @@ async function fetchManagerEscalationsCount(dateRange?: DateRange): Promise<numb
 }
 
 
-export function KpiRow({ dateRange }: KpiRowProps) {
+export function KpiRow({ dateRange, userEmailAccountIds }: KpiRowProps) {
   const [totalEmails, setTotalEmails] = useState<number | null>(null);
   const [avgConfidence, setAvgConfidence] = useState<number | null>(null);
   const [activeAgents, setActiveAgents] = useState<number | null>(null);
@@ -127,8 +146,8 @@ export function KpiRow({ dateRange }: KpiRowProps) {
 
   useEffect(() => {
     const loadKpis = async () => {
-      if (!dateRange?.from || !dateRange?.to) {
-        // Reset all KPIs if date range is not complete
+      // Ensure all necessary data is present before fetching
+      if (!dateRange?.from || !dateRange?.to || !userEmailAccountIds) {
         setTotalEmails(null);
         setAvgConfidence(null);
         setActiveAgents(null);
@@ -139,6 +158,7 @@ export function KpiRow({ dateRange }: KpiRowProps) {
         setLoadingEscalations(false);
         return;
       }
+      // If userEmailAccountIds is an empty array, the fetch functions will handle returning 0 or null.
 
       setLoadingEmails(true);
       setLoadingConfidence(true);
@@ -151,10 +171,10 @@ export function KpiRow({ dateRange }: KpiRowProps) {
         agentsCount,
         escalationsCount
       ] = await Promise.all([
-        fetchTotalEmailsProcessedCount(dateRange),
-        fetchAverageConfidenceScore(dateRange),
-        fetchActiveAgentsCount(dateRange),
-        fetchManagerEscalationsCount(dateRange)
+        fetchTotalEmailsProcessedCount(dateRange, userEmailAccountIds),
+        fetchAverageConfidenceScore(dateRange, userEmailAccountIds, supabase), // pass supabase
+        fetchActiveAgentsCount(dateRange, userEmailAccountIds),
+        fetchManagerEscalationsCount(dateRange, userEmailAccountIds)
       ]);
 
       setTotalEmails(emailsCount);
@@ -166,9 +186,8 @@ export function KpiRow({ dateRange }: KpiRowProps) {
       setManagerEscalations(escalationsCount);
       setLoadingEscalations(false);
     };
-
     loadKpis();
-  }, [dateRange]);
+  }, [dateRange, userEmailAccountIds]); // Add userEmailAccountIds
 
   const isLoading = loadingEmails || loadingConfidence || loadingAgents || loadingEscalations;
 
