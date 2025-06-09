@@ -1,5 +1,6 @@
 // llmPlanner.ts for postmark-webhook function
 import type { KnowReplyAgentConfig } from './types.ts';
+import { generateExamplePayloadFromSchema } from './utils.ts'; 
 // Deno object is globally available in Deno runtime
 // SupabaseClient type is not strictly needed as supabaseClient is 'any'
 
@@ -46,13 +47,21 @@ Available Tools:
 ${JSON.stringify(
   availableMcps.map(mcp => {
     let argsSchemaKeys: string[] = [];
-    if (mcp.expected_format && typeof mcp.expected_format === 'object' && !Array.isArray(mcp.expected_format)) {
-      argsSchemaKeys = Object.keys(mcp.expected_format);
+    let example: any = null;
+    try {
+      example = generateExamplePayloadFromSchema(mcp.expected_format);
+      if (example && typeof example === 'object' && !Array.isArray(example)) {
+        argsSchemaKeys = Object.keys(example);
+      }
+      console.log(`🛠️ Generated example for tool ${mcp.name}:`, example,` ; `, argsSchemaKeys);
+    } catch (err) {
+      console.warn(`⚠️ Failed to generate example for tool ${mcp.name}:`, err);
     }
     return {
       name: mcp.name,
       description: mcp.instructions || 'No specific instructions provided.',
       args_schema_keys: argsSchemaKeys,
+      args_schema_example: example,
       output_schema: mcp.output_schema || null, // Include output_schema
     };
   }),
@@ -69,6 +78,7 @@ To use an output from a previous step (e.g., 'steps[0]', 'steps[1]') as an argum
 The 'output_schema' provided for each tool in the "Available Tools" list shows what 'FIELD_NAME's it will return.
 
 IMPORTANT: When constructing the "args" object for any tool:
+- Only include arguments that are listed in the tool's 'args_schema_keys' for which you have a value.
 - You must use the exact argument names listed in its args_schema_keys.
 - You must not invent, rename, or assume alternative argument names like order_id when the schema says orderId.
 - When referencing previous outputs, map the exact args_schema_keys name to a compatible field in a previous step's output_schema, even if they differ (e.g., orderId ← steps[0].outputs.id).
@@ -94,8 +104,8 @@ JSON schema:
   {
     "tool": "string", // The exact name of the tool from the 'Available Tools' list
     "args": { // The arguments object for the tool, using exact keys from args_schema_keys
-      "argName1": "value1", // Use exact argument names as per args_schema keys
-      "argName2": "value2" // Use exact argument names as per args_schema keys
+      "argName1": "value1", // Use exact argument names as per args_schema_keys
+      "argName2": "value2" // Use exact argument names as per args_schema_keys
     },
     "reasoning": "string" // A brief explanation of why this tool is needed and what you want to accomplish by calling it
   }
