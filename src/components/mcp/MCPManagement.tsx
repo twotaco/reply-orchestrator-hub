@@ -19,7 +19,8 @@ import { MCPTableComponent } from './MCPTableComponent';
 // categoryMap definition removed from here, moved outside and renamed to categoryMapUtil within getPascalCaseCategory scope
 
 export function MCPManagement() {
-  const { user } = useAuth();
+  const { user, role } = useAuth(); // Added role
+  const isContributor = role === 'Contributor'; // Defined isContributor
   const { discoveredProviders, discoveryLoading, discoveryError, fetchDiscoveryData } = useMCPDiscovery();
   const { savedConfiguredActions, loadingEndpoints, fetchEndpoints, deleteEndpoint, toggleEndpointActive } = useMCPEndpoints(user);
   const [showAddForm, setShowAddForm] = useState(false); // Controls visibility of the configuration section
@@ -69,13 +70,19 @@ export function MCPManagement() {
           <h1 className="text-3xl font-bold">Email Agent Tools & Connections</h1>
           <p className="text-gray-600 mt-2">Connect your Know Reply AI assistant to the tools and systems it needs to take action on your behalf (like looking up orders, updating bookings, or sending invoices) with Model Context Protocol (MCP) endpoints.</p>
         </div>
-        <Button onClick={() => setShowAddForm(true)} disabled={showAddForm}>
+        <Button onClick={() => setShowAddForm(true)} disabled={isContributor || showAddForm}>
           <Plus className="h-4 w-4 mr-2" />
           Add a Connection
         </Button>
       </div>
 
-      {showAddForm && (
+      {isContributor && (
+        <p className="my-4 text-orange-600 bg-orange-50 border border-orange-200 p-3 rounded-md">
+          As a Contributor, you have view-only access to most of this page. Configuration changes must be made by an Admin. You are permitted to use the 'Test Action' functionality.
+        </p>
+      )}
+
+      {showAddForm && !isContributor && (
         <MCPForm
           user={user}
           discoveredProviders={discoveredProviders}
@@ -118,12 +125,13 @@ export function MCPManagement() {
                       setShowAddForm(false); // Hide main form if inline editing
                       // Other logic moved to MCPInlineProviderEdit's useEffect
                     }}
+                    disabled={isContributor} // Added disabled prop
                   >
                     <Edit className="h-4 w-4 mr-2" />
                     Configure Provider
                   </Button>
                 </div>
-                {editingCategory === category.toLowerCase() ? (
+                {editingCategory === category.toLowerCase() && !isContributor ? (
                   <MCPInlineProviderEdit
                     editingCategory={editingCategory}
                     onCancel={() => setEditingCategory(null)}
@@ -147,6 +155,7 @@ export function MCPManagement() {
                     }}
                     onDeleteEndpoint={deleteEndpoint}
                     onToggleEndpointActive={toggleEndpointActive}
+                    isContributor={isContributor} // Passed isContributor prop
                   />
                 )}
               </div>

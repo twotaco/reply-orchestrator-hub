@@ -61,7 +61,7 @@ interface AgentConfig {
 const KNOWREPLY_GET_AGENTS_URL = 'https://schhqmadbetntdrhowgg.supabase.co/functions/v1/get-agents';
 
 export function KnowReplySetup() {
-  const { user } = useAuth();
+  const { user, role } = useAuth(); // Added role
   const { toast } = useToast();
   const [config, setConfig] = useState<KnowReplyConfig>({
     knowreply_api_token: ''
@@ -78,6 +78,8 @@ export function KnowReplySetup() {
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   // Removed: const [currentEmailInput, setCurrentEmailInput] = useState<Record<string, string>>({});
   // Removed: const handleEmailInputChange = (agentId: string, value: string) => { ... };
+
+  const isContributor = role === 'Contributor'; // Defined isContributor
 
   const handleAddNewEmailRow = (agentId: string) => {
     setAgentConfigs(prevAgentConfigs =>
@@ -595,6 +597,11 @@ export function KnowReplySetup() {
         <p className="text-gray-600 mt-2">
           Configure multiple Know Reply AI agents connect with connect tools (MCP endpoints)
         </p>
+        {isContributor && (
+          <p className="mt-4 text-orange-600 bg-orange-50 border border-orange-200 p-3 rounded-md">
+            As a Contributor, you have view-only access to this page. Configuration changes must be made by an Admin.
+          </p>
+        )}
       </div>
 
       {/* Unsaved Changes Warning card removed, integrated into sticky bar */}
@@ -622,6 +629,7 @@ export function KnowReplySetup() {
                 setConfig({ ...config, knowreply_api_token: e.target.value });
                 setHasUnsavedChanges(true);
               }}
+              disabled={isContributor} // Added disabled prop
             />
           </div>
         </CardContent>
@@ -668,7 +676,7 @@ export function KnowReplySetup() {
                               <div className="text-sm text-gray-500">{agent.role}</div>
                             )}
                           </div>
-                          <Button size="sm" onClick={() => addAgent(agent)}>
+                          <Button size="sm" onClick={() => addAgent(agent)} disabled={isContributor}>
                             <Plus className="h-4 w-4 mr-1" />
                             Add Agent
                           </Button>
@@ -692,6 +700,7 @@ export function KnowReplySetup() {
                                 <Checkbox
                                   checked={agentConfig.enabled}
                                   onCheckedChange={() => toggleAgentEnabled(agentConfig.agent_id)}
+                                  disabled={isContributor} // Added disabled prop
                                 />
                                 <div>
                                   <div className="font-medium">{agentConfig.agent_name}</div>
@@ -704,6 +713,7 @@ export function KnowReplySetup() {
                                 variant="outline"
                                 size="sm"
                                 onClick={() => removeAgent(agentConfig.agent_id)}
+                                disabled={isContributor} // Added disabled prop
                               >
                                 <Trash2 className="h-4 w-4" />
                               </Button>
@@ -719,6 +729,7 @@ export function KnowReplySetup() {
                                     variant="outline"
                                     onClick={() => handleAddNewEmailRow(agentConfig.agent_id)}
                                     title="Add new email address field"
+                                    disabled={isContributor} // Added disabled prop
                                   >
                                     <Plus className="h-4 w-4 mr-1" />
                                     Add Email
@@ -734,6 +745,7 @@ export function KnowReplySetup() {
                                         value={emailString}
                                         onChange={(e) => handleEmailValueChange(agentConfig.agent_id, index, e.target.value)}
                                         className="flex-grow"
+                                        disabled={isContributor} // Added disabled prop
                                       />
                                       <Button
                                         variant="ghost"
@@ -741,6 +753,7 @@ export function KnowReplySetup() {
                                         onClick={() => handleRemoveEmailRow(agentConfig.agent_id, index)}
                                         title="Remove this email address"
                                         className="text-gray-500 hover:text-red-500"
+                                        disabled={isContributor} // Added disabled prop
                                       >
                                         <Trash2 className="h-4 w-4" />
                                       </Button>
@@ -765,6 +778,7 @@ export function KnowReplySetup() {
                                       <Checkbox
                                         checked={agentConfig.mcp_endpoints.includes(endpoint.id)}
                                         onCheckedChange={() => toggleMCPForAgent(agentConfig.agent_id, endpoint.id)}
+                                        disabled={isContributor} // Added disabled prop
                                       />
                                       <div className="flex-1">
                                         <div className="flex items-center gap-2">
@@ -825,7 +839,7 @@ export function KnowReplySetup() {
           </div>
           <Button
             onClick={saveConfiguration}
-            disabled={saving || !hasUnsavedChanges}
+            disabled={isContributor || saving || !hasUnsavedChanges} // Added isContributor
             size="lg"
             className={`min-w-[200px] ${hasUnsavedChanges ? 'bg-orange-500 hover:bg-orange-600 dark:bg-orange-600 dark:hover:bg-orange-700 text-white' : 'bg-green-500 hover:bg-green-600 dark:bg-green-600 dark:hover:bg-green-700 text-white'}`}
           >

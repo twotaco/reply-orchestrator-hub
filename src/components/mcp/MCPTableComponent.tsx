@@ -10,6 +10,7 @@ interface MCPTableComponentProps {
   onTestEndpoint: (endpoint: MCPEndpoint) => void;
   onDeleteEndpoint: (endpointId: string) => void;
   onToggleEndpointActive: (endpointId: string, currentStatus: boolean) => void;
+  isContributor?: boolean; // Added isContributor prop
 }
 
 export function MCPTableComponent({
@@ -17,6 +18,7 @@ export function MCPTableComponent({
   onTestEndpoint,
   onDeleteEndpoint,
   onToggleEndpointActive,
+  isContributor, // Received isContributor prop
 }: MCPTableComponentProps) {
   return (
     <Table>
@@ -44,6 +46,7 @@ export function MCPTableComponent({
                 checked={endpoint.active}
                 onCheckedChange={() => onToggleEndpointActive(endpoint.id, endpoint.active)}
                 aria-label={`Toggle status for ${endpoint.name}`}
+                disabled={isContributor} // Added disabled prop
               />
             </TableCell>
             <TableCell className="text-right">
@@ -61,6 +64,7 @@ export function MCPTableComponent({
                   size="icon"
                   onClick={() => onDeleteEndpoint(endpoint.id)}
                   title="Delete Action"
+                  disabled={isContributor} // Added disabled prop
                 >
                   <Trash2 className="h-4 w-4" />
                 </Button>

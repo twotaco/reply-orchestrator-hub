@@ -25,7 +25,7 @@ interface WorkspaceConfig {
 }
 
 export function PostmarkSetup() {
-  const { user } = useAuth();
+  const { user, role } = useAuth(); // Added role
   const { toast } = useToast();
   const [config, setConfig] = useState<WorkspaceConfig>({
     postmark_api_token: '',
@@ -34,6 +34,8 @@ export function PostmarkSetup() {
   const [saving, setSaving] = useState(false);
   const [testing, setTesting] = useState(false);
   const [regeneratingKey, setRegeneratingKey] = useState(false);
+
+  const isContributor = role === 'Contributor'; // Defined isContributor
 
   useEffect(() => {
     if (user) {
@@ -253,6 +255,11 @@ export function PostmarkSetup() {
         <p className="text-gray-600 mt-2">
           Configure Postmark to receive, process, and reply to inbound emails
         </p>
+        {isContributor && (
+          <p className="mt-4 text-orange-600 bg-orange-50 border border-orange-200 p-3 rounded-md">
+            As a Contributor, you have view-only access to this page. Configuration changes must be made by an Admin.
+          </p>
+        )}
       </div>
 
       {/* API Configuration */}
@@ -275,6 +282,7 @@ export function PostmarkSetup() {
               placeholder="Enter your Postmark Server API token"
               value={config.postmark_api_token || ''}
               onChange={(e) => setConfig({ ...config, postmark_api_token: e.target.value })}
+              disabled={isContributor} // Added disabled prop
             />
             <p className="text-sm text-gray-500 mt-1">
               Found in your Postmark account in your Server's "API Tokens" tab under "Server API tokens"
@@ -282,11 +290,11 @@ export function PostmarkSetup() {
           </div>
 
           <div className="flex gap-2">
-            <Button onClick={testConnection} disabled={testing} variant="outline">
+            <Button onClick={testConnection} disabled={isContributor || testing} variant="outline">
               {testing ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
               Test Connection
             </Button>
-            <Button onClick={saveConfig} disabled={saving}>
+            <Button onClick={saveConfig} disabled={isContributor || saving}>
               {saving ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
               Save Configuration
             </Button>
@@ -318,7 +326,7 @@ export function PostmarkSetup() {
                 variant="outline" 
                 size="icon"
                 onClick={() => config.webhook_api_key && copyToClipboard(generatedWebhookUrl)}
-                disabled={!config.webhook_api_key}
+                disabled={isContributor || !config.webhook_api_key} // Added isContributor
               >
                 <Copy className="h-4 w-4" />
               </Button>
@@ -328,7 +336,7 @@ export function PostmarkSetup() {
             </p>
             <Button
               onClick={handleRegenerateKey}
-              disabled={regeneratingKey || !config.postmark_api_token} // Also disable if no main API token
+              disabled={isContributor || regeneratingKey || !config.postmark_api_token} // Added isContributor
               variant="outline"
               size="sm"
               className="mt-2"
