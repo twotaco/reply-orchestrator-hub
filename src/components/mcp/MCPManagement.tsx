@@ -19,7 +19,7 @@ import { MCPTableComponent } from './MCPTableComponent';
 // categoryMap definition removed from here, moved outside and renamed to categoryMapUtil within getPascalCaseCategory scope
 
 export function MCPManagement() {
-  const { user } = useAuth();
+  const { user, userRole } = useAuth();
   const { discoveredProviders, discoveryLoading, discoveryError, fetchDiscoveryData } = useMCPDiscovery();
   const { savedConfiguredActions, loadingEndpoints, fetchEndpoints, deleteEndpoint, toggleEndpointActive } = useMCPEndpoints(user);
   const [showAddForm, setShowAddForm] = useState(false); // Controls visibility of the configuration section
@@ -89,6 +89,7 @@ export function MCPManagement() {
             setShowAddForm(false);
           }}
           onCancel={() => setShowAddForm(false)}
+          userRole={userRole}
         />
       )}
 
@@ -136,10 +137,12 @@ export function MCPManagement() {
                     currentSavedActionsForCategory={actionsInGroup}
                     categoryMapUtil={categoryMapUtil}
                     getPascalCaseCategory={getPascalCaseCategory}
+                    userRole={userRole}
                   />
                 ) : (
                   <MCPTableComponent
                     actionsInGroup={actionsInGroup}
+                    userRole={userRole}
                     onTestEndpoint={(endpoint) => {
                       setTestingEndpoint(endpoint);
                       // setTestResponse(null); // MCPTestModal handles this

@@ -61,7 +61,7 @@ interface AgentConfig {
 const KNOWREPLY_GET_AGENTS_URL = 'https://schhqmadbetntdrhowgg.supabase.co/functions/v1/get-agents';
 
 export function KnowReplySetup() {
-  const { user } = useAuth();
+  const { user, userRole } = useAuth();
   const { toast } = useToast();
   const [config, setConfig] = useState<KnowReplyConfig>({
     knowreply_api_token: ''
@@ -668,7 +668,7 @@ export function KnowReplySetup() {
                               <div className="text-sm text-gray-500">{agent.role}</div>
                             )}
                           </div>
-                          <Button size="sm" onClick={() => addAgent(agent)}>
+                          <Button size="sm" onClick={() => addAgent(agent)} disabled={userRole === 'demo'}>
                             <Plus className="h-4 w-4 mr-1" />
                             Add Agent
                           </Button>
@@ -825,7 +825,7 @@ export function KnowReplySetup() {
           </div>
           <Button
             onClick={saveConfiguration}
-            disabled={saving || !hasUnsavedChanges}
+            disabled={saving || !hasUnsavedChanges || userRole === 'demo'}
             size="lg"
             className={`min-w-[200px] ${hasUnsavedChanges ? 'bg-orange-500 hover:bg-orange-600 dark:bg-orange-600 dark:hover:bg-orange-700 text-white' : 'bg-green-500 hover:bg-green-600 dark:bg-green-600 dark:hover:bg-green-700 text-white'}`}
           >

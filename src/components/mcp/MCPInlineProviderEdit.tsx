@@ -17,6 +17,7 @@ interface MCPInlineProviderEditProps {
   currentSavedActionsForCategory: MCPEndpoint[];
   categoryMapUtil: { [key: string]: string }; // Already available in MCPManagement
   getPascalCaseCategory: (providerName: string) => string; // Already available in MCPManagement
+  userRole?: string | null;
 }
 
 export function MCPInlineProviderEdit({
@@ -28,6 +29,7 @@ export function MCPInlineProviderEdit({
   currentSavedActionsForCategory,
   categoryMapUtil, // Prop drilling, consider context or Zustand for deep nesting if it grows
   getPascalCaseCategory,
+  userRole,
 }: MCPInlineProviderEditProps) {
   const [editingConnectionParams, setEditingConnectionParams] = useState<Record<string, string>>({});
   const [editingActionsSelection, setEditingActionsSelection] = useState<Record<string, boolean>>({});
@@ -273,7 +275,7 @@ export function MCPInlineProviderEdit({
         <Button variant="outline" onClick={onCancel} disabled={loadingConnectionParams}>
           Cancel
         </Button>
-        <Button onClick={handleInlineProviderSave} disabled={loadingConnectionParams}>
+        <Button onClick={handleInlineProviderSave} disabled={loadingConnectionParams || userRole === 'demo'}>
           {loadingConnectionParams ? 'Loading...' : 'Save Changes'}
         </Button>
       </div>

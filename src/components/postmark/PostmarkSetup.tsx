@@ -25,7 +25,7 @@ interface WorkspaceConfig {
 }
 
 export function PostmarkSetup() {
-  const { user } = useAuth();
+  const { user, userRole } = useAuth();
   const { toast } = useToast();
   const [config, setConfig] = useState<WorkspaceConfig>({
     postmark_api_token: '',
@@ -286,7 +286,7 @@ export function PostmarkSetup() {
               {testing ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
               Test Connection
             </Button>
-            <Button onClick={saveConfig} disabled={saving}>
+            <Button onClick={saveConfig} disabled={saving || userRole === 'demo'}>
               {saving ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
               Save Configuration
             </Button>
@@ -328,7 +328,7 @@ export function PostmarkSetup() {
             </p>
             <Button
               onClick={handleRegenerateKey}
-              disabled={regeneratingKey || !config.postmark_api_token} // Also disable if no main API token
+              disabled={regeneratingKey || !config.postmark_api_token || userRole === 'demo'} // Also disable if no main API token or demo user
               variant="outline"
               size="sm"
               className="mt-2"

@@ -10,6 +10,7 @@ interface MCPTableComponentProps {
   onTestEndpoint: (endpoint: MCPEndpoint) => void;
   onDeleteEndpoint: (endpointId: string) => void;
   onToggleEndpointActive: (endpointId: string, currentStatus: boolean) => void;
+  userRole?: string | null;
 }
 
 export function MCPTableComponent({
@@ -17,6 +18,7 @@ export function MCPTableComponent({
   onTestEndpoint,
   onDeleteEndpoint,
   onToggleEndpointActive,
+  userRole,
 }: MCPTableComponentProps) {
   return (
     <Table>
@@ -61,6 +63,7 @@ export function MCPTableComponent({
                   size="icon"
                   onClick={() => onDeleteEndpoint(endpoint.id)}
                   title="Delete Action"
+                  disabled={userRole === 'demo'}
                 >
                   <Trash2 className="h-4 w-4" />
                 </Button>

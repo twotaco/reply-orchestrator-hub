@@ -23,6 +23,7 @@ interface MCPFormProps {
   getPascalCaseCategory: (providerName: string) => string;
   onSaveSuccess: () => void;
   onCancel: () => void;
+  userRole?: string | null; // Add userRole prop
 }
 
 export function MCPForm({
@@ -35,6 +36,7 @@ export function MCPForm({
   getPascalCaseCategory = defaultGetPascalCaseCategory, // Use default if not provided
   onSaveSuccess,
   onCancel,
+  userRole, // Destructure userRole
 }: MCPFormProps) {
   const [formData, setFormData] = useState<MCPFormDataState>({
     name: '',
